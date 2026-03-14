@@ -12,6 +12,7 @@ Capture LiDAR data on iPhone and render an orientation-correct raw point cloud, 
 struct PointCloud {
     let timestamp: TimeInterval
     let points: [PackedPoint]      // world-space XYZ + color
+    let centroid: SIMD3<Float>?    // world-space centroid for orbit camera
 }
 
 struct CaptureFrame {
@@ -30,9 +31,9 @@ struct CaptureFrame {
 
 1. `ARSession` with `ARWorldTrackingConfiguration` + `.sceneDepth`.
 2. Read `depthMap` + `confidenceMap` + `capturedImage`.
-3. Scale intrinsics from camera image resolution to depth resolution.
-4. Back-project `(u, v, depth)` into ARKit camera space.
-5. Transform camera-space points into world space via `cameraTransform`.
+3. `DepthPointProjector` scales intrinsics from camera image resolution to depth resolution.
+4. `DepthPointProjector` back-projects `(u, v, depth)` into ARKit camera space.
+5. `DepthPointProjector` transforms camera-space points into world space via `cameraTransform`, and emits centroid.
 6. Render points in Metal with:
    - camera POV mode (`viewMatrix(for: orientation)`)
    - orbit mode (gesture debug)

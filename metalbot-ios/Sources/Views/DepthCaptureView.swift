@@ -5,7 +5,6 @@ import SwiftUI
 /// Landscape: RGB left, point cloud right.
 struct DepthCaptureView: View {
     @StateObject private var viewModel = CaptureViewModel()
-    @Environment(\.horizontalSizeClass) var hSizeClass
 
     var body: some View {
         ZStack {
@@ -82,20 +81,33 @@ struct DepthCaptureView: View {
     }
 
     private var pointCloudPanel: some View {
-        PointCloudMTKView(renderer: viewModel.renderer)
+        Group {
+            if let renderer = viewModel.renderer {
+                PointCloudMTKView(renderer: renderer)
+            } else {
+                ZStack {
+                    Color.black
+                    Text("Renderer unavailable")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private var viewModeIndicator: some View {
-        let mode = viewModel.renderer.viewMode
-        let label = mode == .cameraPOV ? "Camera POV" : "Orbit"
-        let icon = mode == .cameraPOV ? "eye.fill" : "rotate.3d"
+        if let renderer = viewModel.renderer {
+            let mode = renderer.viewMode
+            let label = mode == .cameraPOV ? "Camera POV" : "Orbit"
+            let icon = mode == .cameraPOV ? "eye.fill" : "rotate.3d"
 
-        Label(label, systemImage: icon)
-            .font(.system(size: 11, weight: .medium, design: .monospaced))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(.ultraThinMaterial, in: Capsule())
+            Label(label, systemImage: icon)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
     }
 
     private var startPrompt: some View {

@@ -17,6 +17,9 @@ struct PackedPoint {
 struct PointCloud {
     let timestamp: TimeInterval
     let points: [PackedPoint]
+    /// World-space centroid of `points`.
+    /// Kept in the contract so renderer logic does not need to rescan all points.
+    let centroid: SIMD3<Float>?
     var count: Int { points.count }
 }
 

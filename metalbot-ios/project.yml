@@ -10,6 +10,17 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     ENABLE_USER_SCRIPT_SANDBOXING: false
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_COMPILATION_MODE: "singlefile"
+      GCC_OPTIMIZATION_LEVEL: "0"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "DEBUG"
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: "wholemodule"
+      GCC_OPTIMIZATION_LEVEL: "s"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
 
 targets:
   metalbot:
@@ -31,3 +42,11 @@ targets:
     entitlements:
       path: Resources/metalbot.entitlements
       properties: {}
+
+  metalbotTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: metalbot

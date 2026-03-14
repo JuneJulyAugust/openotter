@@ -1,4 +1,5 @@
 import CoreImage
+import Foundation
 import SwiftUI
 
 enum CaptureState: Equatable {
@@ -22,18 +23,29 @@ final class CaptureViewModel: ObservableObject {
     @Published var state: CaptureState = .idle
     @Published var diagnostics = FrameDiagnostics()
     @Published var cameraImage: CGImage?
+    @Published private(set) var renderer: PointCloudRenderer?
 
-    let renderer = PointCloudRenderer()
     private let captureSession = LiDARCaptureSession()
     nonisolated(unsafe) private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    nonisolated(unsafe) private let frameDrainLock = NSLock()
+    nonisolated(unsafe) private var pendingFrame: CaptureFrame?
+    nonisolated(unsafe) private var isFrameDrainScheduled = false
     private var fpsTracker = FPSTracker()
 
     func startCapture() {
+        guard state != .running, state != .requesting else { return }
         state = .requesting
 
         Task {
             guard DeviceCapability.isLiDARAvailable else {
                 state = .error("LiDAR not available on this device.")
+                return
+            }
+
+            do {
+                try prepareRendererIfNeeded()
+            } catch {
+                state = .error(error.localizedDescription)
                 return
             }
 
@@ -55,8 +67,21 @@ final class CaptureViewModel: ObservableObject {
     }
 
     func stopCapture() {
+        captureSession.delegate = nil
         captureSession.stop()
+        cameraImage = nil
+        diagnostics = FrameDiagnostics()
+        fpsTracker.reset()
+        frameDrainLock.sync {
+            pendingFrame = nil
+            isFrameDrainScheduled = false
+        }
         state = .idle
+    }
+
+    private func prepareRendererIfNeeded() throws {
+        guard renderer == nil else { return }
+        renderer = try PointCloudRenderer.make()
     }
 
     private func requestCameraPermission() async -> Bool {
@@ -75,33 +100,69 @@ final class CaptureViewModel: ObservableObject {
 
 extension CaptureViewModel: CaptureFrameDelegate {
     nonisolated func didReceive(_ frame: CaptureFrame) {
-        let cgImage = convertCameraImage(frame.cameraImage, orientation: frame.orientation)
+        let shouldSchedule = frameDrainLock.sync { () -> Bool in
+            pendingFrame = frame
+            guard !isFrameDrainScheduled else { return false }
+            isFrameDrainScheduled = true
+            return true
+        }
 
-        let modeLabel = renderer.viewMode == .cameraPOV ? "Camera POV" : "Orbit"
-        let depthRes = "\(frame.depthResolution.w)x\(frame.depthResolution.h)"
-        let imgRes = "\(frame.imageResolution.w)x\(frame.imageResolution.h)"
-        let fovDeg = frame.verticalFov * 180 / .pi
-        let ptCount = frame.pointCloud.count
+        guard shouldSchedule else { return }
 
         Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.renderer.update(
-                cloud: frame.pointCloud,
-                cameraTransform: frame.cameraTransform,
-                viewMatrix: frame.viewMatrix,
-                verticalFov: frame.verticalFov
-            )
-            self.cameraImage = cgImage
-            self.fpsTracker.tick()
-            self.diagnostics = FrameDiagnostics(
-                fps: self.fpsTracker.fps,
-                pointCount: ptCount,
-                depthResolution: depthRes,
-                imageResolution: imgRes,
-                viewMode: modeLabel,
-                fovDeg: fovDeg
-            )
+            await self?.drainPendingFrames()
         }
+    }
+
+    @MainActor
+    private func drainPendingFrames() async {
+        while true {
+            let nextFrame = frameDrainLock.sync { () -> CaptureFrame? in
+                guard let frame = pendingFrame else {
+                    isFrameDrainScheduled = false
+                    return nil
+                }
+                pendingFrame = nil
+                return frame
+            }
+
+            guard let nextFrame else { break }
+            apply(frame: nextFrame)
+            await Task.yield()
+        }
+    }
+
+    @MainActor
+    private func apply(frame: CaptureFrame) {
+        guard state == .running, let renderer else { return }
+
+        renderer.update(
+            cloud: frame.pointCloud,
+            cameraTransform: frame.cameraTransform,
+            viewMatrix: frame.viewMatrix,
+            verticalFov: frame.verticalFov
+        )
+        cameraImage = convertCameraImage(frame.cameraImage, orientation: frame.orientation)
+
+        fpsTracker.tick()
+        diagnostics = makeDiagnostics(frame: frame, renderer: renderer)
+    }
+
+    @MainActor
+    private func makeDiagnostics(frame: CaptureFrame, renderer: PointCloudRenderer) -> FrameDiagnostics {
+        let modeLabel = renderer.viewMode == .cameraPOV ? "Camera POV" : "Orbit"
+        let depthRes = "\(frame.depthResolution.w)x\(frame.depthResolution.h)"
+        let imageRes = "\(frame.imageResolution.w)x\(frame.imageResolution.h)"
+        let fovDegrees = frame.verticalFov * 180 / .pi
+
+        return FrameDiagnostics(
+            fps: fpsTracker.fps,
+            pointCount: frame.pointCloud.count,
+            depthResolution: depthRes,
+            imageResolution: imageRes,
+            viewMode: modeLabel,
+            fovDeg: fovDegrees
+        )
     }
 
     /// Convert CVPixelBuffer to CGImage with correct rotation for current interface orientation.
@@ -109,17 +170,24 @@ extension CaptureViewModel: CaptureFrameDelegate {
         _ pixelBuffer: CVPixelBuffer,
         orientation: UIInterfaceOrientation
     ) -> CGImage? {
-        let ciOrientation: CGImagePropertyOrientation
-        switch orientation {
-        case .portrait:          ciOrientation = .right
-        case .portraitUpsideDown: ciOrientation = .left
-        case .landscapeLeft:     ciOrientation = .down
-        case .landscapeRight:    ciOrientation = .up
-        default:                 ciOrientation = .right
-        }
+        autoreleasepool {
+            let ciOrientation: CGImagePropertyOrientation
+            switch orientation {
+            case .portrait:
+                ciOrientation = .right
+            case .portraitUpsideDown:
+                ciOrientation = .left
+            case .landscapeLeft:
+                ciOrientation = .down
+            case .landscapeRight:
+                ciOrientation = .up
+            default:
+                ciOrientation = .right
+            }
 
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(ciOrientation)
-        return ciContext.createCGImage(ciImage, from: ciImage.extent)
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(ciOrientation)
+            return ciContext.createCGImage(ciImage, from: ciImage.extent)
+        }
     }
 }
 
@@ -146,5 +214,17 @@ private struct FPSTracker {
         if timestamps.count > windowSize {
             timestamps.removeFirst(timestamps.count - windowSize)
         }
+    }
+
+    mutating func reset() {
+        timestamps.removeAll(keepingCapacity: true)
+    }
+}
+
+private extension NSLock {
+    func sync<T>(_ body: () -> T) -> T {
+        lock()
+        defer { unlock() }
+        return body()
     }
 }

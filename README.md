@@ -57,9 +57,23 @@ The iPhone runs perception, estimation, and high-level control. STM32 acts as MC
 
 Use Xcode once for signing/capabilities, then iterate from CLI if preferred.
 
-- preferred loop: `cd metalbot-ios && ./build.sh deploy`
+- preferred debug loop: `cd metalbot-ios && ./build.sh deploy`
+- preferred release loop: `cd metalbot-ios && ./build.sh --release deploy`
 - build: `xcodebuild`
 - install/launch: `xcrun devicectl` (Xcode 15+)
+
+### Build Profiles
+
+- `Debug`:
+  - `SWIFT_OPTIMIZATION_LEVEL = -Onone`
+  - `SWIFT_COMPILATION_MODE = singlefile`
+  - best for iteration and debugging
+- `Release`:
+  - `SWIFT_OPTIMIZATION_LEVEL = -O`
+  - `SWIFT_COMPILATION_MODE = wholemodule`
+  - best for on-device performance measurement and demos
+
+For this project, `Release` is expected to run faster because depth back-projection and frame processing loops are CPU-heavy and benefit from compiler optimization.
 
 ```bash
 # 1) List connected devices
@@ -68,10 +82,13 @@ xcrun devicectl list devices
 # 2) Move into iOS app workspace
 cd metalbot-ios
 
-# 3) Fast path (recommended): build + install + launch
+# 3) Debug: build + install + launch
 ./build.sh deploy
 
-# 4) Manual build app for iOS device
+# 4) Release: optimized build + install + launch
+./build.sh --release deploy
+
+# 5) Manual build app for iOS device (Debug)
 xcodebuild \
   -project metalbot.xcodeproj \
   -scheme metalbot \
@@ -80,12 +97,21 @@ xcodebuild \
   -derivedDataPath .build/DerivedData \
   build
 
-# 5) Install built app bundle
+# 6) Manual build app for iOS device (Release)
+xcodebuild \
+  -project metalbot.xcodeproj \
+  -scheme metalbot \
+  -configuration Release \
+  -destination "generic/platform=iOS" \
+  -derivedDataPath .build/DerivedData \
+  build
+
+# 7) Install built app bundle
 xcrun devicectl device install app \
   --device <DEVICE_UDID> \
-  .build/DerivedData/Build/Products/Debug-iphoneos/metalbot.app
+  .build/DerivedData/Build/Products/<Debug-or-Release>-iphoneos/metalbot.app
 
-# 6) Launch app
+# 8) Launch app
 xcrun devicectl device process launch \
   --device <DEVICE_UDID> \
   com.metalbot.app
