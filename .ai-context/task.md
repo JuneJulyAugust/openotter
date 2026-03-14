@@ -8,14 +8,16 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 
 #### 1.1.1 Project and runtime setup
 
-- [ ] Create initial iOS app target (`metalbot`) and baseline module layout.
-- [ ] Add runtime support checks for LiDAR-capable devices and fallback error states.
-- [ ] Add app permissions/configuration required for capture and motion pipelines.
+- [x] Create initial iOS app target (`metalbot`) and baseline module layout.
+- [x] Add runtime support checks for LiDAR-capable devices and fallback error states.
+- [x] Add app permissions/configuration required for capture and motion pipelines.
 
-#### 1.1.2 LiDAR data contract
+#### 1.1.2 LiDAR point-cloud data contract
 
-- [ ] Implement LiDAR depth stream with on-screen diagnostics.
-- [ ] Define `DepthFrame` with `timestamp`, `depth`, `confidence`, and calibration fields.
+- [x] Implement LiDAR `sceneDepth` stream with on-screen diagnostics.
+- [x] Define `PointCloud` and `CaptureFrame` contracts with timestamp, points, camera transform, and RGB image.
+- [x] Implement orientation-correct point cloud projection (camera-pov aligned view matrix).
+- [x] Add RGB + point-cloud split-screen debug view (portrait top/bottom, landscape left/right).
 
 ### 1.2 Estimation component
 

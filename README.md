@@ -9,7 +9,8 @@ The iPhone runs perception, estimation, and high-level control. STM32 acts as MC
 ## Product Direction
 
 1. **MVP1 (active): LiDAR-only closed loop**
-   - LiDAR depth sensing
+   - LiDAR raw point-cloud capture from ARKit `sceneDepth`
+   - RGB + point-cloud debug visualization (camera-POV aligned)
    - IMU-first velocity estimation
    - speed planner + feedback control (reach target speed, then keep it)
    - straight driving by yaw-rate hold
@@ -27,23 +28,36 @@ The iPhone runs perception, estimation, and high-level control. STM32 acts as MC
 - Flat indoor floor for MVP1
 - Vehicle speed target range (initial): `0.1` to `2.0` m/s
 
+## Current MVP1 Status
+
+- iOS app target (`metalbot`) is up and deployable from CLI.
+- LiDAR runtime checks and camera permission flow are implemented.
+- Raw point cloud capture is implemented (ARKit `sceneDepth` back-projection).
+- Camera-POV point cloud rendering and RGB side-by-side debug view are implemented.
+- App icon pipeline is working through `Assets.xcassets`.
+
 ## Repository Docs
 
 - `.ai-context/plan.md`: high-level plan with invariants and architecture levels
 - `.ai-context/task.md`: hierarchical task backlog by MVP
 - `.ai-context/walkthrough.md`: implementation-time development log
+- `.ai-context/coordinate-systems.md`: camera/world/pixel coordinate definitions and math
+- `.ai-context/achievements.md`: task achievement index and evidence links
+- `assets/`: project artifacts (achievement screenshots and design sources)
 
 ## Key APIs and Sensors
 
-- LiDAR depth: `AVCaptureDevice.DeviceType.builtInLiDARDepthCamera` (iOS 15.4+).
-- Depth stream: `AVCaptureDepthDataOutput` with confidence maps.
+- LiDAR + RGB: ARKit `ARWorldTrackingConfiguration` with `.sceneDepth`.
+- Depth/confidence: `ARFrame.sceneDepth.depthMap` + `ARFrame.sceneDepth.confidenceMap`.
+- Camera image: `ARFrame.capturedImage`.
 - IMU: Core Motion (`CMDeviceMotion` for fused gyro + accelerometer + optional magnetometer).
-- GPU compute: Apple Metal for future on-device perception workloads.
+- GPU rendering: Metal (`MTKView`) point rendering for real-time point cloud visualization.
 
 ## Build and Deploy
 
 Use Xcode once for signing/capabilities, then iterate from CLI if preferred.
 
+- preferred loop: `cd metalbot-ios && ./build.sh deploy`
 - build: `xcodebuild`
 - install/launch: `xcrun devicectl` (Xcode 15+)
 
@@ -51,7 +65,13 @@ Use Xcode once for signing/capabilities, then iterate from CLI if preferred.
 # 1) List connected devices
 xcrun devicectl list devices
 
-# 2) Build app for iOS device
+# 2) Move into iOS app workspace
+cd metalbot-ios
+
+# 3) Fast path (recommended): build + install + launch
+./build.sh deploy
+
+# 4) Manual build app for iOS device
 xcodebuild \
   -project metalbot.xcodeproj \
   -scheme metalbot \
@@ -60,13 +80,13 @@ xcodebuild \
   -derivedDataPath .build/DerivedData \
   build
 
-# 3) Install built app bundle
+# 5) Install built app bundle
 xcrun devicectl device install app \
   --device <DEVICE_UDID> \
   .build/DerivedData/Build/Products/Debug-iphoneos/metalbot.app
 
-# 4) Launch app
+# 6) Launch app
 xcrun devicectl device process launch \
   --device <DEVICE_UDID> \
-  com.your.bundle.id
+  com.metalbot.app
 ```

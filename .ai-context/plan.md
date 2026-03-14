@@ -37,7 +37,7 @@ This plan is high-level and stable for now. We refine internals only after imple
 
 #### 2.1.2 Scope
 
-- LiDAR depth pipeline.
+- LiDAR raw point-cloud pipeline (from ARKit `sceneDepth` back-projection).
 - Velocity estimation (iPhone IMU first).
 - Speed planner and control.
 - Planner-triggered stop on blocked future path.
@@ -61,10 +61,12 @@ This plan is high-level and stable for now. We refine internals only after imple
 
 ### 3.1 Perception component
 
-#### 3.1.1 LiDAR depth processing
+#### 3.1.1 LiDAR point-cloud processing
 
-- Capture depth and confidence maps.
+- Capture `sceneDepth` depth/confidence maps and back-project to 3D point cloud.
+- Maintain orientation-correct camera/world transforms for stable geometry.
 - Provide obstacle points to the planner.
+- Keep RGB + point-cloud debug visualization for perception validation.
 
 ### 3.2 Estimation component
 
@@ -110,5 +112,6 @@ This plan is high-level and stable for now. We refine internals only after imple
 - Every sensor sample and command carries a monotonic timestamp.
 - Safety constraints dominate performance targets.
 - Core algorithms remain physics-based and deterministic, not ad-hoc heuristics.
+- Camera/pixel/world coordinate transforms are explicit and validated.
 - Interfaces are testable, versioned, and bounded.
 - MVP boundaries are strict to avoid scope drift.
