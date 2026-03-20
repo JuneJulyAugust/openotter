@@ -6,6 +6,9 @@
 #include <thread>
 #include <iomanip>
 #include <asio.hpp>
+#include <fcntl.h>
+#include <unistd.h>
+#include <termios.h>
 
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/screen.hpp>
@@ -33,6 +36,11 @@ struct MCPStatus {
     bool connected = false;
     float steering = 0.0f; 
     float motor = 0.0f;    
+    
+    // Serial state
+    std::string serial_port_name = "/dev/ttyUSB0";
+    bool serial_connected = false;
+    std::string last_serial_ack = "None";
     
     udp::endpoint iphone_endpoint;
     std::mutex mtx;
@@ -131,9 +139,112 @@ void run_network_server() {
     }
 }
 
+void run_serial_forwarder() {
+    asio::io_context io;
+    std::unique_ptr<asio::serial_port> serial;
+    
+    char read_buf[1024];
+    std::string read_line;
+
+    while (true) {
+        try {
+            if (!serial || !serial->is_open()) {
+                // Check if device physically exists before trying to open
+                if (access(status.serial_port_name.c_str(), F_OK) == -1) {
+                    {
+                        std::lock_guard<std::mutex> lock(status.mtx);
+                        status.serial_connected = false;
+                        status.last_serial_ack = "Waiting for USB device...";
+                    }
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    continue;
+                }
+
+                serial = std::make_unique<asio::serial_port>(io, status.serial_port_name);
+                serial->set_option(asio::serial_port_base::baud_rate(115200));
+                
+                int fd = serial->native_handle();
+                int flags = fcntl(fd, F_GETFL, 0);
+                fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+                {
+                    std::lock_guard<std::mutex> lock(status.mtx);
+                    status.serial_connected = true;
+                    status.last_serial_ack = "Booting Arduino (3.5s)...";
+                }
+                
+                // Wait for Arduino auto-reset and ESC arming
+                std::this_thread::sleep_for(std::chrono::milliseconds(3500));
+                
+                // Flush stale junk data that arrived during boot
+                tcflush(fd, TCIOFLUSH);
+
+                {
+                    std::lock_guard<std::mutex> lock(status.mtx);
+                    status.last_serial_ack = "Arduino ready";
+                }
+            }
+            
+            float s, m;
+            {
+                std::lock_guard<std::mutex> lock(status.mtx);
+                s = status.steering;
+                m = status.motor;
+            }
+            
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(2) << "S:" << s << ",M:" << m << "\n";
+            std::string cmd = ss.str();
+            
+            // Write with error code to catch disconnects immediately
+            std::error_code ec;
+            asio::write(*serial, asio::buffer(cmd), ec);
+            if (ec) {
+                throw std::runtime_error("Write failed: " + ec.message());
+            }
+            
+            // Read feedback
+            size_t len = serial->read_some(asio::buffer(read_buf, sizeof(read_buf)), ec);
+            if (!ec && len > 0) {
+                for (size_t i = 0; i < len; ++i) {
+                    if (read_buf[i] == '\n') {
+                        std::lock_guard<std::mutex> lock(status.mtx);
+                        // Truncate if too long to prevent UI layout issues
+                        if (read_line.length() > 40) read_line = read_line.substr(0, 40) + "...";
+                        status.last_serial_ack = read_line;
+                        read_line.clear();
+                    } else if (read_buf[i] != '\r') {
+                        read_line += read_buf[i];
+                    }
+                }
+            } else if (ec && ec != asio::error::would_block && ec != asio::error::try_again) {
+                throw std::runtime_error("Read failed: " + ec.message());
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(50)); // 20Hz update rate
+            
+        } catch (std::exception& e) {
+            {
+                std::lock_guard<std::mutex> lock(status.mtx);
+                status.serial_connected = false;
+                status.last_serial_ack = std::string("Err: ") + e.what();
+            }
+            if (serial) {
+                std::error_code ec;
+                serial->close(ec);
+                serial.reset();
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+    }
+}
+
 int main() {
     std::thread net_thread(run_network_server);
     net_thread.detach();
+
+    std::thread serial_thread(run_serial_forwarder);
+    serial_thread.detach();
 
     auto screen = ScreenInteractive::Fullscreen();
 
@@ -177,6 +288,14 @@ int main() {
             hbox(Elements{text(" Last Rx:     "), filler(), text(status.last_received_time)}),
         }) | borderLight | flex;
 
+        auto arduino_card = vbox(Elements{
+            text(" 🔌 ARDUINO CONTROL ") | bold | center,
+            separator(),
+            hbox(Elements{text(" Port: "), filler(), text(status.serial_port_name)}),
+            hbox(Elements{text(" Serial: "), filler(), text(status.serial_connected ? "CONNECTED" : "DISCONNECTED") | color(status.serial_connected ? Color::Green : Color::Red)}),
+            hbox(Elements{text(" Feedback: "), filler(), text(status.last_serial_ack) | dim}),
+        }) | borderLight | flex;
+
         auto dashboard = hbox(Elements{
             RenderMeter("STEERING", status.steering),
             RenderMeter("MOTOR POWER", status.motor),
@@ -184,7 +303,7 @@ int main() {
 
         return vbox(Elements{
             header,
-            hbox(Elements{ brain_card, comms_card }),
+            hbox(Elements{ brain_card, comms_card, arduino_card }),
             dashboard | size(HEIGHT, EQUAL, 8),
             hbox(Elements{
                 text(" Last CMD: " + status.last_command) | dim,
