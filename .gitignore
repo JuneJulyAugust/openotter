@@ -43,3 +43,10 @@ Pods/
 
 # Cursor
 .cursor/
+
+# Firmware Exploration
+firmware/learning-motor-ctrl/tools/bin/*
+!firmware/learning-motor-ctrl/tools/bin/.gitkeep
+firmware/learning-motor-ctrl/tools/arduino_data/*
+!firmware/learning-motor-ctrl/tools/arduino_data/.gitkeep
+firmware/learning-motor-ctrl/drivers/CH341SER/

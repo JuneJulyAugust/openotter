@@ -1,0 +1,6 @@
+board_manager:
+  additional_urls: []
+directories:
+  data: arduino_data
+  downloads: arduino_data/staging
+  user: arduino_data/user
