@@ -48,20 +48,20 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 
 ### 1.4 Raspberry Pi + Arduino MCP interface
 
-#### 1.4.1 Protocol and transport experiments
+#### 1.4.1 Protocol and transport implementation
 
 - [x] Define protocol v1 fields (`hb_iphone`, `hb_pi`, `cmd:s=x,m=y`).
 - [x] Implement Wi-Fi (UDP) adapter on Raspberry Pi 4B with bi-directional heartbeat.
 - [x] Implement TUI dashboard on Pi (FTXUI) with stationary bi-directional meters.
-- [ ] Implement Serial bridge between Raspberry Pi and Arduino.
-- [ ] Implement Arduino firmware for PWM/servo command execution.
+- [x] Implement USB serial bridge between Raspberry Pi and Arduino.
+- [x] Implement Arduino firmware for PWM/servo command execution.
 
 #### 1.4.2 MCP integration contract
 
 - [x] Implement iPhone heartbeat (1Hz) and 1.5s timeout logic.
 - [x] Implement Raspberry Pi heartbeat (1Hz) and 1.5s timeout logic.
 - [x] Implement "MCP Diagnostics" view on iOS for real-time monitoring.
-- [ ] Define Arduino/Raspberry Pi watchdog and link-loss safety behavior contract.
+- [ ] Define the Pi<->Arduino watchdog semantics and decide whether timeout should neutralize outputs or only log during debugging.
 
 ### 1.5 Validation and exit criteria
 
@@ -98,6 +98,6 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 
 #### 4.1.1 Open items
 
-- [ ] Decide first production transport after BLE/Wi-Fi experiments.
+- [ ] Decide whether BLE remains worth keeping as a prototype transport after Wi-Fi UDP is validated on vehicle.
 - [ ] Finalize stop-policy defaults after initial braking tests.
 - [ ] Finalize controller loop rate after latency and stability measurements.

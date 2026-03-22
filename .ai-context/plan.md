@@ -106,6 +106,14 @@ This plan is high-level and stable for now. We refine internals only after imple
 - Safety: 1.5-second connection timeout enforced on both iPhone (Brain) and Raspberry Pi (MCP).
 - Diagnostics: Real-time dashboard on Pi and dedicated "MCP Diagnostics" view on iOS.
 
+#### 3.5.2 Transport and watchdog matrix
+
+| Layer | Path | Current behavior | Status |
+| --- | --- | --- | --- |
+| iPhone <-> Pi | Wi-Fi UDP heartbeats and commands | 1.5-second connection timeout on both sides | Implemented |
+| Pi <-> Arduino | USB serial forwarding | Auto-reconnect, 3.5-second boot sync, ACK logging; firmware timeout currently logs without neutralization in debug mode | Implemented |
+| Drive arbitration | planner / estop | Planner stop should override normal speed; estop remains top priority | Planned |
+
 ## 4. Engineering Invariants
 
 ### 4.1 Cross-component invariants

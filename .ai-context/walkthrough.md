@@ -63,14 +63,23 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 - **Context:** Transition from STM32 to Raspberry Pi 4B + Arduino architecture for motor control.
 - **What we built/tested:**
-    - Developed `metalbot-mcp`: a C++17 application on Raspberry Pi using `Asio` for event-driven UDP networking and `FTXUI` for a TUI dashboard.
-    - Implemented bi-directional UDP heartbeats (1Hz) between iPhone and Pi with a synchronized 1.5-second connection timeout.
-    - Built a car-style TUI on the Pi with stationary, bi-directional meters for steering/motor power (Blue/Left for negative, Green/Right for positive).
-    - Added "MCP Diagnostics" view on iOS with real-time status, network metrics (Sent/Received counts/times), and manual sliders for remote control.
-    - Fixed iOS IP discovery and macOS-specific API build issues.
+  - Developed `metalbot-mcp`: a C++17 application on Raspberry Pi using `Asio` for event-driven UDP networking and `FTXUI` for a TUI dashboard.
+  - Implemented bi-directional UDP heartbeats (1Hz) between iPhone and Pi with a synchronized 1.5-second connection timeout.
+  - Built a car-style TUI on the Pi with stationary, bi-directional meters for steering/motor power (Blue/Left for negative, Green/Right for positive).
+  - Added "MCP Diagnostics" view on iOS with real-time status, network metrics (Sent/Received counts/times), and manual sliders for remote control.
+  - Fixed iOS IP discovery and macOS-specific API build issues.
 - **Issue observed:** (1) Layout jitter in TUI when meters were growing dynamically. (2) Heartbeat RX counter on Pi was erroneously counting control commands. (3) iOS build error on `Host.current().localizedName`.
 - **Root cause:** (1) Flexible-width elements caused the center point to shift; fixed with explicit container sizing. (2) Packet parsing didn't distinguish by prefix; fixed with `hb_iphone:`/`cmd:` separation. (3) `Host` API is macOS-only; replaced with `UIDevice`.
 - **Resolution:** Refined TUI layout for absolute stability, hardened packet parsing, and implemented iOS device discovery using UIKit.
 - **Validation:** Smooth, jitter-free dashboard on Pi; iPhone shows "Connected" status based on Pi heartbeats; 1.5s timeout works bi-directionally.
-- **Follow-up:** Next is the Serial bridge between the Raspberry Pi and Arduino for real-world PWM control.
+- **Follow-up:** Next is vehicle validation of the Pi serial bridge, Arduino timeout policy, and planner/control integration.
 
+### 2026-03-20 - MVP1 Step 3: Pi serial bridge + Arduino actuation path
+
+- **Context:** Raspberry Pi bridge and Arduino firmware for low-level actuation.
+- **What we built/tested:** Implemented USB serial forwarding from the Pi to the Arduino with automatic reconnect, 3.5-second boot sync, serial buffer flushing, and ACK feedback in the dashboard. The Arduino firmware accepts normalized steering/motor commands and maps them to servo and ESC outputs.
+- **Issue observed:** The firmware README described timeout neutralization, but the sketch only logs a warning when no command arrives.
+- **Root cause:** `neutralize()` is intentionally commented out in the sketch for debugging.
+- **Resolution:** Updated the firmware README to match the current warning-only timeout behavior.
+- **Validation:** The implemented protocol and timeout behavior are reflected in `metalbot-mcp/CHANGELOG.md` `0.2.0` and `firmware/metalbot-arduino/metalbot-arduino.ino`.
+- **Follow-up:** Revisit timeout neutralization before vehicle-level driving tests.

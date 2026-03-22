@@ -10,14 +10,17 @@ This application acts as the "MCP High-Level" bridge between the iPhone (Brain) 
 - **Dashboard UI:** Terminal UI built with `FTXUI` featuring bi-directional car-style meters.
 - **Health Monitoring:** 1.5-second watchdog timeout for connection status tracking.
 - **Identity Display:** Real-time display of local (Pi) and remote (iPhone) network identities.
+- **Serial Bridge:** Automatic USB serial forwarding to the Arduino with reconnect, boot sync, and ACK logging.
 
 ## Requirements
 
 ### Hardware
+
 - Raspberry Pi 4B.
 - Connected Arduino (Low-level MCP) via Serial.
 
 ### Software
+
 - C++17 compiler (`g++`).
 - `CMake` (3.16+).
 - `libasio-dev` (networking library).
@@ -26,10 +29,13 @@ This application acts as the "MCP High-Level" bridge between the iPhone (Brain) 
 ## Installation
 
 1. Install dependencies on the Pi:
+
    ```bash
    sudo apt update && sudo apt install -y cmake libasio-dev
    ```
+
 2. Clone `FTXUI` in the project root:
+
    ```bash
    git clone https://github.com/ArthurSonzogni/FTXUI.git
    ```
@@ -47,14 +53,17 @@ chmod +x deploy.sh
 ## Running
 
 Run the built executable on the Pi:
+
 ```bash
 ~/metalbot-mcp/build/metalbot-mcp
 ```
 
 ## Architecture
 
+```text
+iPhone (Brain) <---- UDP (1.0 Hz HB) ----> Pi (MCP Bridge) <---- USB Serial + ACKs ----> Arduino (Low-level)
 ```
-iPhone (Brain) <---- UDP (1.0 Hz HB) ----> Pi (MCP Bridge) <---- Serial ----> Arduino (Low-level)
-```
+
 - **Port:** 8888 (UDP).
 - **Timeout:** 1.5s Watchdog.
+- The Pi keeps the Arduino link open, retries on USB errors, and shows the latest ACK line in the dashboard.
