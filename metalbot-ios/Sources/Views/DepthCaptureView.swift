@@ -5,7 +5,6 @@ import SwiftUI
 /// Landscape: RGB left, point cloud right.
 struct DepthCaptureView: View {
     @StateObject private var viewModel = CaptureViewModel()
-    @State private var isShowingMCPTest = false
 
     var body: some View {
         ZStack {
@@ -25,9 +24,6 @@ struct DepthCaptureView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(viewModel.state == .running)
-        .sheet(isPresented: $isShowingMCPTest) {
-            MCPTestView()
-        }
     }
 
     private var captureDisplay: some View {
@@ -135,16 +131,6 @@ struct DepthCaptureView: View {
                         .frame(maxWidth: 240)
                         .background(.cyan, in: Capsule())
                         .foregroundStyle(.black)
-                }
-
-                Button(action: { isShowingMCPTest = true }) {
-                    Label("MCP Diagnostics", systemImage: "cpu")
-                        .font(.headline)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 12)
-                        .frame(maxWidth: 240)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .foregroundStyle(.white)
                 }
             }
         }

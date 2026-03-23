@@ -25,6 +25,29 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-03-22 - MVP1 Step 4: ARKit 6D Pose Integration and Visualization
+
+- **Context:** Implementing the new pose estimation module based on the ARKit VIO pivot.
+- **What we built/tested:** Created `ARKitPoseViewModel` configuring an `ARWorldTrackingConfiguration` with `.gravity` alignment, `.sceneDepth`, `.mesh` reconstruction, and vertical/horizontal plane detection for maximum accuracy. Built a custom, forced-landscape `ARKitPoseView` featuring an interactive 2D trajectory canvas, auto-zoom, and a Jet colormap for history playback.
+- **Issue observed:** (1) Initial drift was high when moving the phone before ARKit fully initialized. (2) Standard iOS views cut off text around the physical notch when forced into landscape while the device was held vertically.
+- **Root cause:** (1) ARKit requires time and environmental texture to build its initial visual anchors. (2) `SafeAreaInsets` behave unintuitively when a view is mathematically rotated 90 degrees to bypass system orientation locks.
+- **Resolution:** (1) Added UI states mapping to `ARCamera.TrackingState` to warn the user during initialization, and blocked trajectory recording until tracking is `.normal`. (2) Hardcoded generous `leftPad` and `rightPad` tailored to the physical dimensions of the iPhone 13 Pro Max.
+- **Validation:** Trajectory visualization maps movement cleanly to a 1.0m grid. Jet colormap correctly indicates time-series history when tracking is stopped.
+- **Follow-up:** Begin integration of Raspberry Pi Bluetooth connection to read ESC velocity data.
+
+### 2026-03-22 - Research: Transition to ARKit 6D Pose and ESC Velocity
+
+- **Context:** Moving from experimental IMU-only estimation to robust robotics sensors.
+- **What we built/tested:** Research phase only. Evaluated ARKit `worldTracking` for 6D pose and ESC Bluetooth telemetry for velocity.
+- **Issue observed:** Pure IMU double-integration for velocity and position is not feasible due to high drift and noise floor on mobile-grade sensors.
+- **Root cause:** Physics of low-cost MEMS IMUs; lack of external reference leads to unbounded error growth.
+- **Resolution:** Updated `plan.md` and `task.md` to pivot:
+  - **Pose**: Use ARKit's Visual-Inertial Odometry (VIO) for 6D position and orientation.
+  - **Velocity**: Use Raspberry Pi to connect to the ESC via Bluetooth for direct RPM/speed telemetry.
+  - **New Task**: Add `ARKitPoseView` to the iOS app to validate tracking stability before planner integration.
+- **Validation:** N/A (Research and Plan update).
+- **Follow-up:** Implement `ARKitPoseView` and establish Raspberry Pi <-> ESC Bluetooth communication.
+
 ### 2026-03-14 - MVP1 Step 1: LiDAR capture + RGB debug display
 
 - **Context:** iPhone 13 Pro/Pro Max app bring-up for MVP1 perception foundation.

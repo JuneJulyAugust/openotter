@@ -4,7 +4,7 @@ import SwiftUI
 struct MetalbotApp: App {
     var body: some Scene {
         WindowGroup {
-            DepthCaptureView()
+            HomeView()
         }
     }
 }

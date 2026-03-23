@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-22
+
+### Added
+- **ARKit 6D Pose Estimation**: New `ARKitPoseView` to demonstrate and validate visual-inertial odometry.
+- **Landscape UI**: Forced landscape orientation for the pose view with custom layout and safe area handling.
+- **Trajectory Visualization**: Interactive 2D map with auto-zoom, grid scaling, and Jet colormap for history playback.
+- **Enhanced Accuracy**: Enabled `.sceneDepth`, `.mesh` scene reconstruction, vertical plane detection, and max video resolution in the ARSession to minimize VIO drift.
+
+### Changed
+- Reorganized `HomeView` to serve as a unified landing page for Perception, Estimation, and Diagnostics modules.
+
 ## [0.3.0] - 2026-03-20
 
 ### Added

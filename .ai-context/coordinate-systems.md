@@ -1,10 +1,23 @@
 # Coordinate Systems Reference
 
-## ARKit World Space (right-handed)
-- **+X**: East (at session start)
+## Vehicle Robot Frame (metalbot)
+Based on physical mounting:
+- **Mounting**: Phone is in Landscape Left orientation (top of phone points left). Back camera is on the left side, facing forward.
+- **+X**: Forward
+- **+Y**: Up (opposite gravity)
+- **+Z**: Right
+- **Origin**: Starting position of the robot.
+
+## ARKit World Space (.gravity alignment)
+Used for tracking robot pose. Independent of compass.
+- **-Z**: Initial Forward direction (camera facing)
+- **+X**: Initial Right direction
 - **+Y**: Up (gravity opposite)
-- **+Z**: South (at session start)
-- Origin: session start position
+
+**Mapping ARKit to Robot Frame**:
+- `Robot.X (Forward) = -ARKit.Z`
+- `Robot.Y (Up) = ARKit.Y`
+- `Robot.Z (Right) = ARKit.X`
 
 ## ARKit Camera Space (right-handed)
 - **+X**: Right (from camera's perspective)

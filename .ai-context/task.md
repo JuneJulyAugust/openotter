@@ -21,11 +21,12 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 
 ### 1.2 Estimation component
 
-#### 1.2.1 IMU-first state estimation
+#### 1.2.1 ARKit Pose and ESC Velocity
 
-- [ ] Define `VehicleState` model (`speed_mps`, `yaw_rate_rps`, `timestamp`).
-- [ ] Implement Core Motion pipeline (gyro + accel, optional magnetometer context).
-- [ ] Implement baseline velocity estimator.
+- [x] Define `VehicleState` model (`pose: SIMD-float4x4`, `speed_mps`, `timestamp`).
+- [x] Implement ARKit `worldTracking` session to extract 6D camera pose.
+- [x] Add `ARKitPoseView` to demonstrate and validate 6D pose tracking.
+- [ ] Integrate ESC velocity telemetry into the `VehicleState` (sourced from MCP).
 
 ### 1.3 Planner and control component
 
@@ -55,6 +56,8 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 - [x] Implement TUI dashboard on Pi (FTXUI) with stationary bi-directional meters.
 - [x] Implement USB serial bridge between Raspberry Pi and Arduino.
 - [x] Implement Arduino firmware for PWM/servo command execution.
+- [ ] Implement Bluetooth LE connection from Raspberry Pi to ESC for telemetry.
+- [ ] Forward ESC velocity telemetry (`speed_mps`) from Pi to iPhone via UDP.
 
 #### 1.4.2 MCP integration contract
 

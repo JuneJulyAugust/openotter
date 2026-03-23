@@ -38,7 +38,8 @@ This plan is high-level and stable for now. We refine internals only after imple
 #### 2.1.2 Scope
 
 - LiDAR raw point-cloud pipeline (from ARKit `sceneDepth` back-projection).
-- Velocity estimation (iPhone IMU first).
+- 6D Pose estimation (ARKit World Tracking).
+- Velocity estimation (ESC telemetry via Bluetooth on Raspberry Pi).
 - Speed planner and control.
 - Planner-triggered stop on blocked future path.
 - iPhone to Raspberry Pi command path.
@@ -64,16 +65,16 @@ This plan is high-level and stable for now. We refine internals only after imple
 #### 3.1.1 LiDAR point-cloud processing
 
 - Capture `sceneDepth` depth/confidence maps and back-project to 3D point cloud.
-- Maintain orientation-correct camera/world transforms for stable geometry.
+- Maintain orientation-correct camera/world transforms for stable geometry using ARKit pose.
 - Provide obstacle points to the planner.
 - Keep RGB + point-cloud debug visualization for perception validation.
 
 ### 3.2 Estimation component
 
-#### 3.2.1 MVP1 velocity and orientation
+#### 3.2.1 MVP1 Pose and Velocity
 
-- iPhone IMU (gyro + accelerometer) is the only velocity source for MVP1.
-- Heading reference: gyro yaw-rate hold for straight driving; magnetometer available as coarse orientation context.
+- **Pose**: 6D Pose (position + orientation) sourced from ARKit `worldTracking`. This provides stable localization relative to the start point.
+- **Velocity**: Real-time speed sourced from the Electronic Speed Controller (ESC) via Bluetooth connection on the Raspberry Pi. This telemetry is forwarded to the iPhone Brain.
 
 ### 3.3 Planner and control component
 
@@ -82,8 +83,8 @@ This plan is high-level and stable for now. We refine internals only after imple
 - Speed planner: reach target speed, then keep it.
 - Planner checks whether obstacle points block the future path from the speed planner.
 - Planner emits stop signal when the future path is blocked.
-- Controller tracks planner speed command.
-- Heading hold for straight driving.
+- Controller tracks planner speed command using ESC telemetry as feedback.
+- Heading hold using ARKit orientation.
 - Initial command loop baseline: `10 Hz` (subject to testing).
 - Initial speed envelope: `0.1` to `2.0` m/s (configurable).
 
@@ -102,9 +103,11 @@ This plan is high-level and stable for now. We refine internals only after imple
 - Command protocol: UDP-based, bi-directional heartbeats (1.0 Hz) and asynchronous control commands.
 - Transport: Wi-Fi (UDP) is the primary transport for initial testing; BLE remains a prototype candidate.
 - Raspberry Pi 4B: Acts as the high-level bridge ("MCP High-Level"), running an event-driven C++ application (Asio) with a TUI dashboard (FTXUI).
+- ESC Telemetry: Raspberry Pi maintains a Bluetooth connection to the ESC to pull real-time RPM/speed data.
 - Arduino: Handles low-level PWM/servo control ("MCP Low-Level") via Serial bridge from the Pi.
 - Safety: 1.5-second connection timeout enforced on both iPhone (Brain) and Raspberry Pi (MCP).
 - Diagnostics: Real-time dashboard on Pi and dedicated "MCP Diagnostics" view on iOS.
+- **ARKit Feasibility**: Dedicated iOS view to demonstrate ARKit 6D pose stability for robot tracking.
 
 #### 3.5.2 Transport and watchdog matrix
 

@@ -1,23 +1,23 @@
-# Metalbot Development Milestone: End-to-End Control Path (2026-03-20)
+# Metalbot Development Milestone: ARKit 6D Pose Estimation (2026-03-22)
 
 ## Summary
-Successfully implemented and verified the full control path from the iPhone brain to the physical actuators of the RC car. This milestone bridges the gap between our high-level iOS application and low-level Arduino firmware.
+Successfully implemented and visualized the 6D pose estimation using ARKit's Visual-Inertial Odometry (VIO). We pivoted from pure IMU-based velocity/position tracking to ARKit for localization and Bluetooth ESC telemetry for velocity. 
 
 ### Achievements
-1.  **Arduino Control Module**: Created `firmware/metalbot-arduino/`, a dedicated firmware for the Arduino Mega.
-    - Implemented a normalized `-1.0 to 1.0` serial protocol for steering and motor power.
-    - Included safety features: ESC arming sequence and heartbeat monitoring (currently disabled for debugging).
-    - Isolated toolchain: Self-contained `arduino-cli` setup on the Raspberry Pi for easy deployment.
-2.  **MCP Serial Integration**: Updated the C++ bridge on the Raspberry Pi (`metalbot-mcp`) to forward UDP commands from the iPhone to the Arduino via USB Serial.
-    - Added robustness features: Auto-reconnect on I/O errors, 3.5s boot delay handling, and serial buffer flushing.
-    - Integrated real-time serial feedback into the FTXUI dashboard.
-3.  **Deployment & Testing**: Established robust `deploy.sh` scripts for both the Arduino and MCP modules, enabling seamless updates from the development machine to the Pi.
-4.  **Hardware Verification**: Confirmed that steering commands from the iPhone correctly actuate the servo on Pin 4.
+1.  **Home Page Redesign**: Reorganized `HomeView.swift` to act as the primary landing page, categorizing features into Perception, Estimation, and Diagnostics.
+2.  **ARKit Pose ViewModel**: Implemented `ARKitPoseViewModel` to manage the `ARSession`.
+    -   Configured for `.gravity` alignment to establish a consistent Robot Coordinate Frame (+X Forward, +Y Up, +Z Right).
+    -   Enabled advanced accuracy features: `.sceneDepth` (LiDAR), `.mesh` scene reconstruction, and horizontal/vertical plane detection to minimize drift.
+    -   Exposed internal `ARCamera.TrackingState` to ensure data is only recorded when VIO is fully initialized.
+3.  **Landscape Visualization (`ARKitPoseView`)**:
+    -   Built a robust, forced-landscape UI using `GeometryReader`, bypassing iOS system orientation locks, with fixed safe areas for the iPhone 13 Pro Max.
+    -   Implemented a 2D canvas plotting the X-Z trajectory with continuous real-time rendering.
+    -   Added auto-zooming, gesture-based pan/zoom, and a time-based Jet colormap gradient that renders the historical path when tracking is stopped.
 
 ## Current State
-- **Steering**: Fully operational end-to-end.
-- **Motor**: ESC arming logic is in place; physical motor disconnected for safety during initial testing.
-- **Robustness**: MCP gracefully handles Arduino resets and power brownouts.
+- **Perception**: LiDAR point cloud and RGB debug view operational.
+- **Estimation**: 6D Pose (Position + Orientation) actively tracking with high accuracy via ARKit.
+- **Control**: End-to-end path from iPhone to Arduino verified.
 
 ## Prompt Context for Next Session
-"In the last session, we completed the control path from iPhone -> Raspberry Pi (UDP) -> Arduino (Serial) -> Actuators. We have a robust MCP bridge and a self-contained Arduino deployment system. Steering is verified on Pin 4. Next steps: Safely test the motor power on Pin 8 and begin integrating the LiDAR/Vision feedback loop for autonomous control."
+"In the last session, we completed the ARKit 6D Pose estimation module on iOS. We have a highly accurate, drift-minimized trajectory visualization running in a forced-landscape view. We also established the 'HomeView' to tie the app together. The next major step is to tackle the other half of our new estimation strategy: implementing the Bluetooth LE connection on the Raspberry Pi to pull real-time velocity telemetry directly from the ESC, and forwarding that data back to the iPhone."
