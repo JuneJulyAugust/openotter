@@ -25,8 +25,28 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
-### 2026-03-22 - MVP1 Step 4: ARKit 6D Pose Integration and Visualization
+### 2026-03-23 - MVP1 Step 6: ARKit World Map Management and Accuracy Tuning
 
+- **Context:** Enhancing ARKit pose stability with persistence and drift correction.
+- **What we built/tested:** Implemented `MapManagerView` and metadata storage for named ARWorldMaps. Refined `ARKitPoseViewModel` with a dedicated high-priority delegate queue and gimbal-safe yaw extraction (using `atan2`).
+- **Issue observed:** (1) Gimbal lock and ±π discontinuity in previous Euler-angle yaw extraction caused trajectory "snaps". (2) UI contention periodically caused `session(_:didUpdate:)` to drop frames.
+- **Root cause:** (1) Improper use of Euler angles instead of quaternion-derived or matrix-based orientation extraction. (2) Heavy rendering tasks on the main thread blocked the ARSession delegate callbacks.
+- **Resolution:** (1) Rewrote yaw extraction to use `atan2(-R.31, R.33)` from the transform matrix, plus a π offset correction for gimbal-safe behavior. (2) Moved ARKit processing to a high-priority background serial queue.
+- **Validation:** Trajectory visualization is perfectly smooth during full 360-degree rotations. World map save/load successfully relocalizes the robot within 1-2cm of previous start points.
+- **Follow-up:** Begin integration of ESC Bluetooth telemetry on the Raspberry Pi.
+
+### 2026-03-23 - MVP1 Step 5: Architectural Refactoring for Testability (SRP/DIP)
+
+- **Context:** Improving the maintainability and testability of the MCP bridge and iPhone network layers.
+- **What we built/tested:** Decomposed monolithic ViewModels into transport (`MCPConnection`), protocol logic (`MCPProtocol`), and state management. Implemented full unit test coverage for the network protocol on both iOS (XCTest) and MCP (GoogleTest).
+- **Issue observed:** Protocol bugs were hard to debug across the Wi-Fi link without a hardware-in-the-loop setup.
+- **Root cause:** Protocol parsing logic was tightly coupled to networking and UI code.
+- **Resolution:** Applied the Dependency Inversion Principle (DIP). Moved pure parsing logic into isolated, side-effect-free modules that can be tested in isolation.
+- **Validation:** 18 new GoogleTest cases and comprehensive XCTest suite passing on local development machines (macOS).
+- **Follow-up:** Keep protocol logic isolated as new telemetry fields (ESC speed) are added.
+
+### 2026-03-22 - MVP1 Step 4: ARKit 6D Pose Integration and Visualization
+...
 - **Context:** Implementing the new pose estimation module based on the ARKit VIO pivot.
 - **What we built/tested:** Created `ARKitPoseViewModel` configuring an `ARWorldTrackingConfiguration` with `.gravity` alignment, `.sceneDepth`, `.mesh` reconstruction, and vertical/horizontal plane detection for maximum accuracy. Built a custom, forced-landscape `ARKitPoseView` featuring an interactive 2D trajectory canvas, auto-zoom, and a Jet colormap for history playback.
 - **Issue observed:** (1) Initial drift was high when moving the phone before ARKit fully initialized. (2) Standard iOS views cut off text around the physical notch when forced into landscape while the device was held vertically.

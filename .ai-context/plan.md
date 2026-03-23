@@ -74,6 +74,7 @@ This plan is high-level and stable for now. We refine internals only after imple
 #### 3.2.1 MVP1 Pose and Velocity
 
 - **Pose**: 6D Pose (position + orientation) sourced from ARKit `worldTracking`. This provides stable localization relative to the start point.
+- **World Map Persistence**: ARKit `ARWorldMap` save/load logic provides drift-corrected relocalization for recurring runs.
 - **Velocity**: Real-time speed sourced from the Electronic Speed Controller (ESC) via Bluetooth connection on the Raspberry Pi. This telemetry is forwarded to the iPhone Brain.
 
 ### 3.3 Planner and control component
@@ -102,18 +103,19 @@ This plan is high-level and stable for now. We refine internals only after imple
 
 - Command protocol: UDP-based, bi-directional heartbeats (1.0 Hz) and asynchronous control commands.
 - Transport: Wi-Fi (UDP) is the primary transport for initial testing; BLE remains a prototype candidate.
-- Raspberry Pi 4B: Acts as the high-level bridge ("MCP High-Level"), running an event-driven C++ application (Asio) with a TUI dashboard (FTXUI).
+- Raspberry Pi 4B: Acts as the high-level bridge ("MCP High-Level"), running a modular event-driven C++ application (Asio) with a TUI dashboard (FTXUI).
+- Architectural Integrity: Pure logic (protocol/status) decoupled from transport (UDP/Serial) and UI.
 - ESC Telemetry: Raspberry Pi maintains a Bluetooth connection to the ESC to pull real-time RPM/speed data.
 - Arduino: Handles low-level PWM/servo control ("MCP Low-Level") via Serial bridge from the Pi.
 - Safety: 1.5-second connection timeout enforced on both iPhone (Brain) and Raspberry Pi (MCP).
 - Diagnostics: Real-time dashboard on Pi and dedicated "MCP Diagnostics" view on iOS.
-- **ARKit Feasibility**: Dedicated iOS view to demonstrate ARKit 6D pose stability for robot tracking.
+- **ARKit Feasibility**: Dedicated iOS view for 6D pose stability, trajectory tracking, and world map management.
 
 #### 3.5.2 Transport and watchdog matrix
 
 | Layer | Path | Current behavior | Status |
 | --- | --- | --- | --- |
-| iPhone <-> Pi | Wi-Fi UDP heartbeats and commands | 1.5-second connection timeout on both sides | Implemented |
+| iPhone <-> Pi | Wi-Fi UDP heartbeats and commands | 1.5-second connection timeout on both sides; refactored for testability | Implemented |
 | Pi <-> Arduino | USB serial forwarding | Auto-reconnect, 3.5-second boot sync, ACK logging; firmware timeout currently logs without neutralization in debug mode | Implemented |
 | Drive arbitration | planner / estop | Planner stop should override normal speed; estop remains top priority | Planned |
 

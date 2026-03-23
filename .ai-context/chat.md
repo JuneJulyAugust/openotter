@@ -4,8 +4,35 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
-## 2026-03-22 - ARKit 6D Pose Estimation
+## 2026-03-23 - MCP Refactor and World Map Management
 
+### Summary
+Extensive architectural refactoring for both iOS and MCP (Raspberry Pi) components to ensure testability and separation of concerns. Implemented ARKit World Map management for persistent, drift-corrected localization.
+
+### Achievements
+1.  **iOS Refactor**: Decomposed `MCPTestViewModel` into `MCPConnection` (UDP transport), `MCPProtocol` (parsing), and a thin coordinator.
+    - Added high-coverage XCTest suite for the iOS network protocol.
+    - Implemented high-priority delegate queue for ARKit to prevent UI contention frame drops.
+2.  **MCP (C++) Refactor**: Broke monolithic `main.cpp` into discrete modules: `protocol`, `network_server`, `serial_forwarder`, `dashboard`, and `mcp_status`.
+    - Integrated GoogleTest for the C++ protocol logic, enabling hardware-independent CI.
+3.  **World Map Management**:
+    - Added `MapManagerView` for saving, loading, and deleting ARKit World Maps.
+    - Implemented JSON-based metadata persistence for multiple named maps.
+    - Enhanced `ARKitPoseViewModel` with relocalization handlers and visual marker (ARReferenceImage) support.
+4.  **Tracking Accuracy**: Fixed a ±π discontinuity in yaw extraction and implemented gimbal-safe rotation handling.
+
+### Current State
+- **Perception**: LiDAR and RGB pipelines are stable.
+- **Estimation**: 6D Pose with World Map persistence is operational.
+- **Control**: Refactored, testable command path from iPhone to Arduino.
+
+### Prompt Context for Next Session
+"In the last session, we completed a major architectural refactor for testability and added ARKit World Map management for persistent localization. The protocol logic is now covered by unit tests on both iOS and MCP. The next priority remains the Raspberry Pi Bluetooth LE connection to the ESC for real-time velocity telemetry."
+
+---
+
+## 2026-03-22 - ARKit 6D Pose Estimation
+...
 ### Summary
 Successfully implemented and visualized the 6D pose estimation using ARKit's Visual-Inertial Odometry (VIO). We pivoted from pure IMU-based velocity/position tracking to ARKit for localization and Bluetooth ESC telemetry for velocity. 
 

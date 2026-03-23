@@ -26,6 +26,8 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 - [x] Define `VehicleState` model (`pose: SIMD-float4x4`, `speed_mps`, `timestamp`).
 - [x] Implement ARKit `worldTracking` session to extract 6D camera pose.
 - [x] Add `ARKitPoseView` to demonstrate and validate 6D pose tracking.
+- [x] Implement ARKit World Map management (save/load/management UI) for persistent localization.
+- [x] Refactor MCP and iOS ViewModels for testability (SRP/DIP).
 - [ ] Integrate ESC velocity telemetry into the `VehicleState` (sourced from MCP).
 
 ### 1.3 Planner and control component

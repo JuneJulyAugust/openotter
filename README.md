@@ -45,9 +45,10 @@ flowchart LR
 1. **MVP1 (active): LiDAR-only closed loop**
    - LiDAR raw point-cloud capture from ARKit `sceneDepth`
    - RGB + point-cloud debug visualization (portrait top/bottom, landscape left/right)
-   - IMU-first velocity estimation
+   - 6D Pose estimation via ARKit Visual-Inertial Odometry (VIO) with World Map persistence
+   - ESC velocity estimation via Bluetooth on Raspberry Pi
    - speed planner + feedback control (reach target speed, then keep it)
-   - straight driving by yaw-rate hold
+   - straight driving by yaw-rate hold (ARKit-derived)
    - planner-triggered stop when obstacle points block future path
    - iPhone to Raspberry Pi 4B command bridge over Wi-Fi UDP
    - Raspberry Pi to Arduino USB serial bridge for PWM/servo control
@@ -61,6 +62,7 @@ flowchart LR
 - iPhone 13 Pro / iPhone 13 Pro Max
 - RC chassis with steering and throttle actuation
 - Raspberry Pi 4B + Arduino MCP: Wi-Fi UDP for iPhone<->Pi, USB serial for Pi<->Arduino
+- ESC with Bluetooth telemetry support
 - Flat indoor floor for MVP1
 - Vehicle speed target range (initial): `0.1` to `2.0` m/s
 
@@ -69,10 +71,12 @@ flowchart LR
 - iOS app target (`metalbot`) is deployable from CLI and renders LiDAR point clouds plus RGB debug views.
 - LiDAR runtime checks and camera permission flow are implemented.
 - Raw point cloud capture is implemented (ARKit `sceneDepth` back-projection).
+- **ARKit 6D Pose Estimation**: Visual-Inertial Odometry (VIO) with trajectory visualization and World Map persistence (save/load) is implemented.
 - Wi-Fi UDP MCP bridge and iOS MCP Diagnostics are implemented.
+- **Architectural Refactor**: Decomposed MCP and iOS ViewModels into testable, protocol-oriented components.
 - Raspberry Pi USB serial forwarding to the Arduino is implemented with boot sync, reconnect, and ACK logging.
 - App icon pipeline is working through `Assets.xcassets`.
-- Remaining MVP1 work: IMU-first velocity estimation, planner/control loop, and obstacle-stop logic.
+- Remaining MVP1 work: ESC Bluetooth telemetry integration on Pi, planner/control loop, and obstacle-stop logic.
 
 ## Repository Docs
 
