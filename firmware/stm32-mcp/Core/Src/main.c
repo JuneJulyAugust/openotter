@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "ble_app.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -117,13 +117,34 @@ int main(void)
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+  /* Start TIM3 PWM on CH1 (throttle PB4) and CH4 (steering PB1) */
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
+  /* Initialize BLE stack and custom GATT service */
+  BLE_App_Init(&htim3);
   /* USER CODE END 2 */
+
+  /* Initialize LD1 on PA5 as Output for debug blinking */
+  GPIO_InitTypeDef GPIO_InitStruct_Debug = {0};
+  GPIO_InitStruct_Debug.Pin = GPIO_PIN_5;
+  GPIO_InitStruct_Debug.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct_Debug.Pull = GPIO_NOPULL;
+  GPIO_InitStruct_Debug.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct_Debug);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    BLE_App_Process();
+
+    /* Toggle LD1 (PA5) every 500ms to show the board is alive */
+    static uint32_t last_toggle = 0;
+    if (HAL_GetTick() - last_toggle > 500) {
+        HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+        last_toggle = HAL_GetTick();
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

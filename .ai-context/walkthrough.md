@@ -25,6 +25,20 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-03-27 - STM32 BLE Advertising Debugging & Initialization Root Causes
+
+- **Context:** Transitioning low-level control from Arduino to STM32L475 (B-L475E-IOT01A) and enabling BLE command reception directly from the iPhone via the SPBTLE-RF (BlueNRG-MS) module.
+- **What we built/tested:** 
+  - Integrated X-CUBE-BLE1 middleware into the CMake build system.
+  - Set up TIM3 for PWM on PB1/PB4 and defined a custom GATT service with steering/throttle characteristics.
+  - Created a SwiftUI control interface leveraging a custom CoreBluetooth manager wrapper.
+  - Implemented debug pin blinking throughout `BLE_App_Init` to trace execution progress when advertising failed to start.
+- **Issue observed:** The STM32 firmware successfully built and flashed, but the BLE device "METALBOT-MCP" never appeared on nRF Connect or iOS. Adding a heartbeat LED in the main loop confirmed the main loop was entirely frozen. Further isolating with linear pinpoint delays revealed the freeze occurs completely prior to `BLE_App_Init()`.
+- **Root cause:** The initialization sequence hangs before the main application loop, preventing BLE application initialization. The exact mechanism isn't isolated yet, but it locks the ARM core or disables clock peripherals before reaching our `BLE_App_Init()` routine or during early HAL setup.
+- **Resolution:** (Pending) Identified that the hang occurs extremely early in `main()` or global HAL init, before BLE tasks are registered.
+- **Validation:** Visual indication (LD1 `PA5` connected to debugger logic) does not power on during execution.
+- **Follow-up:** Systematic bisection of `main()` Initialization (`MX_GPIO_Init`, `SystemClock_Config`, etc.), verify hardware watchdog state, and check fault hooks for precise hang location.
+
 ### 2026-03-27 - STM32 Firmware Target Setup
 
 - **Context:** Establishing a robust, command-line-buildable firmware foundation for the STM32L475 target using STM32CubeCLT.

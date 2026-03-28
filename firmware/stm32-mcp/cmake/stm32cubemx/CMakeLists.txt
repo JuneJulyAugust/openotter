@@ -5,6 +5,7 @@ enable_language(C ASM)
 set(MX_Defines_Syms 
 	USE_HAL_DRIVER 
 	STM32L475xx
+	BLUENRG_MS=1
     $<$<CONFIG:Debug>:DEBUG>
 )
 
@@ -15,11 +16,20 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Inc/Legacy
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Device/ST/STM32L4xx/Include
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Include
+    # BLE middleware includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_services
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/hw
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/tl
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/debug
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE
 )
 
 # STM32CubeMX generated application sources
 set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_app.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c
@@ -56,10 +66,40 @@ set(STM32_Drivers_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_pcd.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_pcd_ex.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_ll_usb.c
+    # Additional drivers needed for BLE middleware
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_rtc.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal_rtc_ex.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_ll_rcc.c
 )
 
-# Drivers Midllewares
-
+# BLE Middleware sources (BlueNRG-MS stack)
+set(BLE_Middleware_Src
+    # BLE Core (HCI, GAP, GATT, HAL ACI)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core/bluenrg_gap_aci.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core/bluenrg_gatt_aci.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core/bluenrg_hal_aci.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core/bluenrg_l2cap_aci.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core/hci_le.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_core/osal.c
+    # Transport Layer (SPI protocol)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/tl/tl_ble_hci.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/tl/tl_ble_io.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/tl/tl_ble_reassembly.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/tl/tl_ble_spi.c
+    # Hardware Abstraction (SPI driver, timer server, LPM)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/hw/hw_spi.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/hw/hw_timerserver.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/hw/hw_lpm.c
+    # Services (service controller, LED Button service template)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_services/svc_ctl.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/ble_services/lbs_stm.c
+    # Utilities (scheduler, memory, queue, list, LPM)
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities/scheduler.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities/memory_manager.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities/queue.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities/list.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities/lpm.c
+)
 
 
 # Link directories setup
@@ -69,6 +109,7 @@ set(MX_LINK_DIRS
 # Project static libraries
 set(MX_LINK_LIBS 
     STM32_Drivers
+    BLE_Middleware
     ${TOOLCHAIN_LINK_LIBRARIES}
     
 )
@@ -81,6 +122,11 @@ target_compile_definitions(stm32cubemx INTERFACE ${MX_Defines_Syms})
 add_library(STM32_Drivers OBJECT)
 target_sources(STM32_Drivers PRIVATE ${STM32_Drivers_Src})
 target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
+
+# Create BLE_Middleware static library
+add_library(BLE_Middleware OBJECT)
+target_sources(BLE_Middleware PRIVATE ${BLE_Middleware_Src})
+target_link_libraries(BLE_Middleware PUBLIC stm32cubemx)
 
 
 # Add STM32CubeMX generated application sources to the project
