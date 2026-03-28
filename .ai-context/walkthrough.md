@@ -25,6 +25,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-03-27 - STM32 Firmware Target Setup
+
+- **Context:** Establishing a robust, command-line-buildable firmware foundation for the STM32L475 target using STM32CubeCLT.
+- **What we built/tested:** Created `firmware/stm32-mcp` using STM32CubeMX. Authored a comprehensive `build.sh` script to wrap CMake configuration, Ninja builds, `.bin`/`.hex` artifact generation, and flashing via `STM32_Programmer_CLI`. Added Git LFS tracking for the large STM32 HAL Drivers.
+- **Issue observed:** IDE-dependent workflows (like STM32CubeIDE) are difficult to integrate into an automated command-line CI/CD pipeline and go against the project's plain-text portability ethos.
+- **Root cause:** Default ST tooling leans heavily toward monolithic Eclipse-based IDEs.
+- **Resolution:** Leveraged the standalone STM32CubeCLT toolchain alongside the CMake generator in CubeMX.
+- **Validation:** Successfully compiled `stm32-mcp.elf` and flashed the binary to the physical STM32L475 board via SWD using `./build.sh flash`.
+- **Follow-up:** Begin porting low-level actuation and communication logic from the Arduino prototype to the STM32 HAL.
+
 ### 2026-03-27 - Direct iPhone-to-ESC BLE Telemetry Integration
 
 - **Context:** Pivoting the ESC telemetry architecture to connect directly to the iPhone instead of routing through the Raspberry Pi.

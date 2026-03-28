@@ -68,6 +68,13 @@ This backlog is hierarchical and execution-focused. Complete MVP1 before expandi
 - [x] Implement "MCP Diagnostics" view on iOS for real-time monitoring.
 - [ ] Define the Pi<->Arduino watchdog semantics and decide whether timeout should neutralize outputs or only log during debugging.
 
+#### 1.4.3 STM32 MCP Transition
+
+- [x] Generate STM32CubeMX project for STM32L475 target (`stm32-mcp`).
+- [x] Develop command-line build and flash script `build.sh` using STM32CubeCLT.
+- [x] Establish CMake presets and correct `.gitignore` & Git LFS for STM32 drivers.
+
+
 ### 1.5 Validation and exit criteria
 
 #### 1.5.1 MVP1 acceptance checks
