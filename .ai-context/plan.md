@@ -105,7 +105,7 @@ This plan is high-level and stable for now. We refine internals only after imple
 - Transport: Wi-Fi (UDP) is the primary transport for initial testing; BLE remains a prototype candidate.
 - Raspberry Pi 4B: Acts as the high-level bridge ("MCP High-Level"), running a modular event-driven C++ application (Asio) with a TUI dashboard (FTXUI).
 - Architectural Integrity: Pure logic (protocol/status) decoupled from transport (UDP/Serial) and UI.
-- ESC Telemetry: Raspberry Pi maintains a Bluetooth connection to the ESC to pull real-time RPM/speed data.
+- ESC Telemetry: iPhone maintains a direct Bluetooth LE connection to the ESC to pull real-time RPM/speed and temperature data.
 - Arduino: Handles low-level PWM/servo control ("MCP Low-Level") via Serial bridge from the Pi.
 - Safety: 1.5-second connection timeout enforced on both iPhone (Brain) and Raspberry Pi (MCP).
 - Diagnostics: Real-time dashboard on Pi and dedicated "MCP Diagnostics" view on iOS.

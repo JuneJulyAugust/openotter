@@ -25,6 +25,22 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-03-27 - Direct iPhone-to-ESC BLE Telemetry Integration
+
+- **Context:** Pivoting the ESC telemetry architecture to connect directly to the iPhone instead of routing through the Raspberry Pi.
+- **What we built/tested:** 
+  - Ported the reverse-engineered Snail ESC BLE protocol logic from the macOS prototype (`esc_app.swift`) into a new `ESCBleManager` class within the iOS app.
+  - Added Combine `@Published` properties for real-time `ESCTelemetry` updates (RPM, voltage, temperatures, message count, and update frequency in Hz).
+  - Integrated `ESCBleManager` into `MCPTestViewModel` to manage the BLE connection lifecycle alongside the UDP socket.
+  - Enhanced the `MCPTestView` UI with an "ESC TELEMETRY" dashboard card to visualize the live data streams.
+  - Fixed a timing bug where the initial handshake was sent before the notification stream was confirmed active.
+  - Corrected the voltage parsing scale factor (from `/ 100.0` to `/ 10.0`).
+- **Issue observed:** The initial implementation successfully connected but failed to receive data because the handshake burst was sent before the ESC confirmed `isNotifying = true`. The voltage reading was also off by a factor of 10.
+- **Root cause:** Asynchronous BLE state machine assumptions vs the ESC's strict wait-for-ack requirement.
+- **Resolution:** Updated `peripheral(_:didUpdateNotificationStateFor:error:)` to act as the trigger for the handshake sequence. Updated the voltage division math based on observed physical data.
+- **Validation:** Deployed iOS app v0.5.0 to the iPhone. The UI successfully connects to `ESDM_4181FB`, completes the handshake, and streams valid RPM and voltage data at measurable frequencies.
+- **Follow-up:** Pass the validated RPM data into the `VehicleState` object to be used as feedback for the upcoming speed planner and control loop.
+
 ### 2026-03-27 - ESC Telemetry Prototype Cleanup and Documentation
 
 - **Context:** Finalizing the macOS BLE scanner prototype for reverse-engineering.
