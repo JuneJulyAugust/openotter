@@ -115,7 +115,7 @@ struct MCPTestView: View {
                             }
                             
                             if let telemetry = viewModel.escTelemetry {
-                                Text("Last update: \(telemetry.timestamp.formatted(date: .omitted, time: .complete))")
+                                Text("Last update: \(telemetry.timestamp.formatted(date: .omitted, time: .complete)) • Messages: \(telemetry.messageCount)")
                                     .font(.system(size: 8, design: .monospaced))
                                     .foregroundStyle(.secondary)
                                     .padding(.top, 4)
