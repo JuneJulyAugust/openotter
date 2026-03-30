@@ -28,6 +28,7 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add `ARKitPoseView` to demonstrate and validate 6D pose tracking.
 - [x] Implement ARKit World Map management (save/load/management UI) for persistent localization.
 - [x] Refactor iOS and transport ViewModels for testability (SRP/DIP).
+- [x] Implement `SelfDrivingView` and `SelfDrivingViewModel` orchestrator (10Hz control loop).
 - [ ] Integrate ESC velocity telemetry into `VehicleState` and planner feedback.
 
 ### 1.3 Planner and control component
