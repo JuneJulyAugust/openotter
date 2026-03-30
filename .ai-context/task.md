@@ -35,20 +35,20 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 
 #### 1.3.1 Speed planner and control
 
-- [ ] Define planner output contract (`target_speed_mps`, `stop_requested`, `timestamp`).
-- [ ] Implement speed planner: reach target speed, then keep it.
-- [ ] Implement controller to track planner speed command (baseline loop: `10 Hz`).
+- [x] Define planner output contract (`target_speed_mps`, `stop_requested`, `timestamp`).
+- [x] Implement speed planner: reach target speed, then keep it.
+- [x] Implement controller to track planner speed command (baseline loop: `10 Hz`).
 - [ ] Keep target speed configurable (initial range: `0.1` to `2.0` m/s).
-- [ ] Implement straight-drive heading hold using iPhone yaw-rate feedback (magnetometer as optional coarse reference).
+- [x] Implement straight-drive heading hold using iPhone yaw-rate feedback (magnetometer as optional coarse reference).
 
 #### 1.3.2 Obstacle blocking and stop signal
 
-- [ ] Add obstacle-point input from LiDAR to planner.
-- [ ] Implement blocked-future-path check in planner.
-- [ ] Emit planner stop signal when future path is blocked.
-- [ ] Make planner stop threshold configurable.
-- [ ] Ensure planner stop signal has higher priority than normal speed command.
-- [ ] Ensure `estop` command path has strict priority over all drive commands.
+- [x] Add obstacle-point input from LiDAR to planner.
+- [x] Implement blocked-future-path check in planner.
+- [x] Emit planner stop signal when future path is blocked.
+- [x] Make planner stop threshold configurable.
+- [x] Ensure planner stop signal has higher priority than normal speed command.
+- [x] Ensure `estop` command path has strict priority over all drive commands.
 
 #### 1.3.3 STM32 direct BLE control
 

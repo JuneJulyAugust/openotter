@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-03-29
+
+### Added
+- **Planner Framework**: Scaffolded the planner protocol, context, and orchestrator. Added a simple `WaypointPlanner` to follow target paths.
+- **Safety Supervisor**: Implemented a safety module that triggers a brake alarm based on TTC (Time-to-Collision) distance using center-pixel LiDAR depth. Tested to trigger correctly at 2m/s assumed speed.
+
+### Changed
+- Integrated planner and safety supervisor into `SelfDrivingViewModel` to form the first functional autonomous control loop foundation.
+
 ## [0.6.0] - 2026-03-29
 
 ### Added

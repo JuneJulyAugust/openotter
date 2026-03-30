@@ -1,14 +1,27 @@
 import SwiftUI
+import AudioToolbox
+
+// MARK: - Alarm constants
+
+private enum AlarmConfig {
+    static let soundID = SystemSoundID(1005)
+    static let repeatIntervalS: TimeInterval = 1.5
+}
+
+// MARK: - SelfDrivingView
 
 struct SelfDrivingView: View {
     @StateObject private var viewModel = SelfDrivingViewModel()
     @Environment(\.presentationMode) var presentationMode
-    
+
     // View state for map interaction
     @State private var scale: CGFloat = 100.0
     @State private var offset: CGSize = .zero
     @State private var lastScale: CGFloat = 100.0
     @State private var lastOffset: CGSize = .zero
+
+    // Repeating alarm timer — active while safety override is engaged.
+    @State private var alarmTimer: Timer?
     
     var body: some View {
         GeometryReader { geo in
@@ -50,21 +63,30 @@ struct SelfDrivingView: View {
             // BACKGROUND: Map Canvas
             mapCanvas
                 .zIndex(0)
-            
+
             // OVERLAYS
             VStack(alignment: .leading, spacing: 0) {
                 // TOP BAR
                 topBar(leftPad: leftPad, rightPad: rightPad, topPad: topPad)
                     .zIndex(2)
-                
+
                 Spacer()
-                
+
                 // BOTTOM HUD
                 bottomHUD(leftPad: leftPad, rightPad: rightPad, bottomPad: bottomPad)
                     .zIndex(1)
             }
+
+            // EMERGENCY BRAKE OVERLAY
+            if viewModel.orchestrator.isOverridden {
+                emergencyBrakeOverlay
+                    .zIndex(10)
+            }
         }
         .background(Color(.systemGray6))
+        .onChange(of: viewModel.orchestrator.isOverridden) { overridden in
+            overridden ? startAlarm() : stopAlarm()
+        }
     }
     
     // MARK: - Components
@@ -189,7 +211,33 @@ struct SelfDrivingView: View {
             .padding(12)
             .frame(width: 140)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-            
+
+            // SAFETY
+            VStack(alignment: .leading, spacing: 6) {
+                Text("SAFETY")
+                    .font(.caption2.bold())
+                    .foregroundColor(viewModel.orchestrator.isOverridden ? .red : .secondary)
+                MetricRow(
+                    label: "Depth",
+                    value: viewModel.poseModel.forwardDepth.map { String(format: "%.2f m", $0) } ?? "—"
+                )
+                MetricRow(
+                    label: "TTC",
+                    value: viewModel.orchestrator.lastSupervisorEvent.map { String(format: "%.2f s", $0.ttc) } ?? "—"
+                )
+                MetricRow(
+                    label: "Status",
+                    value: viewModel.orchestrator.isOverridden ? "BRAKE" : "OK"
+                )
+            }
+            .padding(12)
+            .frame(width: 140)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(viewModel.orchestrator.isOverridden ? Color.red.opacity(0.15) : Color.clear)
+            )
+
             Spacer()
             
             // RIGHT: ARM / DISARM Control
@@ -213,6 +261,48 @@ struct SelfDrivingView: View {
         .padding(.bottom, bottomPad)
     }
     
+    // MARK: - Alarm
+
+    private func startAlarm() {
+        AudioServicesPlayAlertSound(AlarmConfig.soundID)
+        alarmTimer = Timer.scheduledTimer(withTimeInterval: AlarmConfig.repeatIntervalS, repeats: true) { _ in
+            AudioServicesPlayAlertSound(AlarmConfig.soundID)
+        }
+    }
+
+    private func stopAlarm() {
+        alarmTimer?.invalidate()
+        alarmTimer = nil
+    }
+
+    // MARK: - Emergency Brake Overlay
+
+    private var emergencyBrakeOverlay: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .font(.system(size: 36))
+                    Text("EMERGENCY BRAKE")
+                        .font(.title2.bold())
+                    if let event = viewModel.orchestrator.lastSupervisorEvent {
+                        Text(String(format: "TTC: %.2fs  |  Depth: %.2fm", event.ttc, event.forwardDepth))
+                            .font(.caption.monospacedDigit())
+                    }
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 16)
+                .background(Color.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 16))
+                Spacer()
+            }
+            Spacer()
+        }
+        .allowsHitTesting(false)
+    }
+
     private var mapCanvas: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottomLeading) {
@@ -220,6 +310,7 @@ struct SelfDrivingView: View {
                     poses: viewModel.poseModel.poses,
                     currentPose: viewModel.poseModel.currentPose,
                     isTracking: viewModel.poseModel.isTracking,
+                    waypoints: viewModel.waypoints,
                     scale: $scale,
                     offset: $offset
                 )

@@ -1,6 +1,7 @@
 import Foundation
 import ARKit
 import simd
+import CoreVideo
 
 // MARK: - Data Models
 
@@ -53,6 +54,9 @@ final class ARKitPoseViewModel: NSObject, ObservableObject, ARSessionDelegate {
     @Published var trackingState: ARCamera.TrackingState = .notAvailable
     @Published var trackingReason: String = ""
     @Published var isUsingSceneDepth: Bool = false
+
+    /// Center-pixel LiDAR depth in meters (nil if depth unavailable).
+    @Published var forwardDepth: Float?
 
     /// Whether the session was interrupted (app backgrounded, camera lost, etc.).
     @Published var isInterrupted: Bool = false
@@ -371,6 +375,53 @@ final class ARKitPoseViewModel: NSObject, ObservableObject, ARSessionDelegate {
         }
     }
 
+    // MARK: - Depth Helpers
+
+    /// Half-size of the square depth patch sampled around the center pixel.
+    /// A value of 1 gives a 3×3 patch (9 samples). Increase for more robustness at the cost of spatial precision.
+    private static let depthPatchHalfSize = 1
+
+    /// Sample a square patch around the center pixel and return the median depth (meters).
+    /// Median is robust against sparse LiDAR dropouts and noise spikes.
+    private static func extractCenterDepth(from depthMap: CVPixelBuffer?) -> Float? {
+        guard let depthMap else { return nil }
+        CVPixelBufferLockBaseAddress(depthMap, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(depthMap, .readOnly) }
+
+        guard let base = CVPixelBufferGetBaseAddress(depthMap) else { return nil }
+        let w = CVPixelBufferGetWidth(depthMap)
+        let h = CVPixelBufferGetHeight(depthMap)
+        let stride = CVPixelBufferGetBytesPerRow(depthMap) / MemoryLayout<Float>.size
+        let ptr = base.assumingMemoryBound(to: Float.self)
+
+        let cx = w / 2
+        let cy = h / 2
+        let r = depthPatchHalfSize
+
+        var samples: [Float] = []
+        samples.reserveCapacity((2 * r + 1) * (2 * r + 1))
+        for dy in -r...r {
+            for dx in -r...r {
+                let px = cx + dx
+                let py = cy + dy
+                guard px >= 0, px < w, py >= 0, py < h else { continue }
+                let d = ptr[py * stride + px]
+                if d > 0, d.isFinite { samples.append(d) }
+            }
+        }
+
+        guard !samples.isEmpty else { return nil }
+        return median(of: &samples)
+    }
+
+    private static func median(of values: inout [Float]) -> Float {
+        values.sort()
+        let mid = values.count / 2
+        return values.count % 2 == 0
+            ? (values[mid - 1] + values[mid]) / 2
+            : values[mid]
+    }
+
     // MARK: - ARSessionDelegate — Frame Updates
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -392,10 +443,14 @@ final class ARKitPoseViewModel: NSObject, ObservableObject, ARSessionDelegate {
             confidence: confidence
         )
 
+        // Extract center-pixel depth for safety supervisor.
+        let centerDepth = Self.extractCenterDepth(from: frame.sceneDepth?.depthMap)
+
         DispatchQueue.main.async {
             self.currentPose = entry
             self.trackingState = state
             self.isUsingSceneDepth = hasDepth
+            self.forwardDepth = centerDepth
 
             switch state {
             case .notAvailable:

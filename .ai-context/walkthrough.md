@@ -32,6 +32,15 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-03-29 - Planner Framework & Safety Supervisor (v0.7.0)
+
+- **Context:** Implementing the first autonomous driving logic on top of the 10Hz control loop.
+- **What we built/tested:** Created a flexible `PlannerProtocol`, `PlannerContext`, and `PlannerOrchestrator`. Implemented `WaypointPlanner` for straight-line target following with proportional heading control. Added `SafetySupervisor` to sample center-pixel LiDAR depth and compute a Time-to-Collision (TTC). If TTC drops below 1.0s at an assumed 2m/s speed, an emergency brake override is triggered with an audible alarm.
+- **Issue observed:** Need a way to inject new planners without modifying the orchestrator or ViewModels, and a way to guarantee safety overrides always preempt the active planner.
+- **Resolution:** Decoupled planning from safety. The orchestrator asks the planner for a command, then passes that command and context to the safety supervisor for potential overriding.
+- **Validation:** Tested safety module triggering with 2m/s assumed speed. The emergency brake overlay and alarm activate correctly at the TTC distance limit.
+- **Follow-up:** Test the waypoint following logic with the physical vehicle and tune the steering and speed parameters.
+
 ### 2026-03-29 - Self Driving Mode UI Reorganization
 
 - **Context:** Orchestrating ARKit, ESC BLE, and STM32 BLE subsystems into a unified Self Driving mode.

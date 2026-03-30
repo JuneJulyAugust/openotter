@@ -11,16 +11,34 @@ final class SelfDrivingViewModel: ObservableObject {
     @Published var escManager = ESCBleManager()
     @Published var stm32Manager = STM32BleManager()
     
+    // MARK: - Planner
+
+    let orchestrator = PlannerOrchestrator(planner: WaypointPlanner())
+
+    /// Active waypoints for map overlay.
+    @Published var waypoints: [Waypoint] = []
+
+    // MARK: - Planner Constants
+
+    private enum PlannerDefaults {
+        /// Distance ahead to place the initial test waypoint (metres).
+        static let waypointDistanceM: Float = 5.0
+        /// Waypoint acceptance radius (metres).
+        static let waypointAcceptanceM: Float = 0.5
+        /// Maximum throttle for waypoint following (0–1).
+        static let maxThrottle: Float = 0.3
+    }
+
     // MARK: - State
-    
+
     @Published var isStarted = false
     @Published var isAutonomous = false
     @Published var showMapManager = false
-    
+
     // Manual/Auto overrides for UI feedback
     @Published var steering: Float = 0.0
     @Published var throttle: Float = 0.0
-    
+
     // Control Loop
     private var controlTimer: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
@@ -73,43 +91,57 @@ final class SelfDrivingViewModel: ObservableObject {
     
     func toggleAutonomous() {
         isAutonomous.toggle()
-        if !isAutonomous {
+        if isAutonomous {
+            armPlanner()
+        } else {
+            orchestrator.reset()
+            waypoints = []
             resetActuators()
         }
+    }
+
+    /// Place a waypoint ahead of the current pose and arm the planner.
+    /// See RobotGeometry.swift for the coordinate derivation.
+    private func armPlanner() {
+        guard let pose = poseModel.currentPose else { return }
+        let wp = forwardWaypoint(
+            from: pose,
+            distance: PlannerDefaults.waypointDistanceM,
+            acceptanceRadius: PlannerDefaults.waypointAcceptanceM
+        )
+        waypoints = [wp]
+        orchestrator.setGoal(.followWaypoints([wp], maxThrottle: PlannerDefaults.maxThrottle))
     }
     
     // MARK: - Control Loop
     
     private func runControlLoop() {
         guard isStarted && isAutonomous else { return }
-        
-        // 1. Inputs
         guard let pose = poseModel.currentPose else { return }
-        let telemetry = escManager.telemetry
-        
-        // 2. Planning (Placeholder)
-        let (targetSteering, targetThrottle) = simplePlanner(pose: pose, telemetry: telemetry)
-        
-        // 3. Actuation
-        self.steering = targetSteering
-        self.throttle = targetThrottle
-        
-        sendActuatorCommands(steering: targetSteering, throttle: targetThrottle)
-    }
-    
-    private func simplePlanner(pose: PoseEntry, telemetry: ESCTelemetry?) -> (Float, Float) {
-        // TODO: Implement actual path following or obstacle avoidance.
-        // For now, stay stationary (zero steering, zero throttle).
-        return (0.0, 0.0)
+
+        let context = PlannerContext(
+            pose: pose,
+            currentThrottle: throttle,
+            escTelemetry: escManager.telemetry,
+            forwardDepth: poseModel.forwardDepth,
+            timestamp: pose.timestamp
+        )
+
+        let command = orchestrator.tick(context: context)
+
+        self.steering = command.steering
+        self.throttle = command.throttle
+
+        sendActuatorCommands(steering: command.steering, throttle: command.throttle)
     }
     
     // MARK: - Helpers
     
     private func setupSubscriptions() {
-        // Subscribe to children to ensure UI updates when they change.
         poseModel.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         escManager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         stm32Manager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        orchestrator.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
     }
     
     private func sendActuatorCommands(steering: Float, throttle: Float) {
