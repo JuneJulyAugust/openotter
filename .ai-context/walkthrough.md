@@ -32,10 +32,10 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
-### 2026-03-29 - Full Self-Driving Mode UI Reorganization
+### 2026-03-29 - Self Driving Mode UI Reorganization
 
-- **Context:** Orchestrating ARKit, ESC BLE, and STM32 BLE subsystems into a unified Full Self-Driving mode.
-- **What we built/tested:** Created `SelfDrivingViewModel` to manage the lifecycle and control loop (10Hz) of all three subsystems simultaneously. Built `SelfDrivingView` to provide a unified cockpit with a real-time trajectory map, telemetry HUD, and actuation status. Extracted shared UI components (`ControlSlider`, `MetricRow`, `PoseMapView`) into a common file. Reorganized the main `HomeView` into two clear paths: "Full Self-Driving" and "Diagnostics & Debug".
+- **Context:** Orchestrating ARKit, ESC BLE, and STM32 BLE subsystems into a unified Self Driving mode.
+- **What we built/tested:** Created `SelfDrivingViewModel` to manage the lifecycle and control loop (10Hz) of all three subsystems simultaneously. Built `SelfDrivingView` to provide a unified cockpit with a real-time trajectory map, telemetry HUD, and actuation status. Extracted shared UI components (`ControlSlider`, `MetricRow`, `PoseMapView`) into a common file. Reorganized the main `HomeView` into two clear paths: "Self Driving" and "Diagnostics & Debug".
 - **Issue observed:** Code duplication in UI components and lack of a centralized orchestrator for the final autonomous control loop.
 - **Resolution:** Applied DRY principles by creating `CommonViews.swift` and `PoseMapView.swift`. Implemented a `simplePlanner` placeholder in the new orchestrator.
 - **Validation:** Built and deployed the iOS app successfully. The new UI displays the separated paths and the autonomous mode view compiles with simultaneous subsystem bindings.

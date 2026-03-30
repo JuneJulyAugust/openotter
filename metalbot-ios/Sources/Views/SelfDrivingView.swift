@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SelfDrivingView: View {
     @StateObject private var viewModel = SelfDrivingViewModel()
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.presentationMode) var presentationMode
     
     // View state for map interaction
     @State private var scale: CGFloat = 100.0
@@ -11,178 +11,249 @@ struct SelfDrivingView: View {
     @State private var lastOffset: CGSize = .zero
     
     var body: some View {
-        ZStack {
-            Color(.systemGray6).ignoresSafeArea()
+        GeometryReader { geo in
+            let isPortrait = geo.size.height > geo.size.width
+            let screenWidth = geo.size.width
+            let screenHeight = geo.size.height
             
-            VStack(spacing: 0) {
-                // TOP BAR: Subsystem Status
-                subsystemStatusHeader
-                    .padding()
-                    .background(Color(.systemBackground).shadow(radius: 2))
-                
-                // CENTER: Map
-                mapSection
-                    .zIndex(0)
-                
-                // BOTTOM: HUD & Controls
-                controlPanel
-                    .background(Color(.systemBackground).shadow(radius: 5))
-            }
+            // Invert dimensions if portrait to force landscape layout
+            let width = isPortrait ? screenHeight : screenWidth
+            let height = isPortrait ? screenWidth : screenHeight
+            
+            // Fixed safe areas for landscape orientation
+            let leftPad: CGFloat = 50.0 // Notch area
+            let rightPad: CGFloat = 34.0 // Home indicator area
+            let topPad: CGFloat = 20.0
+            let bottomPad: CGFloat = 20.0
+            
+            landscapeContent(leftPad: leftPad, rightPad: rightPad, topPad: topPad, bottomPad: bottomPad)
+                .frame(width: width, height: height)
+                .rotationEffect(isPortrait ? .degrees(90) : .degrees(0))
+                .position(x: screenWidth / 2, y: screenHeight / 2)
         }
-        .navigationTitle("Self-Driving")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Exit") {
-                    viewModel.stop()
-                    dismiss()
-                }
-            }
-        }
+        .ignoresSafeArea()
+        .navigationBarHidden(true)
         .onAppear {
             viewModel.start()
         }
         .onDisappear {
             viewModel.stop()
         }
+        .sheet(isPresented: $viewModel.showMapManager) {
+            MapManagerView(viewModel: viewModel.poseModel)
+        }
+    }
+    
+    @ViewBuilder
+    private func landscapeContent(leftPad: CGFloat, rightPad: CGFloat, topPad: CGFloat, bottomPad: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            // BACKGROUND: Map Canvas
+            mapCanvas
+                .zIndex(0)
+            
+            // OVERLAYS
+            VStack(alignment: .leading, spacing: 0) {
+                // TOP BAR
+                topBar(leftPad: leftPad, rightPad: rightPad, topPad: topPad)
+                    .zIndex(2)
+                
+                Spacer()
+                
+                // BOTTOM HUD
+                bottomHUD(leftPad: leftPad, rightPad: rightPad, bottomPad: bottomPad)
+                    .zIndex(1)
+            }
+        }
+        .background(Color(.systemGray6))
     }
     
     // MARK: - Components
     
-    private var subsystemStatusHeader: some View {
+    private func topBar(leftPad: CGFloat, rightPad: CGFloat, topPad: CGFloat) -> some View {
         HStack(spacing: 16) {
-            StatusIndicator(label: "ARKit", status: viewModel.poseModel.trackingState == .normal ? .connected : .connecting)
-            StatusIndicator(label: "ESC", status: viewModel.escManager.status == .connected ? .connected : .connecting)
-            StatusIndicator(label: "STM32", status: viewModel.stm32Manager.status == .connected ? .connected : .connecting)
+            // Custom Back Button
+            Button(action: {
+                viewModel.stop()
+                presentationMode.wrappedValue.dismiss()
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.bold())
+                    Text("Back")
+                        .font(.subheadline.bold())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            
             Spacer()
-            if let pose = viewModel.poseModel.currentPose {
-                Text(String(format: "C:%.0f%%", pose.confidence * 100))
-                    .font(.caption.bold().monospacedDigit())
-                    .foregroundColor(pose.confidence > 0.7 ? .green : .orange)
-            }
-        }
-    }
-    
-    private var mapSection: some View {
-        ZStack(alignment: .bottomLeading) {
-            PoseMapView(
-                poses: viewModel.poseModel.poses,
-                currentPose: viewModel.poseModel.currentPose,
-                isTracking: viewModel.poseModel.isTracking,
-                scale: $scale,
-                offset: $offset
-            )
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        offset = CGSize(
-                            width: lastOffset.width + value.translation.width,
-                            height: lastOffset.height + value.translation.height
-                        )
-                    }
-                    .onEnded { _ in
-                        lastOffset = offset
-                    }
-            )
-            .gesture(
-                MagnificationGesture()
-                    .onChanged { value in
-                        scale = max(10, min(lastScale * value, 2000))
-                    }
-                    .onEnded { _ in
-                        lastScale = scale
-                    }
-            )
             
-            // Map Controls
-            VStack {
-                Button {
-                    withAnimation {
-                        scale = 100
-                        offset = .zero
-                    }
-                } label: {
-                    Image(systemName: "location.viewfinder")
-                        .padding(8)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .padding()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-        }
-    }
-    
-    private var controlPanel: some View {
-        VStack(spacing: 20) {
-            // Telemetry & Control Readout
-            HStack(alignment: .top, spacing: 20) {
-                // ESC Telemetry
-                GroupBox(label: Label("TELEMETRY", systemImage: "gauge")) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        MetricRow(label: "Speed", value: "\(viewModel.escManager.telemetry?.rpm ?? 0) RPM")
-                        MetricRow(label: "Voltage", value: String(format: "%.1f V", viewModel.escManager.telemetry?.voltage ?? 0.0))
-                        MetricRow(label: "ESC Temp", value: String(format: "%.0f°C", viewModel.escManager.telemetry?.escTemperature ?? 0.0))
+            // Subsystem Status
+            HStack(spacing: 16) {
+                // ARKit Status
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(arkitColor)
+                        .frame(width: 8, height: 8)
+                    Text("ARKit: \(viewModel.poseModel.trackingReason)")
+                        .font(.caption.bold())
+                        .foregroundColor(.primary)
+                    if let pose = viewModel.poseModel.currentPose {
+                        Text(String(format: "Conf: %.0f%%", pose.confidence * 100))
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
                     }
                 }
-                .groupBoxStyle(ModernGroupBoxStyle())
                 
-                // Actuation Status
-                GroupBox(label: Label("ACTUATION", systemImage: "engine.combustion")) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        MetricRow(label: "Steering", value: String(format: "%.0f%%", viewModel.steering * 100))
-                        MetricRow(label: "Throttle", value: String(format: "%.0f%%", viewModel.throttle * 100))
-                        MetricRow(label: "Sent", value: "\(viewModel.stm32Manager.commandsSent)")
-                    }
+                Divider().frame(height: 16)
+                
+                // ESC Status
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(viewModel.escManager.status == .connected ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Text("ESC")
+                        .font(.caption.bold())
                 }
-                .groupBoxStyle(ModernGroupBoxStyle())
+                
+                Divider().frame(height: 16)
+                
+                // STM32 Status
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(viewModel.stm32Manager.status == .connected ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Text("STM32")
+                        .font(.caption.bold())
+                }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
             
-            // Start/Stop Autonomous
-            HStack(spacing: 20) {
-                Button(action: { viewModel.toggleAutonomous() }) {
-                    Label(viewModel.isAutonomous ? "DISARM" : "ARM AUTO", 
-                          systemImage: viewModel.isAutonomous ? "stop.fill" : "play.fill")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(viewModel.isAutonomous ? Color.red : Color.green)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+            Spacer()
+            
+            // Map Manager Button
+            Button(action: {
+                viewModel.showMapManager = true
+            }) {
+                Image(systemName: viewModel.poseModel.activeMapName != nil ? "map.fill" : "map")
+                    .font(.body.bold())
+                    .foregroundColor(viewModel.poseModel.activeMapName != nil ? .green : .primary)
+                    .padding(10)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+        }
+        .padding(.leading, leftPad)
+        .padding(.trailing, rightPad)
+        .padding(.top, topPad)
+    }
+    
+    private var arkitColor: Color {
+        if viewModel.poseModel.isInterrupted { return .red }
+        if viewModel.poseModel.isRelocalizing { return .orange }
+        switch viewModel.poseModel.trackingState {
+        case .normal: return .green
+        case .limited: return .orange
+        case .notAvailable: return .red
+        @unknown default: return .gray
+        }
+    }
+    
+    private func bottomHUD(leftPad: CGFloat, rightPad: CGFloat, bottomPad: CGFloat) -> some View {
+        HStack(alignment: .bottom, spacing: 20) {
+            // LEFT: Telemetry
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TELEMETRY")
+                    .font(.caption2.bold())
+                    .foregroundColor(.secondary)
+                MetricRow(label: "Speed", value: "\(viewModel.escManager.telemetry?.rpm ?? 0) RPM")
+                MetricRow(label: "Voltage", value: String(format: "%.1f V", viewModel.escManager.telemetry?.voltage ?? 0.0))
+                MetricRow(label: "Temp", value: String(format: "%.0f°C", viewModel.escManager.telemetry?.escTemperature ?? 0.0))
+            }
+            .padding(12)
+            .frame(width: 140)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            
+            // LEFT-CENTER: Actuation
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ACTUATION")
+                    .font(.caption2.bold())
+                    .foregroundColor(.secondary)
+                MetricRow(label: "Steering", value: String(format: "%.0f%%", viewModel.steering * 100))
+                MetricRow(label: "Throttle", value: String(format: "%.0f%%", viewModel.throttle * 100))
+                MetricRow(label: "Cmds", value: "\(viewModel.stm32Manager.commandsSent)")
+            }
+            .padding(12)
+            .frame(width: 140)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            
+            Spacer()
+            
+            // RIGHT: ARM / DISARM Control
+            Button(action: { viewModel.toggleAutonomous() }) {
+                VStack(spacing: 8) {
+                    Image(systemName: viewModel.isAutonomous ? "stop.fill" : "play.fill")
+                        .font(.system(size: 32, weight: .bold))
+                    Text(viewModel.isAutonomous ? "DISARM" : "ARM AUTO")
+                        .font(.headline.bold())
                 }
-                .disabled(!viewModel.isStarted)
+                .foregroundColor(.white)
+                .frame(width: 120, height: 100)
+                .background(viewModel.isAutonomous ? Color.red : Color.blue)
+                .cornerRadius(16)
+                .shadow(radius: 5)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 30)
+            .disabled(!viewModel.isStarted)
+        }
+        .padding(.leading, leftPad)
+        .padding(.trailing, rightPad)
+        .padding(.bottom, bottomPad)
+    }
+    
+    private var mapCanvas: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .bottomLeading) {
+                PoseMapView(
+                    poses: viewModel.poseModel.poses,
+                    currentPose: viewModel.poseModel.currentPose,
+                    isTracking: viewModel.poseModel.isTracking,
+                    scale: $scale,
+                    offset: $offset
+                )
+                .background(Color(.systemGray6))
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            offset = CGSize(
+                                width: lastOffset.width + value.translation.width,
+                                height: lastOffset.height + value.translation.height
+                            )
+                        }
+                        .onEnded { _ in
+                            lastOffset = offset
+                        }
+                )
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            scale = max(10, min(lastScale * value, 2000))
+                        }
+                        .onEnded { _ in
+                            lastScale = scale
+                        }
+                )
+                
+                // Overlay for scale indicator
+                Text("Grid: 1.0 m")
+                    .font(.caption.monospaced())
+                    .padding(6)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    .padding(16)
+            }
         }
     }
 }
 
-// MARK: - Sub-components
-
-struct StatusIndicator: View {
-    let label: String
-    let status: StatusType
-    
-    enum StatusType {
-        case connected, connecting, disconnected
-        var color: Color {
-            switch self {
-            case .connected: return .green
-            case .connecting: return .orange
-            case .disconnected: return .red
-            }
-        }
-    }
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(status.color)
-                .frame(width: 8, height: 8)
-            Text(label)
-                .font(.caption.bold())
-                .foregroundColor(.secondary)
-        }
-    }
-}

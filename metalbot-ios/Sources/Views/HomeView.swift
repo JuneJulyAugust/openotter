@@ -3,70 +3,100 @@ import SwiftUI
 struct HomeView: View {
     var body: some View {
         NavigationStack {
-            VStack(spacing: 30) {
-                Spacer()
+            GeometryReader { geo in
+                let isPortrait = geo.size.height > geo.size.width
+                let screenWidth = geo.size.width
+                let screenHeight = geo.size.height
                 
-                Image(systemName: "car.side.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.blue)
+                let width = isPortrait ? screenHeight : screenWidth
+                let height = isPortrait ? screenWidth : screenHeight
                 
-                Text("metalbot")
-                    .font(.largeTitle.bold())
-                
-                VStack(spacing: 20) {
-                    NavigationLink(destination: SelfDrivingView()) {
-                        HStack {
-                            Image(systemName: "steeringwheel")
-                                .font(.title)
-                            VStack(alignment: .leading) {
-                                Text("Full Self-Driving")
-                                    .font(.headline)
-                                Text("Autonomous mode with ARKit & BLE")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.secondary)
+                HStack(spacing: 0) {
+                    // LEFT: Branding
+                    VStack(spacing: 20) {
+                        ZStack {
+                            Circle()
+                                .fill(LinearGradient(colors: [.gray.opacity(0.3), .gray.opacity(0.1)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .frame(width: 120, height: 120)
+                                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                            
+                            Image(systemName: "sensor.tag.radiowaves.forward")
+                                .font(.system(size: 50, weight: .light))
+                                .foregroundColor(.cyan)
                         }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .cornerRadius(16)
-                        .shadow(color: Color.black.opacity(0.05), radius: 10)
+                        
+                        Text("metalbot")
+                            .font(.system(size: 40, weight: .bold, design: .rounded))
+                        
+                        Text("v0.6.0")
+                            .font(.caption.monospaced())
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .background(.ultraThinMaterial, in: Capsule())
                     }
+                    .frame(width: width * 0.45)
                     
-                    NavigationLink(destination: DiagnosticsView()) {
-                        HStack {
-                            Image(systemName: "wrench.and.screwdriver.fill")
-                                .font(.title)
-                            VStack(alignment: .leading) {
-                                Text("Diagnostics & Debug")
-                                    .font(.headline)
-                                Text("Validate individual subsystems")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.secondary)
+                    // RIGHT: Actions
+                    VStack(spacing: 24) {
+                        NavigationLink(destination: SelfDrivingView()) {
+                            actionCard(
+                                title: "Self Driving",
+                                subtitle: "Autonomous loop & Planner",
+                                icon: "steeringwheel",
+                                color: .green
+                            )
                         }
-                        .padding()
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .cornerRadius(16)
-                        .shadow(color: Color.black.opacity(0.05), radius: 10)
+                        
+                        NavigationLink(destination: DiagnosticsView()) {
+                            actionCard(
+                                title: "Diagnostics",
+                                subtitle: "Subsystem tools & tests",
+                                icon: "wrench.and.screwdriver.fill",
+                                color: .orange
+                            )
+                        }
                     }
+                    .frame(width: width * 0.45)
+                    .padding(.trailing, 40)
                 }
-                .padding(.horizontal)
-                
-                Spacer()
-                
-                Text("v0.6.0-dev")
-                    .font(.caption2.monospaced())
-                    .foregroundColor(.secondary)
-                    .padding(.bottom)
+                .frame(width: width, height: height)
+                .background(Color(.systemGroupedBackground))
+                .rotationEffect(isPortrait ? .degrees(90) : .degrees(0))
+                .position(x: screenWidth / 2, y: screenHeight / 2)
             }
-            .background(Color(.systemGroupedBackground))
+            .ignoresSafeArea()
+            .navigationBarHidden(true)
         }
+    }
+    
+    private func actionCard(title: String, subtitle: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 20) {
+            Image(systemName: icon)
+                .font(.system(size: 32))
+                .foregroundColor(.white)
+                .frame(width: 70, height: 70)
+                .background(color)
+                .cornerRadius(18)
+                .shadow(color: color.opacity(0.4), radius: 8, x: 0, y: 4)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.title3.bold())
+                    .foregroundColor(.primary)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.title3.bold())
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(24)
+        .shadow(color: Color.black.opacity(0.08), radius: 15, x: 0, y: 8)
     }
 }
 

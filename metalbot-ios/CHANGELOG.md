@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-03-29
+
+### Added
+- **Self Driving Mode**: Introduced `SelfDrivingView` and `SelfDrivingViewModel` to orchestrate ARKit (localization), ESC BLE (telemetry), and STM32 BLE (actuation) into a single unified 10Hz control loop.
+- **Persistent AR Maps**: Added the ability to select and persist an active `ARWorldMap` across sessions and relocalize dynamically without restarting the app.
+- **Horizontal Dashboard**: Redesigned `HomeView` into a forced-landscape layout featuring modern transparent materials, distinct "Self Driving" and "Diagnostics" paths, and updated iconography.
+
+### Changed
+- Refactored 2D trajectory rendering from `ARKitPoseView` into a reusable `PoseMapView` component.
+- Extracted shared telemetry and control UI components into `CommonViews.swift`.
+- Renamed references of "Full Self-Driving" to "Self Driving".
+
 ## [0.5.1] - 2026-03-28
 
 ### Fixed

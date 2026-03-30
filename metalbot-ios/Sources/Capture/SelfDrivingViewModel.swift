@@ -15,6 +15,7 @@ final class SelfDrivingViewModel: ObservableObject {
     
     @Published var isStarted = false
     @Published var isAutonomous = false
+    @Published var showMapManager = false
     
     // Manual/Auto overrides for UI feedback
     @Published var steering: Float = 0.0

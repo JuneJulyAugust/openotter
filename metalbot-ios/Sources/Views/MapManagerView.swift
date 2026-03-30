@@ -80,7 +80,7 @@ struct MapManagerView: View {
 
                         ForEach(viewModel.savedMaps) { entry in
                             Button {
-                                viewModel.selectedMapID = entry.id
+                                viewModel.selectMap(id: entry.id)
                             } label: {
                                 HStack {
                                     Image(systemName: viewModel.selectedMapID == entry.id ? "checkmark.circle.fill" : "circle")
@@ -136,7 +136,10 @@ struct MapManagerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        viewModel.applySelectedMap()
+                        dismiss()
+                    }
                 }
             }
         }

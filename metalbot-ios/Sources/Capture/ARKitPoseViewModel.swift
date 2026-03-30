@@ -237,6 +237,20 @@ final class ARKitPoseViewModel: NSObject, ObservableObject, ARSessionDelegate {
     /// Deselect the current map (start next session without a map).
     func deselectMap() {
         selectedMapID = nil
+        saveMapIndex()
+    }
+
+    /// Select a map and save it as default.
+    func selectMap(id: UUID?) {
+        selectedMapID = id
+        saveMapIndex()
+    }
+
+    /// Reload the AR session to use the newly selected map as the active map.
+    func applySelectedMap() {
+        if isTracking {
+            start()
+        }
     }
 
     private func loadWorldMap(filename: String) -> ARWorldMap? {
