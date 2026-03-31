@@ -3,8 +3,8 @@ import Foundation
 // MARK: - Config
 
 struct SafetySupervisorConfig {
-    /// Assumed robot speed in m/s (placeholder until wheel calibration — see TODO P-02).
-    var assumedSpeedMPS: Float = 2.0
+    /// Fallback speed if no sensor data available (conservative estimate).
+    var fallbackSpeedMPS: Float = 0.5
     /// Brake unconditionally when TTC falls below this threshold.
     var ttcCriticalS: Float = 1.0
     /// Avoid division by zero at standstill.
@@ -15,10 +15,8 @@ struct SafetySupervisorConfig {
 
 /// Monitors forward depth and overrides planner commands when collision is imminent.
 ///
-/// Interface: `supervise(command:context:) → ControlCommand`
-/// — returns the command unchanged if safe, or `.brake` if TTC is critical.
-/// Extending the supervisor (e.g. adding a warning level) only requires
-/// modifying this class; the interface is unchanged.
+/// TTC uses real speed from motor RPM (primary) or ARKit (fallback).
+/// If neither is available, falls back to a conservative fixed estimate.
 final class SafetySupervisor {
 
     let config: SafetySupervisorConfig
@@ -35,12 +33,13 @@ final class SafetySupervisor {
         guard command.throttle > 0 else { return passThrough(command, context: context) }
         guard let depth = validDepth(from: context) else { return command }
 
-        let ttc = computeTTC(depth: depth)
+        let speed = resolveSpeed(context: context)
+        let ttc = depth / speed
         let event = makeEvent(ttc: ttc, depth: depth, context: context)
         lastEvent = event
 
         if ttc < config.ttcCriticalS {
-            let reason = String(format: "TTC %.2fs (d=%.2fm)", ttc, depth)
+            let reason = String(format: "TTC %.2fs (d=%.2fm, v=%.2fm/s)", ttc, depth, speed)
             return .brake(reason: reason)
         }
         return command
@@ -52,25 +51,27 @@ final class SafetySupervisor {
 
     // MARK: - Private Helpers
 
-    /// Pass command through with a .clear event so the UI always has a fresh TTC reading.
     private func passThrough(_ command: ControlCommand, context: PlannerContext) -> ControlCommand {
         if let depth = validDepth(from: context) {
-            lastEvent = makeEvent(ttc: computeTTC(depth: depth), depth: depth, context: context)
+            let speed = resolveSpeed(context: context)
+            lastEvent = makeEvent(ttc: depth / speed, depth: depth, context: context)
         } else {
             lastEvent = nil
         }
         return command
     }
 
-    /// Returns a positive, finite depth or nil.
     private func validDepth(from context: PlannerContext) -> Float? {
         guard let d = context.forwardDepth, d > 0, d.isFinite else { return nil }
         return d
     }
 
-    /// TTC = depth / speed, guarded against zero speed.
-    private func computeTTC(depth: Float) -> Float {
-        depth / max(config.assumedSpeedMPS, config.minSpeedEpsilonMPS)
+    /// Motor RPM speed preferred, then ARKit, then conservative fallback.
+    private func resolveSpeed(context: PlannerContext) -> Float {
+        if let best = context.bestSpeedMps, best > Double(config.minSpeedEpsilonMPS) {
+            return Float(best)
+        }
+        return max(config.fallbackSpeedMPS, config.minSpeedEpsilonMPS)
     }
 
     private func makeEvent(ttc: Float, depth: Float, context: PlannerContext) -> SafetySupervisorEvent {
