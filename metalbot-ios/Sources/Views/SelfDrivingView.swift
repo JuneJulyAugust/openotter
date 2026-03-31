@@ -197,13 +197,14 @@ struct SelfDrivingView: View {
                 Text("TELEMETRY")
                     .font(.caption2.bold())
                     .foregroundColor(.secondary)
-                MetricRow(label: "Speed", value: String(format: "%.2f m/s", viewModel.escManager.telemetry?.speedMps ?? 0.0))
+                MetricRow(label: "Motor", value: String(format: "%.2f m/s", viewModel.escManager.telemetry?.speedMps ?? 0.0))
+                MetricRow(label: "ARKit", value: String(format: "%.2f m/s", viewModel.poseModel.arkitSpeedMps))
                 MetricRow(label: "RPM", value: "\(viewModel.escManager.telemetry?.rpm ?? 0)")
                 MetricRow(label: "Voltage", value: String(format: "%.1f V", viewModel.escManager.telemetry?.voltage ?? 0.0))
-                MetricRow(label: "Temp", value: String(format: "%.0f°C", viewModel.escManager.telemetry?.escTemperature ?? 0.0))
+                MetricRow(label: "Temp", value: String(format: "%.0f C", viewModel.escManager.telemetry?.escTemperature ?? 0.0))
             }
             .padding(12)
-            .frame(width: 140)
+            .frame(width: 150)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
             
             // LEFT-CENTER: Actuation
@@ -244,6 +245,35 @@ struct SelfDrivingView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(viewModel.orchestrator.isOverridden ? Color.red.opacity(0.15) : Color.clear)
             )
+
+            // SPEED TARGET
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TARGET SPEED")
+                    .font(.caption2.bold())
+                    .foregroundColor(.secondary)
+                Text(String(format: "%.2f m/s", viewModel.targetSpeedMps))
+                    .font(.caption.bold().monospacedDigit())
+                    .foregroundColor(.cyan)
+                Slider(
+                    value: $viewModel.targetSpeedMps,
+                    in: SelfDrivingViewModel.minSpeedMps...SelfDrivingViewModel.maxSpeedMps,
+                    step: 0.05
+                )
+                .tint(.cyan)
+                HStack {
+                    Text(String(format: "%.1f", SelfDrivingViewModel.minSpeedMps))
+                        .font(.caption2).foregroundColor(.secondary)
+                    Spacer()
+                    Text("0")
+                        .font(.caption2).foregroundColor(.secondary)
+                    Spacer()
+                    Text(String(format: "%.1f", SelfDrivingViewModel.maxSpeedMps))
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            }
+            .padding(12)
+            .frame(width: 150)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
             Spacer()
             
