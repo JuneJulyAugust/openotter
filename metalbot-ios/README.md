@@ -33,6 +33,7 @@ Use the build script from the `metalbot-ios` directory:
 ./build.sh install
 ./build.sh launch
 ./build.sh deploy
+./build.sh test                 # Runs unit tests on the iOS Simulator
 ./build.sh --release deploy
 ```
 

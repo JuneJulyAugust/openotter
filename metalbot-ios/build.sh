@@ -20,6 +20,7 @@ Commands:
   install     Install app on connected device
   launch      Launch app on connected device
   deploy      Build + install + launch (full cycle)
+  test        Run unit tests on the iOS Simulator
   devices     List connected iOS devices
 
 Options:
@@ -39,7 +40,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --device) DEVICE_UDID="$2"; shift 2 ;;
         --release) CONFIG="Release"; shift ;;
-        generate|build|install|launch|deploy|devices) COMMAND="$1"; shift; break ;;
+        generate|build|install|launch|deploy|test|devices) COMMAND="$1"; shift; break ;;
         -h|--help) usage ;;
         *) echo "Unknown argument: $1"; usage ;;
     esac
@@ -166,12 +167,27 @@ cmd_devices() {
     xcrun devicectl list devices
 }
 
+cmd_test() {
+    if [[ ! -d "$PROJECT_NAME.xcodeproj" ]]; then
+        cmd_generate
+    fi
+    echo "==> Running tests..."
+    export APP_VERSION=$(cat VERSION)
+    xcodebuild test \
+        -project "$PROJECT_NAME.xcodeproj" \
+        -scheme "$SCHEME" \
+        -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+        -derivedDataPath "$DERIVED_DATA"
+    echo "==> Tests complete."
+}
+
 case "$COMMAND" in
     generate) cmd_generate ;;
     build)    cmd_build ;;
     install)  cmd_install ;;
     launch)   cmd_launch ;;
     deploy)   cmd_deploy ;;
+    test)     cmd_test ;;
     devices)  cmd_devices ;;
     *)        usage ;;
 esac
