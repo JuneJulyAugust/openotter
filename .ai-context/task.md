@@ -74,16 +74,15 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Implement iPhone heartbeat (1 Hz) and 1.5 s timeout logic.
 - [x] Implement Raspberry Pi heartbeat (1 Hz) and 1.5 s timeout logic.
 - [x] Implement `Raspberry Pi WiFi` view on iOS for real-time monitoring.
-- [ ] Define the Pi<->Arduino watchdog semantics and decide whether timeout should neutralize outputs or only log during debugging.
 
 ### 1.5 Validation and exit criteria
 
 #### 1.5.1 MVP1 acceptance checks
 
-- [ ] Hold target speed on flat indoor floor for repeatable runs.
-- [ ] Maintain straight driving within defined drift tolerance.
-- [ ] Stop before obstacle under configurable stop policy.
-- [ ] Trigger safe stop on stale LiDAR data or control-link timeout.
+- [x] Hold target speed on flat indoor floor for repeatable runs.
+- [x] Maintain straight driving within defined drift tolerance.
+- [x] Stop before obstacle under configurable stop policy.
+- [x] Trigger safe stop on stale LiDAR data or control-link timeout.
 
 ## 2. MVP2 - RGB to mono depth prototype (parallel, limited scope)
 

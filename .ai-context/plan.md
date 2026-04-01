@@ -32,12 +32,12 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Minimal operator intervention during a run.
 - Safe stop behavior when sensor data or link health becomes stale.
 
-### 2.4 MVP1 Success Definition
+### 2.4 MVP1 Success Definition (Achieved: v0.8.0)
 
-- The vehicle can hold a target speed on a flat indoor floor.
-- The vehicle can stay approximately straight using heading hold.
-- The vehicle stops before obstacles under a configurable policy.
-- The system performs a safe stop on stale LiDAR data or control-link timeout.
+- The vehicle can hold a target speed on a flat indoor floor. (Done)
+- The vehicle can stay approximately straight using heading hold. (Done)
+- The vehicle stops before obstacles under a configurable policy. (Done)
+- The system performs a safe stop on stale LiDAR data or control-link timeout. (Done)
 
 ## 3. Product Direction
 

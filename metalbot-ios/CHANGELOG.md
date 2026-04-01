@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-31
+
+### Added
+- **End-to-End Self-Driving & Safety**: The first complete autonomous driving stack. The robot can hold a target speed, follow a heading, and automatically stop for obstacles.
+- **Tri-Zone Safety Supervisor**: Redesigned the safety override into a clear state machine (CLEAR, CAUTION, BRAKE) with latched speed thresholds and asymmetric EMA depth filtering.
+- **Anti-Oscillation Logic**: Eliminated "stop-go" boundary oscillation using cooldown timers and a linear throttle ramp in the constant speed planner.
+- **Comprehensive Test Suite**: Added 56 new XCTest unit and integration tests covering the planner, supervisor math, EMA filtering, and full mission orchestrator scenarios. Run with `./build.sh test`.
+
 ## [0.7.1] - 2026-03-30
 
 ### Added

@@ -74,3 +74,7 @@ When tasked with a feature, refactor, or fix, process the request through these 
 3.  **Define the Interface:** Write the narrowest possible interface for the data moving in and out (ISP).
 4.  **Deduplicate:** Can this be solved by extending an existing Strategy or Helper? (DRY).
 5.  **Implement & Verify:** Write the code strictly based on the derived model. Provide tests that prove the invariants hold.
+
+
+# Git Rules
+- NEVER include "Co-Authored-By" or any other AI attribution trailers in git commit messages. Commits must be authored normally without AI signatures.

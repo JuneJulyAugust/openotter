@@ -32,6 +32,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-03-31 - End-to-End Self-Driving & Safety (v0.8.0)
+
+- **Context:** Ensuring long-term reliability of the autonomous navigation logic and preventing stop-go oscillation during obstacle approach.
+- **What we built/tested:** Redesigned the `SafetySupervisor` into a tri-zone state machine (CLEAR, CAUTION, BRAKE) with latched speed thresholds and asymmetric EMA filtering. Added a throttle ramp to the `ConstantSpeedPlanner`. Implemented a comprehensive 56-test XCTest suite covering all planner and safety invariants, including end-to-end mission scenarios.
+- **Issue observed:** The previous binary safety policy (0/1) caused severe stop-go oscillation because braking caused the speed-dependent safety threshold to shrink, which immediately released the brake.
+- **Root cause:** Feedback loop between the control output (braking) and the safety threshold calculation (which used current speed).
+- **Resolution:** Introduced latched speed (thresholds lock when entering a safety zone), cooldown timers to prevent rapid toggling, and a CAUTION zone for smooth deceleration before full braking.
+- **Validation:** All 73 tests currently pass (`./build.sh test`). Integration tests specifically simulate the wall approach scenario to ensure a single state transition to BRAKE without bouncing.
+- **Follow-up:** Conduct physical field testing on the vehicle to measure tuning parameters (EMA alpha, ramp rate, CAUTION scaling) against real-world sensor noise.
+
 ### 2026-03-29 - Planner Framework & Safety Supervisor (v0.7.0)
 
 - **Context:** Implementing the first autonomous driving logic on top of the 10Hz control loop.
