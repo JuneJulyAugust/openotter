@@ -10,19 +10,19 @@ struct SafetySupervisorConfig {
     // MARK: Zone Thresholds
 
     /// TTC threshold for BRAKE zone (seconds). Obstacle within this TTC → full stop.
-    var ttcBrakeS: Float = 0.8
+    var ttcBrakeS: Float = 0.3
 
     /// TTC threshold for CAUTION zone (seconds). Obstacle within this TTC → throttle ramp.
-    var ttcCautionS: Float = 1.5
+    var ttcCautionS: Float = 0.8
 
     /// Absolute minimum BRAKE distance (meters). Overrides TTC at low speeds.
-    var minBrakeDistanceM: Float = 0.15
+    var minBrakeDistanceM: Float = 0.30
 
     /// Absolute minimum CAUTION distance (meters). Overrides TTC at low speeds.
-    var minCautionDistanceM: Float = 0.25
+    var minCautionDistanceM: Float = 0.50
 
     /// Maximum deceleration (m/s²). Used to compute kinematic braking distance.
-    var maxDecelerationMPS2: Float = 1.5
+    var maxDecelerationMPS2: Float = 2.5
 
     // MARK: Temporal Guards
 
