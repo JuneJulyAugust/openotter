@@ -76,5 +76,11 @@ When tasked with a feature, refactor, or fix, process the request through these 
 5.  **Implement & Verify:** Write the code strictly based on the derived model. Provide tests that prove the invariants hold.
 
 
+# ASCII Diagram Rules
+- All ASCII box diagrams MUST be well-aligned: vertical lines (`│`) must line up column-by-column, horizontal lines (`─`) must span the correct width, and corners (`┌┐└┘├┤┬┴┼`) must connect precisely.
+- Use consistent box widths within a diagram. Pad text with spaces so all rows in a box are the same length.
+- Prefer simple, flat layouts over deeply nested boxes. If a diagram is too complex to align cleanly, split it into multiple smaller diagrams.
+- Verify alignment before outputting: every `│` in a column must be at the same character offset across all rows.
+
 # Git Rules
 - NEVER include "Co-Authored-By" or any other AI attribution trailers in git commit messages. Commits must be authored normally without AI signatures.

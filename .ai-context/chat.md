@@ -4,6 +4,28 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
+## 2026-04-05 - Agent Runtime & Telegram Gateway Design
+
+### Summary
+Designed an OpenClaw-inspired Agent Runtime to enable remote control of the RC car from a second phone via Telegram. The architecture adds a Telegram bot (long polling), swappable command interpreter, action dispatcher, TTS voice feedback, and stub interfaces for future LLM/skill/memory subsystems.
+
+### Achievements
+1. **Architecture design:** Defined the full Agent Runtime pipeline: TelegramGateway → CommandInterpreter → ActionDispatcher → ResponseBuilder → SpeechOutput.
+2. **Feasibility validated:** Telegram Bot API long polling works directly from URLSession inside the iOS app with zero dependencies. No server needed.
+3. **Safety invariant preserved:** The Agent Runtime is a new input source, not a control path. All commands flow through PlannerOrchestrator → SafetySupervisor.
+4. **Future-proofed:** CommandInterpreter protocol allows swapping keyword matching for LLM interpretation. SkillRegistry and MemoryStore stubs exist for OpenClaw-inspired agent capabilities.
+5. **Design spec written:** `docs/superpowers/specs/2026-04-05-agent-runtime-telegram-design.md`
+
+### Current State
+- **Autonomous driving:** v0.8.0 — fully operational.
+- **Agent Runtime:** Design complete, implementation pending.
+- **Next Step:** Implement the Agent subsystem following the phased plan.
+
+### Prompt Context for Next Session
+"In the last session, we designed the Agent Runtime and Telegram Gateway for MVP1. The design spec is at docs/superpowers/specs/2026-04-05-agent-runtime-telegram-design.md. The task backlog in .ai-context/task.md has the full breakdown under section 1.5. Start with Phase A: build the Agent/ subsystem and AgentDebugView in isolation, test with manual input before connecting Telegram or BLE."
+
+---
+
 ## 2026-03-28 - STM32 BLE Reconnect Fix
 
 ### Summary

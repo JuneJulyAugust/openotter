@@ -32,6 +32,14 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-04-05 - Agent Runtime & Telegram Gateway Design
+
+- **Context:** Enabling remote control of the car from a second phone without building a separate app or webpage.
+- **What we designed:** An OpenClaw-inspired Agent Runtime architecture inside the metalbot-ios app. A Telegram bot (long polling via URLSession, no third-party dependencies) receives commands, a swappable `CommandInterpreter` protocol parses them (keyword matching in v1, LLM in the future), an `ActionDispatcher` routes actions through the existing `PlannerOrchestrator` and `SafetySupervisor`, and `SpeechOutput` (AVSpeechSynthesizer) speaks confirmations aloud. Stub interfaces for `SkillRegistry` and `MemoryStore` are included for future AI agent capabilities.
+- **Key decisions:** (1) No arm/disarm — the system is always under software control. (2) Telegram chosen over custom app/webpage for zero-infrastructure remote control. (3) Long polling (30s timeout, back-to-back) over webhooks to avoid needing a server. (4) Bot token in iOS Keychain, never in source. (5) Chat ID whitelist for authorization. (6) Standalone `AgentDebugView` for isolated subsystem testing before integration.
+- **Design spec:** `docs/superpowers/specs/2026-04-05-agent-runtime-telegram-design.md`
+- **Follow-up:** Implement the Agent subsystem following the phased integration plan (isolated dev → Telegram → App Core wiring → HomeView entry).
+
 ### 2026-03-31 - End-to-End Self-Driving & Safety (v0.8.0)
 
 - **Context:** Ensuring long-term reliability of the autonomous navigation logic and preventing stop-go oscillation during obstacle approach.

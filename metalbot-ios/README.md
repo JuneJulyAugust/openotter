@@ -1,6 +1,6 @@
 # metalbot-ios
 
-`metalbot-ios` is the iPhone app for `metalbot`. It handles LiDAR capture, RGB + point-cloud debug rendering, the Raspberry Pi WiFi bridge UI, and the STM32 direct-control UI.
+`metalbot-ios` is the iPhone app for `metalbot`. It handles LiDAR capture, RGB + point-cloud debug rendering, the Raspberry Pi WiFi bridge UI, the STM32 direct-control UI, and the Telegram-based agent runtime with TTS voice feedback.
 
 ## First-Time Setup
 

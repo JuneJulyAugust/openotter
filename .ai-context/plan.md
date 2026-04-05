@@ -5,9 +5,11 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 ## 1. Architecture Snapshot
 
 - Primary path: iPhone app -> STM32 control board -> vehicle hardware.
-- The iPhone owns perception, estimation, planning, and the operator UI.
+- The iPhone owns perception, estimation, planning, the operator UI, and the agent runtime.
 - The STM32 owns low-latency command intake, watchdog behavior, and PWM actuation.
 - ESC telemetry returns directly to the iPhone over BLE.
+- Agent path: Telegram Bot API -> Agent Runtime -> PlannerOrchestrator -> SafetySupervisor -> STM32.
+- The Agent Runtime is a new input source, not a new control path. All commands flow through the safety stack.
 - Legacy path: Raspberry Pi WiFi bridge -> Arduino actuation path.
 - The legacy bridge stays in the repo for compatibility, bench testing, and transition support.
 
@@ -16,6 +18,7 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 ### 2.1 Goal
 
 - Drive straight, hold target speed, and stop safely when the path is blocked or the control link becomes stale.
+- Accept remote commands from Telegram and respond with voice and text, laying the foundation for a physical AI agent.
 
 ### 2.2 System Shape
 
@@ -23,6 +26,7 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Pose and telemetry stay on the iPhone side so the planner sees one coherent state snapshot.
 - The STM32 acts as the primary low-level controller and should remain simple, deterministic, and easy to recover.
 - Safety overrides motion: stop signals and estop always outrank normal drive commands.
+- The Agent Runtime receives commands from Telegram, interprets them, and dispatches through the existing planner/safety stack. It is a new input source, not a new control path.
 - The legacy Raspberry Pi WiFi bridge remains available while the STM32 path is validated on vehicle hardware.
 
 ### 2.3 Operating Assumptions
@@ -31,19 +35,34 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Repeatable launch and reconnect behavior.
 - Minimal operator intervention during a run.
 - Safe stop behavior when sensor data or link health becomes stale.
+- Both phones (operator and car) have internet connectivity (WiFi or cellular).
+- The metalbot app is always running in the foreground on the car's iPhone.
 
-### 2.4 MVP1 Success Definition (Achieved: v0.8.0)
+### 2.4 MVP1 Success Definition
+
+#### 2.4.1 Autonomous Driving (Achieved: v0.8.0)
 
 - The vehicle can hold a target speed on a flat indoor floor. (Done)
 - The vehicle can stay approximately straight using heading hold. (Done)
 - The vehicle stops before obstacles under a configurable policy. (Done)
 - The system performs a safe stop on stale LiDAR data or control-link timeout. (Done)
 
+#### 2.4.2 Agent Runtime & Telegram Control (Active)
+
+- The app receives commands from a Telegram bot via long polling.
+- Fixed command set (forward, backward, stop, status) dispatches through the planner/safety stack.
+- The app speaks command confirmations and status aloud via TTS.
+- The app replies to Telegram with the result text.
+- A standalone AgentDebugView allows isolated testing of the agent subsystem.
+- Bot token is stored securely in the iOS Keychain.
+- Stub interfaces exist for future LLM interpreter, skill registry, and memory store.
+
 ## 3. Product Direction
 
-- MVP1: LiDAR-first closed loop on the STM32 path.
+- MVP1: LiDAR-first closed loop on the STM32 path + Telegram-based agent runtime.
 - MVP2: RGB-to-mono-depth prototype on iPhone.
 - MVP3: sparse LiDAR + RGB depth completion.
+- Long-term: OpenClaw-inspired physical AI agent with LLM intent parsing, skill subsystem, and persistent memory. The user provides cloud LLM inference; no heavy on-device inference.
 
 ## 4. Naming
 
@@ -66,3 +85,6 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - iPhone -> STM32 BLE: primary drive and telemetry path.
 - iPhone -> Raspberry Pi WiFi -> Arduino serial: compatibility bridge.
 - ESC -> iPhone BLE: direct telemetry feed.
+- Telegram Bot API -> iPhone (HTTPS long poll): remote command input.
+- iPhone -> Telegram Bot API (HTTPS): command response output.
+- iPhone speaker (AVSpeechSynthesizer): voice feedback output.
