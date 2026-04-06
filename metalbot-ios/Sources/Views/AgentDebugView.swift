@@ -6,6 +6,9 @@ struct AgentDebugView: View {
     @StateObject private var runtime: AgentRuntime
     private let speech: SpeechOutput
 
+    // Strongly held so the weak delegate on TelegramGateway is not immediately released.
+    @State private var bridge: GatewayBridge?
+
     @State private var tokenInput: String = ""
     @State private var manualInput: String = ""
     @State private var chatIdInput: String = ""
@@ -43,7 +46,9 @@ struct AgentDebugView: View {
         }
         .navigationTitle("Agent Diagnostics")
         .onAppear {
-            gateway.delegate = GatewayBridge(runtime: runtime, gateway: gateway)
+            let b = GatewayBridge(runtime: runtime, gateway: gateway)
+            bridge = b
+            gateway.delegate = b
             loadAllowedChatIds()
         }
         .onDisappear {
