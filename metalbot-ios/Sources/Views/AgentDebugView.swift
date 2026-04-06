@@ -62,6 +62,7 @@ struct AgentDebugView: View {
                 Button("Set") {
                     let trimmed = tokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
                     KeychainHelper.save(key: "telegram-bot-token", value: trimmed)
+                    gateway.updateToken(trimmed)
                     isTokenSaved = true
                     tokenInput = ""
                 }
@@ -75,8 +76,8 @@ struct AgentDebugView: View {
                     Spacer()
                     Button("Reset") {
                         KeychainHelper.delete(key: "telegram-bot-token")
+                        gateway.updateToken("")
                         isTokenSaved = false
-                        gateway.stopPolling()
                     }
                     .font(.caption)
                     .foregroundColor(.red)

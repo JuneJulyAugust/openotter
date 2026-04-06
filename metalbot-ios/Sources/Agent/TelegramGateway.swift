@@ -86,7 +86,7 @@ final class TelegramGateway: ObservableObject {
 
     var allowedChatIds: Set<Int64> = []
 
-    private let token: String
+    private var token: String
     private let session: URLSession
     private let pollTimeout: Int = 30
     private var offset: Int = 0
@@ -118,6 +118,16 @@ final class TelegramGateway: ObservableObject {
         pollTask?.cancel()
         pollTask = nil
         isPolling = false
+    }
+
+    /// Replace the token and reset poll state. Call before startPolling() after a token change.
+    func updateToken(_ newToken: String) {
+        stopPolling()
+        token = newToken
+        offset = 0
+        backoffSeconds = 0
+        lastError = nil
+        pollCount = 0
     }
 
     private func pollLoop() async {
