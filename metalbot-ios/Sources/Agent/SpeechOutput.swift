@@ -11,11 +11,24 @@ final class SpeechOutput: SpeechOutputting {
 
     private let synthesizer = AVSpeechSynthesizer()
 
+    /// Best English voice available on this device.
+    /// Prefers premium (neural) > enhanced > default.
+    /// Premium voices must be downloaded in Settings > Accessibility > Spoken Content > Voices.
+    private static let preferredVoice: AVSpeechSynthesisVoice? = {
+        let english = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+        return english.first { $0.quality == .premium }
+            ?? english.first { $0.quality == .enhanced }
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+    }()
+
     func speak(_ text: String) {
         guard isEnabled else { return }
+        synthesizer.stopSpeaking(at: .immediate)
         let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.voice = SpeechOutput.preferredVoice
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        utterance.pitchMultiplier = 1.0
         synthesizer.speak(utterance)
     }
 }
