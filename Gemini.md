@@ -75,6 +75,15 @@ When tasked with a feature, refactor, or fix, process the request through these 
 4.  **Deduplicate:** Can this be solved by extending an existing Strategy or Helper? (DRY).
 5.  **Implement & Verify:** Write the code strictly based on the derived model. Provide tests that prove the invariants hold.
 
+---
+
+## 6. Version Release Protocol
+When releasing a new version:
+1. Bump version string in `metalbot-ios/VERSION`.
+2. Document new features, changed behavior, and fixes in `metalbot-ios/CHANGELOG.md` under a new release heading.
+3. Keep the same structure: `### Added`, `### Changed`, `### Fixed`.
+4. Commit the changes strictly as `Docs: Release ios-vX.Y.Z <milestone name>`.
+5. Run `git tag ios-vX.Y.Z`.
 
 # ASCII Diagram Rules
 - All ASCII box diagrams MUST be well-aligned: vertical lines (`│`) must line up column-by-column, horizontal lines (`─`) must span the correct width, and corners (`┌┐└┘├┤┬┴┼`) must connect precisely.
