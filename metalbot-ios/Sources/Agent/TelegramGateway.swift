@@ -192,6 +192,23 @@ final class TelegramGateway: ObservableObject {
         return updates
     }
 
+    // MARK: - Reply Keyboard
+
+    /// Persistent buttons shown at the bottom of the Telegram chat.
+    /// Users tap instead of typing. Labels are matched by KeywordInterpreter aliases.
+    private static func replyMarkup() -> [String: Any] {
+        let buttons: [[[String: String]]] = [
+            [["text": "🚗 Drive"], ["text": "🅿️ Park"]],
+            [["text": "🔙 Reverse"], ["text": "📊 Status"]],
+        ]
+        return [
+            "keyboard": buttons,
+            "resize_keyboard": true,
+            "one_time_keyboard": false,
+            "is_persistent": true,
+        ]
+    }
+
     // MARK: - Send Reply
 
     func sendReply(chatId: Int64, text: String) async throws {
@@ -203,7 +220,11 @@ final class TelegramGateway: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = ["chat_id": chatId, "text": text]
+        let body: [String: Any] = [
+            "chat_id": chatId,
+            "text": text,
+            "reply_markup": Self.replyMarkup(),
+        ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (_, _) = try await session.data(for: request)

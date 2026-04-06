@@ -79,38 +79,38 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 
 #### 1.5.1 Agent subsystem foundation
 
-- [ ] Create `Agent/` source directory under `metalbot-ios/Sources/`.
-- [ ] Define `AgentAction` enum (move, stop, queryStatus, unknown).
-- [ ] Define `CommandInterpreter` protocol and implement `KeywordInterpreter`.
-- [ ] Define `ActionDispatching` protocol and implement `ActionDispatcher` routing to `PlannerOrchestrator`.
-- [ ] Define `ResponseBuilding` protocol and implement `ResponseBuilder`.
+- [x] Create `Agent/` source directory under `metalbot-ios/Sources/`.
+- [x] Define `AgentAction` enum (move, stop, queryStatus, unknown).
+- [x] Define `CommandInterpreter` protocol and implement `KeywordInterpreter`.
+- [x] Define `ActionDispatching` protocol and implement `ActionDispatcher` routing to `PlannerOrchestrator`.
+- [x] Define `ResponseBuilding` protocol and implement `ResponseBuilder`.
 
 #### 1.5.2 Telegram Gateway
 
-- [ ] Implement `TelegramGateway` with long-poll loop (30s timeout, back-to-back polling).
-- [ ] Implement `KeychainHelper` for secure bot token storage.
-- [ ] Implement chat ID whitelist for authorized user filtering.
-- [ ] Implement exponential backoff retry on poll errors (1s→2s→4s→8s, cap 30s).
+- [x] Implement `TelegramGateway` with long-poll loop (30s timeout, back-to-back polling).
+- [x] Implement `KeychainHelper` for secure bot token storage.
+- [x] Implement chat ID whitelist for authorized user filtering.
+- [x] Implement exponential backoff retry on poll errors (1s→2s→4s→8s, cap 30s).
 
 #### 1.5.3 Speech output
 
-- [ ] Implement `SpeechOutput` wrapping `AVSpeechSynthesizer` with enable/disable toggle.
-- [ ] Integrate TTS into `AgentRuntime` response path.
+- [x] Implement `SpeechOutput` wrapping `AVSpeechSynthesizer` with enable/disable toggle.
+- [x] Integrate TTS into `AgentRuntime` response path.
 
 #### 1.5.4 Future extension stubs
 
-- [ ] Define `SkillProviding` and `SkillRegistering` protocols with no-op implementation.
-- [ ] Define `MemoryStoring` protocol with no-op implementation.
+- [x] Define `SkillProviding` and `SkillRegistering` protocols with no-op implementation.
+- [x] Define `MemoryStoring` protocol with no-op implementation.
 
 #### 1.5.5 Debug and diagnostic UI
 
-- [ ] Implement `AgentDebugView` with token input, connection status, message log, and manual test input.
-- [ ] Add `AgentDebugView` to `HomeView` diagnostics section.
+- [x] Implement `AgentDebugView` with token input, connection status, message log, and manual test input.
+- [x] Add `AgentDebugView` to `HomeView` diagnostics section.
 
 #### 1.5.6 Integration
 
-- [ ] Wire `ActionDispatcher` to real `PlannerOrchestrator` and `SafetySupervisor`.
-- [ ] End-to-end test: Telegram command from second phone → car executes → TTS speaks → Telegram reply received.
+- [x] Wire `ActionDispatcher` to real `PlannerOrchestrator` and `SafetySupervisor`.
+- [x] End-to-end test: Telegram command from second phone → car executes → TTS speaks → Telegram reply received.
 
 ### 1.6 Validation and exit criteria
 
@@ -123,11 +123,11 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 
 #### 1.6.2 MVP1 acceptance checks (agent runtime)
 
-- [ ] Telegram bot receives and responds to commands from a second phone.
-- [ ] Commands dispatch through planner/safety stack (safety cannot be bypassed).
-- [ ] App speaks confirmations aloud via TTS.
-- [ ] AgentDebugView works in isolation without Telegram or BLE connections.
-- [ ] Bot token stored in Keychain, never in source code or UserDefaults.
+- [x] Telegram bot receives and responds to commands from a second phone.
+- [x] Commands dispatch through planner/safety stack (safety cannot be bypassed).
+- [x] App speaks confirmations aloud via TTS.
+- [x] AgentDebugView works in isolation without Telegram or BLE connections.
+- [x] Bot token stored in Keychain, never in source code or UserDefaults.
 
 ## 2. MVP2 - RGB to mono depth prototype (parallel, limited scope)
 

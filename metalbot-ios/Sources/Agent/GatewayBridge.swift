@@ -13,8 +13,10 @@ final class GatewayBridge: TelegramGatewayDelegate {
 
     func gateway(_ gw: TelegramGateway, didReceive message: TelegramMessage) {
         let response = runtime.handleMessage(message.text)
-        Task {
-            try? await gw.sendReply(chatId: message.chatId, text: response)
+        // Detach so the HTTP request runs off-MainActor (this delegate
+        // is called inside MainActor.run; a plain Task would inherit it).
+        Task.detached { [weak gw] in
+            try? await gw?.sendReply(chatId: message.chatId, text: response)
         }
     }
 }

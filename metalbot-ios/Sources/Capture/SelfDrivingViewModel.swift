@@ -36,7 +36,6 @@ final class SelfDrivingViewModel: ObservableObject {
     // MARK: - State
 
     @Published var isStarted = false
-    @Published var isAutonomous = false
     @Published var showMapManager = false
 
     // Manual/Auto overrides for UI feedback
@@ -104,8 +103,8 @@ final class SelfDrivingViewModel: ObservableObject {
 
     func stop() {
         isStarted = false
-        isAutonomous = false
 
+        orchestrator.reset()
         poseModel.onFrameUpdate = nil
 
         poseModel.stop()
@@ -114,21 +113,12 @@ final class SelfDrivingViewModel: ObservableObject {
         resetActuators()
     }
 
-    func toggleAutonomous() {
-        isAutonomous.toggle()
-        if isAutonomous {
-            orchestrator.setGoal(.constantThrottle(targetThrottle: targetThrottle))
-        } else {
-            orchestrator.reset()
-            waypoints = []
-            resetActuators()
-        }
-    }
+
 
     // MARK: - Control Loop
 
     private func runControlLoop(pose: PoseEntry, depth: Float?, speed: Double?) {
-        guard isStarted && isAutonomous else { return }
+        guard isStarted else { return }
 
         let motorSpeed: Double? = {
             guard let tel = escManager.telemetry, tel.speedMps > 0.01 else { return nil }
@@ -139,21 +129,24 @@ final class SelfDrivingViewModel: ObservableObject {
             return nil
         }()
 
-        let context = PlannerContext(
-            pose: pose,
-            currentThrottle: self.throttle,
-            escTelemetry: escManager.telemetry,
-            forwardDepth: depth,
-            motorSpeedMps: motorSpeed,
-            arkitSpeedMps: arkitSpeed,
-            timestamp: pose.timestamp
-        )
+        // Dispatch to main thread to serialize with Telegram command handling.
+        // Eliminates the data race: orchestrator.tick() (ARKit bg thread)
+        // vs orchestrator.setGoal/reset() (MainActor from Telegram commands).
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isStarted else { return }
 
-        let command = orchestrator.tick(context: context)
+            let context = PlannerContext(
+                pose: pose,
+                currentThrottle: self.throttle,
+                escTelemetry: self.escManager.telemetry,
+                forwardDepth: depth,
+                motorSpeedMps: motorSpeed,
+                arkitSpeedMps: arkitSpeed,
+                timestamp: pose.timestamp
+            )
 
-        sendActuatorCommands(steering: command.steering, throttle: command.throttle)
-
-        DispatchQueue.main.async {
+            let command = self.orchestrator.tick(context: context)
+            self.sendActuatorCommands(steering: command.steering, throttle: command.throttle)
             self.steering = command.steering
             self.throttle = command.throttle
         }

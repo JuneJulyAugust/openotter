@@ -310,7 +310,9 @@ struct SelfDrivingView: View {
             .frame(width: 140)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
 
-            // SAFETY
+            Spacer()
+
+            // RIGHT: SAFETY
             VStack(alignment: .leading, spacing: 6) {
                 Text("SAFETY")
                     .font(.caption2.bold())
@@ -348,53 +350,6 @@ struct SelfDrivingView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(safetyOverlayColor)
             )
-
-            // THROTTLE TARGET
-            VStack(alignment: .leading, spacing: 6) {
-                Text("TARGET THROTTLE")
-                    .font(.caption2.bold())
-                    .foregroundColor(.secondary)
-                Text(String(format: "%.1f", viewModel.targetThrottle))
-                    .font(.caption.bold().monospacedDigit())
-                    .foregroundColor(.cyan)
-                Slider(
-                    value: $viewModel.targetThrottle,
-                    in: SelfDrivingViewModel.minThrottle...SelfDrivingViewModel.maxThrottle,
-                    step: 0.1
-                )
-                .tint(.cyan)
-                HStack {
-                    Text(String(format: "%.1f", SelfDrivingViewModel.minThrottle))
-                        .font(.caption2).foregroundColor(.secondary)
-                    Spacer()
-                    Text("0")
-                        .font(.caption2).foregroundColor(.secondary)
-                    Spacer()
-                    Text(String(format: "%.1f", SelfDrivingViewModel.maxThrottle))
-                        .font(.caption2).foregroundColor(.secondary)
-                }
-            }
-            .padding(12)
-            .frame(width: 150)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-
-            Spacer()
-            
-            // RIGHT: ARM / DISARM Control
-            Button(action: { viewModel.toggleAutonomous() }) {
-                VStack(spacing: 8) {
-                    Image(systemName: viewModel.isAutonomous ? "stop.fill" : "play.fill")
-                        .font(.system(size: 32, weight: .bold))
-                    Text(viewModel.isAutonomous ? "DISARM" : "ARM AUTO")
-                        .font(.headline.bold())
-                }
-                .foregroundColor(.white)
-                .frame(width: 120, height: 100)
-                .background(viewModel.isAutonomous ? Color.red : Color.blue)
-                .cornerRadius(16)
-                .shadow(radius: 5)
-            }
-            .disabled(!viewModel.isStarted)
         }
         .padding(.leading, leftPad)
         .padding(.trailing, rightPad)

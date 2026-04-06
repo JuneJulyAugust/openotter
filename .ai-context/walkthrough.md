@@ -32,6 +32,36 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-04-05 - SpeechOutput AVSpeechSynthesizer Crash Fix & iOS 18.2 Audio Session Override
+
+- **Context:** AVSpeechSynthesizer would not produce audio when running simultaneously with ARKit, and eventually entered a permanently silent state.
+- **What we built/tested:** (1) Replaced the persistent `AVSpeechSynthesizer` with a fresh instance per utterance. (2) Moved `AVAudioSession` configuration into the `speak()` method itself. (3) Stripped emoji/invisible variation-selectors (U+FE0F) from Telegram aliases via ASCII-only filtering.
+- **Issue observed:** (1) `AVSpeechSynthesizer` went completely silent after overlapping `stopSpeaking(at: .immediate)` cycles. (2) ARKit silently overrode the audio session category, cutting off TTS.
+- **Root cause:** Native iOS bug in `AVSpeechSynthesizer` state-machine recovery. ARKit steals the audio category on initialization.
+- **Resolution:** Creating a fresh `AVSpeechSynthesizer` per request completely avoids the stuck-state bug. Applying `AVAudioSession.sharedInstance().setCategory(.playback)` instantly *before* each utterance dynamically re-asserts control over ARKit. Restored `0.92` rate for the correct "Premium Voice" delivery pacing.
+- **Validation:** Triggered commands via tap buttons ("🚗 Drive", "🅿️ Park"). App audio speaks the mapped short alias "Drive" and "Park" via the iOS neural quality voice.
+- **Follow-up:** Full-scale field tests with remote Telegram operation.
+
+### 2026-04-05 - Telegram Gateway Networking MainActor Leak
+
+- **Context:** The app briefly stalled the UI whenever a Telegram message was sent, despite the use of `Task`.
+- **What we built/tested:** Switched `GatewayBridge`'s send response to `Task.detached`.
+- **Issue observed:** UI thread stutter when replying to heavy command streams.
+- **Root cause:** The `TelegramGatewayDelegate` was called from inside a `MainActor.run` block from the gateway's poll loop. `Task { ... }` inherits its lexical context (MainActor), meaning the `sendReply` network request was mistakenly running on the main UI thread.
+- **Resolution:** Changed `Task` to `Task.detached` to break the MainActor inheritance and push the HTTP networking back to the cooperative background pool.
+- **Validation:** Long-running send requests no longer block `SelfDrivingView` app updates.
+- **Follow-up:** None.
+
+### 2026-04-05 - Agent Runtime Main-Thread Data Race Fix
+
+- **Context:** AgentRuntime was freezing and crashing the app when Telegram commands were received.
+- **What we built/tested:** Dispatched `orchestrator.tick()` entirely to the Main thread.
+- **Issue observed:** `orchestrator.tick()` ran on the ARKit `frameQueue` (background) while `orchestrator.setGoal()` was called synchronously from the Telegram Gateway on `MainActor`. This caused data races mutating `@Published` state.
+- **Root cause:** Concurrent access to planner objects from two threads without actors or locks.
+- **Resolution:** Modified `runControlLoop()` to wrap the entire `tick()` inside `DispatchQueue.main.async`, serializing all planner state mutations on the main thread alongside UI and Telegram interactions.
+- **Validation:** Deployed via `build.sh deploy`. Sent spam commands from Telegram while self-driving was active; no UI freezes or crashes occurred.
+- **Follow-up:** None.
+
 ### 2026-04-05 - Agent Runtime & Telegram Gateway Design
 
 - **Context:** Enabling remote control of the car from a second phone without building a separate app or webpage.

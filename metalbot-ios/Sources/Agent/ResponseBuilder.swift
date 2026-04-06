@@ -7,27 +7,22 @@ protocol ResponseBuilding {
 struct ResponseBuilder: ResponseBuilding {
 
     func build(action: AgentAction, result: ActionResult) -> String {
+        guard result.success else { return result.message }
+
         switch action {
-        case .move(let direction, let throttle):
-            if result.success {
-                let pct = Int(throttle * 100)
-                return "Moving \(direction.rawValue) at \(pct)% throttle."
-            } else {
-                return "Cannot move \(direction.rawValue): \(result.message)."
+        case .move(let direction, _):
+            switch direction {
+            case .forward:  return "Drive"
+            case .backward: return "Reverse"
+            case .left:     return "Left"
+            case .right:    return "Right"
             }
-
         case .stop:
-            if result.success {
-                return "Stopped. All actuators neutral."
-            } else {
-                return "Stop failed: \(result.message)."
-            }
-
+            return "Park"
         case .queryStatus:
             return result.message
-
         case .unknown(let raw):
-            return "Unknown command: \"\(raw)\". Use /forward, /backward, /stop, or /status."
+            return "Unknown: \(raw)"
         }
     }
 }
