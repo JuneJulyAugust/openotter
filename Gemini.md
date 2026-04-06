@@ -84,6 +84,7 @@ When releasing a new version:
 3. Keep the same structure: `### Added`, `### Changed`, `### Fixed`.
 4. Commit the changes strictly as `Docs: Release ios-vX.Y.Z <milestone name>`.
 5. Run `git tag ios-vX.Y.Z`.
+6. Run `git push origin main` and `git push origin --tags` to publish the release.
 
 # ASCII Diagram Rules
 - All ASCII box diagrams MUST be well-aligned: vertical lines (`│`) must line up column-by-column, horizontal lines (`─`) must span the correct width, and corners (`┌┐└┘├┤┬┴┼`) must connect precisely.
