@@ -1,4 +1,4 @@
-# Metalbot AI Chat History
+# OpenOtter AI Chat History
 
 This file stores the historical context, milestones, and prompts to resume development across sessions.
 
@@ -32,7 +32,7 @@ Designed an OpenClaw-inspired Agent Runtime to enable remote control of the RC c
 The STM32 BLE path now reconnects reliably after the first iPhone session. The root cause was iOS caching the wrong GAP name (`BlueNRG`) from the STM32 peripheral, which caused the scanner to ignore the device on later scans.
 
 ### Achievements
-1.  **STM32 BLE Naming**: Updated the BlueNRG GAP device name to `METALBOT-MCP` and expanded the GAP device-name length to match the real advertising name.
+1.  **STM32 BLE Naming**: Updated the BlueNRG GAP device name to `OPENOTTER-MCP` and expanded the GAP device-name length to match the real advertising name.
 2.  **iOS Scanner**: Hardened `STM32BleManager` to match both cached peripheral names and advertising local names, then clear stale references on disconnect.
 3.  **Validation**: Rebuilt and flashed the firmware, then verified the app can rediscover the STM32 BLE board after reconnect.
 
@@ -105,7 +105,7 @@ Successfully implemented and visualized the 6D pose estimation using ARKit's Vis
 Successfully implemented and verified the full control path from the iPhone brain to the physical actuators of the RC car. This milestone bridges the gap between our high-level iOS application and low-level Arduino firmware.
 
 ### Achievements
-1.  **Arduino Control Module**: Created `firmware/metalbot-arduino/`, a dedicated firmware for the Arduino Mega.
+1.  **Arduino Control Module**: Created `firmware/openotter-arduino/`, a dedicated firmware for the Arduino Mega.
     - Implemented a normalized `-1.0 to 1.0` serial protocol for steering and motor power.
     - Included safety features: ESC arming sequence and heartbeat monitoring (currently disabled for debugging).
     - Isolated toolchain: Self-contained `arduino-cli` setup on the Raspberry Pi for easy deployment.

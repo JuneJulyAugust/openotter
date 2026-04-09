@@ -1,4 +1,4 @@
-# metalbot Task Backlog
+# openotter Task Backlog
 
 This backlog is hierarchical and execution-focused. Primary STM32 work comes first; the Raspberry Pi WiFi bridge remains only for compatibility, bench testing, and transition support.
 
@@ -8,7 +8,7 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 
 #### 1.1.1 Project and runtime setup
 
-- [x] Create initial iOS app target (`metalbot`) and baseline module layout.
+- [x] Create initial iOS app target (`openotter`) and baseline module layout.
 - [x] Add runtime support checks for LiDAR-capable devices and fallback error states.
 - [x] Add app permissions/configuration required for capture and motion pipelines.
 
@@ -79,7 +79,7 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 
 #### 1.5.1 Agent subsystem foundation
 
-- [x] Create `Agent/` source directory under `metalbot-ios/Sources/`.
+- [x] Create `Agent/` source directory under `openotter-ios/Sources/`.
 - [x] Define `AgentAction` enum (move, stop, queryStatus, unknown).
 - [x] Define `CommandInterpreter` protocol and implement `KeywordInterpreter`.
 - [x] Define `ActionDispatching` protocol and implement `ActionDispatcher` routing to `PlannerOrchestrator`.

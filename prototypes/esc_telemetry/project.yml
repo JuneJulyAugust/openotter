@@ -1,7 +1,7 @@
 name: ESCScanner
 
 options:
-  bundleIdPrefix: com.metalbot
+  bundleIdPrefix: com.openotter
 
 settings:
   base:
@@ -21,6 +21,6 @@ targets:
       path: Resources/Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.metalbot.escscanner
+        PRODUCT_BUNDLE_IDENTIFIER: com.openotter.escscanner
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: We need Bluetooth to connect to the ESC telemetry.
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: ESC_SCANNER_APP

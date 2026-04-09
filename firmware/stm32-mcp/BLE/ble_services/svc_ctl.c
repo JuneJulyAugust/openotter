@@ -146,7 +146,7 @@ void SVCCTL_Init( void )
 
   if(role > 0)
   {
-    const char *name = "METALBOT-MCP";
+    const char *name = "OPENOTTER-MCP";
 
     aci_gap_init(role,
                  0,

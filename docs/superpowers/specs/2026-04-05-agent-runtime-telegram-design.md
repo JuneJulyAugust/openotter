@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-05
 **Status:** Draft
-**Scope:** Add a Telegram-based remote command interface to metalbot-ios, with an OpenClaw-inspired agent architecture that supports future LLM, skill, and memory subsystems.
+**Scope:** Add a Telegram-based remote command interface to openotter-ios, with an OpenClaw-inspired agent architecture that supports future LLM, skill, and memory subsystems.
 
 ---
 
@@ -12,7 +12,7 @@ The iPhone is mounted on the RC car. To arm/disarm or send commands, the user mu
 
 ## 2. Solution Overview
 
-Run a Telegram bot inside the metalbot-ios app. The bot receives commands from Telegram (via long polling), interprets them through a swappable `CommandInterpreter`, dispatches actions through the existing planner/safety stack, and responds via both Telegram reply and on-device text-to-speech.
+Run a Telegram bot inside the openotter-ios app. The bot receives commands from Telegram (via long polling), interprets them through a swappable `CommandInterpreter`, dispatches actions through the existing planner/safety stack, and responds via both Telegram reply and on-device text-to-speech.
 
 The architecture follows OpenClaw's pattern: messaging platform as UI, agent runtime as the brain, with placeholder interfaces for LLM interpretation, skills, and memory.
 
@@ -27,7 +27,7 @@ The architecture follows OpenClaw's pattern: messaging platform as UI, agent run
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                       metalbot-ios app                           │
+│                       openotter-ios app                           │
 │                                                                  │
 │  ┌─────────────────┐   ┌──────────────────────────────────────┐  │
 │  │ TelegramGateway │   │           AgentRuntime               │  │
@@ -261,7 +261,7 @@ Features:
 ## 10. Directory Structure
 
 ```
-metalbot-ios/Sources/Agent/
+openotter-ios/Sources/Agent/
 ├── TelegramGateway.swift
 ├── AgentRuntime.swift
 ├── CommandInterpreter.swift
@@ -274,7 +274,7 @@ metalbot-ios/Sources/Agent/
 ├── MemoryStore.swift
 └── KeychainHelper.swift
 
-metalbot-ios/Sources/Views/
+openotter-ios/Sources/Views/
 └── AgentDebugView.swift
 ```
 

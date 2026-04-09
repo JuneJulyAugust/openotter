@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Renamed the GAP device from `BlueNRG` to `METALBOT-MCP` and expanded the GAP name length so iOS caches the correct peripheral name.
+- Renamed the GAP device from `BlueNRG` to `OPENOTTER-MCP` and expanded the GAP name length so iOS caches the correct peripheral name.
 - Kept BLE advertising and reconnect flow aligned with the iOS scanner so the direct-control screen can reconnect after the first session.
 
 ## [0.2.0] - 2026-03-28

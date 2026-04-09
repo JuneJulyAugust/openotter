@@ -1,6 +1,6 @@
 # stm32-mcp
 
-STM32L475 (B-L475E-IOT01A) firmware for the metalbot project.
+STM32L475 (B-L475E-IOT01A) firmware for the openotter project.
 Receives steering and throttle commands over BLE and drives PWM outputs to control servos/ESC directly.
 
 ## Architecture & Version
@@ -20,7 +20,7 @@ Receives steering and throttle commands over BLE and drives PWM outputs to contr
   - `PB1` (TIM3_CH4) → Steering servo
   - `PB4` (TIM3_CH1) → Throttle ESC
 - **Safety Watchdog**: 1.5s timeout reverts to neutral (1500µs) on connection loss
-- **Device Name**: `METALBOT-MCP`
+- **Device Name**: `OPENOTTER-MCP`
 - **Reconnect Behavior**: The iOS control app now matches both the cached GAP name and advertising name.
 
 ## Build and Flash

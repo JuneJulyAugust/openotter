@@ -1,6 +1,6 @@
 # raspberry-pi-mcp
 
-Raspberry Pi WiFi bridge firmware for `metalbot`.
+Raspberry Pi WiFi bridge firmware for `openotter`.
 
 This firmware is the legacy Raspberry Pi WiFi bridge between the iPhone app and the Arduino actuation path. It provides a real-time TUI dashboard for monitoring communication health and manual control inputs.
 

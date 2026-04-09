@@ -72,7 +72,7 @@ public:
         last_received_time_ = time;
         last_rx_tp_ = std::chrono::steady_clock::now();
         connected_ = true;
-        iphone_name_ = "metalbot-brain (iPhone)";
+        iphone_name_ = "openotter-brain (iPhone)";
     }
 
     void recordHeartbeatSent(const std::string& time) {

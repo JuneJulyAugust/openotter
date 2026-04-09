@@ -784,7 +784,7 @@ git commit -m "feat: show both speeds and target speed slider in self-driving HU
 - [ ] **Step 1: Build the project**
 
 ```bash
-cd metalbot-ios && xcodebuild -scheme metalbot-ios -destination 'platform=iOS,name=*' build 2>&1 | tail -20
+cd openotter-ios && xcodebuild -scheme openotter-ios -destination 'platform=iOS,name=*' build 2>&1 | tail -20
 ```
 
 Fix any compilation errors.

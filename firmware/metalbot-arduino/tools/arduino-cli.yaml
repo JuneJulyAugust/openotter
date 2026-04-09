@@ -1,6 +1,0 @@
-# Local arduino-cli config for metalbot-arduino
-# Using local directories for isolation
-directories:
-  data: ./arduino_data
-  user: ./arduino_data/user
-  downloads: ./arduino_data/staging

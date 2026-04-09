@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a Telegram-based remote command interface to metalbot-ios with TTS voice feedback, backed by an OpenClaw-inspired agent architecture with stub interfaces for future LLM/skill/memory.
+**Goal:** Add a Telegram-based remote command interface to openotter-ios with TTS voice feedback, backed by an OpenClaw-inspired agent architecture with stub interfaces for future LLM/skill/memory.
 
 **Architecture:** TelegramGateway (long polling) feeds raw text to AgentRuntime, which pipes it through a swappable CommandInterpreter protocol, dispatches the resulting AgentAction through the existing PlannerOrchestrator/SafetySupervisor stack, and outputs responses via both Telegram reply and AVSpeechSynthesizer TTS.
 
@@ -14,7 +14,7 @@
 
 ## File Map
 
-### New files — `metalbot-ios/Sources/Agent/`
+### New files — `openotter-ios/Sources/Agent/`
 
 | File | Responsibility |
 |:-----|:---------------|
@@ -30,13 +30,13 @@
 | `SkillRegistry.swift` | `SkillProviding`/`SkillRegistering` protocols + `NoOpSkillRegistry` |
 | `MemoryStore.swift` | `MemoryStoring` protocol + `NoOpMemoryStore` |
 
-### New files — `metalbot-ios/Sources/Views/`
+### New files — `openotter-ios/Sources/Views/`
 
 | File | Responsibility |
 |:-----|:---------------|
 | `AgentDebugView.swift` | Diagnostic UI: token input, connection status, message log, manual test input, TTS toggle |
 
-### New files — `metalbot-ios/Tests/Agent/`
+### New files — `openotter-ios/Tests/Agent/`
 
 | File | Responsibility |
 |:-----|:---------------|
@@ -51,21 +51,21 @@
 
 | File | Change |
 |:-----|:-------|
-| `metalbot-ios/Sources/Views/HomeView.swift` | Add "Agent Diagnostics" entry to `DiagnosticsView` |
-| `metalbot-ios/project.yml` | No change needed — `Sources` and `Tests` directories are auto-included |
+| `openotter-ios/Sources/Views/HomeView.swift` | Add "Agent Diagnostics" entry to `DiagnosticsView` |
+| `openotter-ios/project.yml` | No change needed — `Sources` and `Tests` directories are auto-included |
 
 ---
 
 ## Task 1: AgentAction and CommandInterpreter Protocol
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/AgentAction.swift`
-- Create: `metalbot-ios/Sources/Agent/CommandInterpreter.swift`
+- Create: `openotter-ios/Sources/Agent/AgentAction.swift`
+- Create: `openotter-ios/Sources/Agent/CommandInterpreter.swift`
 
 - [ ] **Step 1: Create AgentAction.swift**
 
 ```swift
-// metalbot-ios/Sources/Agent/AgentAction.swift
+// openotter-ios/Sources/Agent/AgentAction.swift
 import Foundation
 
 enum MoveDirection: String, Equatable {
@@ -88,7 +88,7 @@ struct ActionResult: Equatable {
 - [ ] **Step 2: Create CommandInterpreter.swift**
 
 ```swift
-// metalbot-ios/Sources/Agent/CommandInterpreter.swift
+// openotter-ios/Sources/Agent/CommandInterpreter.swift
 import Foundation
 
 protocol CommandInterpreter {
@@ -98,13 +98,13 @@ protocol CommandInterpreter {
 
 - [ ] **Step 3: Verify build**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh build`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh build`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/AgentAction.swift metalbot-ios/Sources/Agent/CommandInterpreter.swift
+git add openotter-ios/Sources/Agent/AgentAction.swift openotter-ios/Sources/Agent/CommandInterpreter.swift
 git commit -m "feat(agent): Add AgentAction model and CommandInterpreter protocol"
 ```
 
@@ -113,15 +113,15 @@ git commit -m "feat(agent): Add AgentAction model and CommandInterpreter protoco
 ## Task 2: KeywordInterpreter with TDD
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/KeywordInterpreter.swift`
-- Create: `metalbot-ios/Tests/Agent/KeywordInterpreterTests.swift`
+- Create: `openotter-ios/Sources/Agent/KeywordInterpreter.swift`
+- Create: `openotter-ios/Tests/Agent/KeywordInterpreterTests.swift`
 
 - [ ] **Step 1: Write failing tests**
 
 ```swift
-// metalbot-ios/Tests/Agent/KeywordInterpreterTests.swift
+// openotter-ios/Tests/Agent/KeywordInterpreterTests.swift
 import XCTest
-@testable import metalbot
+@testable import openotter
 
 final class KeywordInterpreterTests: XCTestCase {
 
@@ -176,13 +176,13 @@ final class KeywordInterpreterTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: FAIL — `KeywordInterpreter` not defined
 
 - [ ] **Step 3: Implement KeywordInterpreter**
 
 ```swift
-// metalbot-ios/Sources/Agent/KeywordInterpreter.swift
+// openotter-ios/Sources/Agent/KeywordInterpreter.swift
 import Foundation
 
 struct KeywordInterpreter: CommandInterpreter {
@@ -213,13 +213,13 @@ struct KeywordInterpreter: CommandInterpreter {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All `KeywordInterpreterTests` PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/KeywordInterpreter.swift metalbot-ios/Tests/Agent/KeywordInterpreterTests.swift
+git add openotter-ios/Sources/Agent/KeywordInterpreter.swift openotter-ios/Tests/Agent/KeywordInterpreterTests.swift
 git commit -m "feat(agent): Add KeywordInterpreter with TDD tests"
 ```
 
@@ -228,15 +228,15 @@ git commit -m "feat(agent): Add KeywordInterpreter with TDD tests"
 ## Task 3: ResponseBuilder with TDD
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/ResponseBuilder.swift`
-- Create: `metalbot-ios/Tests/Agent/ResponseBuilderTests.swift`
+- Create: `openotter-ios/Sources/Agent/ResponseBuilder.swift`
+- Create: `openotter-ios/Tests/Agent/ResponseBuilderTests.swift`
 
 - [ ] **Step 1: Write failing tests**
 
 ```swift
-// metalbot-ios/Tests/Agent/ResponseBuilderTests.swift
+// openotter-ios/Tests/Agent/ResponseBuilderTests.swift
 import XCTest
-@testable import metalbot
+@testable import openotter
 
 final class ResponseBuilderTests: XCTestCase {
 
@@ -284,13 +284,13 @@ final class ResponseBuilderTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: FAIL — `ResponseBuilder` not defined
 
 - [ ] **Step 3: Implement ResponseBuilder**
 
 ```swift
-// metalbot-ios/Sources/Agent/ResponseBuilder.swift
+// openotter-ios/Sources/Agent/ResponseBuilder.swift
 import Foundation
 
 protocol ResponseBuilding {
@@ -328,13 +328,13 @@ struct ResponseBuilder: ResponseBuilding {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All `ResponseBuilderTests` PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/ResponseBuilder.swift metalbot-ios/Tests/Agent/ResponseBuilderTests.swift
+git add openotter-ios/Sources/Agent/ResponseBuilder.swift openotter-ios/Tests/Agent/ResponseBuilderTests.swift
 git commit -m "feat(agent): Add ResponseBuilder with TDD tests"
 ```
 
@@ -343,17 +343,17 @@ git commit -m "feat(agent): Add ResponseBuilder with TDD tests"
 ## Task 4: ActionDispatcher with TDD
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/ActionDispatcher.swift`
-- Create: `metalbot-ios/Tests/Agent/ActionDispatcherTests.swift`
+- Create: `openotter-ios/Sources/Agent/ActionDispatcher.swift`
+- Create: `openotter-ios/Tests/Agent/ActionDispatcherTests.swift`
 
 - [ ] **Step 1: Write failing tests**
 
 The `ActionDispatcher` needs to route actions to a `PlannerOrchestrator`. For testability, we inject a protocol rather than the concrete class. We also need a status provider for querying car state.
 
 ```swift
-// metalbot-ios/Tests/Agent/ActionDispatcherTests.swift
+// openotter-ios/Tests/Agent/ActionDispatcherTests.swift
 import XCTest
-@testable import metalbot
+@testable import openotter
 
 // MARK: - Test Doubles
 
@@ -427,13 +427,13 @@ final class ActionDispatcherTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: FAIL — `ActionDispatcher`, `GoalReceiving`, `StatusProviding` not defined
 
 - [ ] **Step 3: Implement ActionDispatcher**
 
 ```swift
-// metalbot-ios/Sources/Agent/ActionDispatcher.swift
+// openotter-ios/Sources/Agent/ActionDispatcher.swift
 import Foundation
 
 /// Narrow interface for setting planner goals — satisfied by PlannerOrchestrator.
@@ -493,13 +493,13 @@ final class ActionDispatcher: ActionDispatching {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All `ActionDispatcherTests` PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/ActionDispatcher.swift metalbot-ios/Tests/Agent/ActionDispatcherTests.swift
+git add openotter-ios/Sources/Agent/ActionDispatcher.swift openotter-ios/Tests/Agent/ActionDispatcherTests.swift
 git commit -m "feat(agent): Add ActionDispatcher with GoalReceiving/StatusProviding DIP"
 ```
 
@@ -508,12 +508,12 @@ git commit -m "feat(agent): Add ActionDispatcher with GoalReceiving/StatusProvid
 ## Task 5: SpeechOutput
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/SpeechOutput.swift`
+- Create: `openotter-ios/Sources/Agent/SpeechOutput.swift`
 
 - [ ] **Step 1: Implement SpeechOutput**
 
 ```swift
-// metalbot-ios/Sources/Agent/SpeechOutput.swift
+// openotter-ios/Sources/Agent/SpeechOutput.swift
 import AVFoundation
 
 protocol SpeechOutputting {
@@ -549,13 +549,13 @@ final class MuteSpeechOutput: SpeechOutputting {
 
 - [ ] **Step 2: Verify build**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh build`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh build`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/SpeechOutput.swift
+git add openotter-ios/Sources/Agent/SpeechOutput.swift
 git commit -m "feat(agent): Add SpeechOutput with AVSpeechSynthesizer and mute double"
 ```
 
@@ -564,19 +564,19 @@ git commit -m "feat(agent): Add SpeechOutput with AVSpeechSynthesizer and mute d
 ## Task 6: KeychainHelper with TDD
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/KeychainHelper.swift`
-- Create: `metalbot-ios/Tests/Agent/KeychainHelperTests.swift`
+- Create: `openotter-ios/Sources/Agent/KeychainHelper.swift`
+- Create: `openotter-ios/Tests/Agent/KeychainHelperTests.swift`
 
 - [ ] **Step 1: Write failing tests**
 
 ```swift
-// metalbot-ios/Tests/Agent/KeychainHelperTests.swift
+// openotter-ios/Tests/Agent/KeychainHelperTests.swift
 import XCTest
-@testable import metalbot
+@testable import openotter
 
 final class KeychainHelperTests: XCTestCase {
 
-    private let testService = "com.metalbot.test.keychain"
+    private let testService = "com.openotter.test.keychain"
     private let testKey = "test-token"
 
     override func tearDown() {
@@ -614,19 +614,19 @@ final class KeychainHelperTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: FAIL — `KeychainHelper` not defined
 
 - [ ] **Step 3: Implement KeychainHelper**
 
 ```swift
-// metalbot-ios/Sources/Agent/KeychainHelper.swift
+// openotter-ios/Sources/Agent/KeychainHelper.swift
 import Foundation
 import Security
 
 enum KeychainHelper {
 
-    static let defaultService = "com.metalbot.agent"
+    static let defaultService = "com.openotter.agent"
 
     @discardableResult
     static func save(key: String, value: String, service: String = defaultService) -> Bool {
@@ -674,7 +674,7 @@ enum KeychainHelper {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All `KeychainHelperTests` PASS
 
 Note: Keychain tests may only pass on the iOS Simulator (not on device without proper entitlements). This is expected and fine for CI.
@@ -682,7 +682,7 @@ Note: Keychain tests may only pass on the iOS Simulator (not on device without p
 - [ ] **Step 5: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/KeychainHelper.swift metalbot-ios/Tests/Agent/KeychainHelperTests.swift
+git add openotter-ios/Sources/Agent/KeychainHelper.swift openotter-ios/Tests/Agent/KeychainHelperTests.swift
 git commit -m "feat(agent): Add KeychainHelper for secure token storage with TDD tests"
 ```
 
@@ -691,8 +691,8 @@ git commit -m "feat(agent): Add KeychainHelper for secure token storage with TDD
 ## Task 7: TelegramGateway with TDD
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/TelegramGateway.swift`
-- Create: `metalbot-ios/Tests/Agent/TelegramGatewayTests.swift`
+- Create: `openotter-ios/Sources/Agent/TelegramGateway.swift`
+- Create: `openotter-ios/Tests/Agent/TelegramGatewayTests.swift`
 
 - [ ] **Step 1: Write failing tests for JSON parsing**
 
@@ -704,9 +704,9 @@ The Telegram Bot API returns JSON like:
 Test the parsing layer, not the network.
 
 ```swift
-// metalbot-ios/Tests/Agent/TelegramGatewayTests.swift
+// openotter-ios/Tests/Agent/TelegramGatewayTests.swift
 import XCTest
-@testable import metalbot
+@testable import openotter
 
 final class TelegramGatewayTests: XCTestCase {
 
@@ -794,13 +794,13 @@ final class TelegramGatewayTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: FAIL — Telegram types not defined
 
 - [ ] **Step 3: Implement TelegramGateway**
 
 ```swift
-// metalbot-ios/Sources/Agent/TelegramGateway.swift
+// openotter-ios/Sources/Agent/TelegramGateway.swift
 import Foundation
 
 // MARK: - Telegram API Models (Decodable)
@@ -997,13 +997,13 @@ final class TelegramGateway: ObservableObject {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All `TelegramGatewayTests` PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/TelegramGateway.swift metalbot-ios/Tests/Agent/TelegramGatewayTests.swift
+git add openotter-ios/Sources/Agent/TelegramGateway.swift openotter-ios/Tests/Agent/TelegramGatewayTests.swift
 git commit -m "feat(agent): Add TelegramGateway with long polling and JSON parsing tests"
 ```
 
@@ -1012,13 +1012,13 @@ git commit -m "feat(agent): Add TelegramGateway with long polling and JSON parsi
 ## Task 8: Stub Protocols (SkillRegistry and MemoryStore)
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/SkillRegistry.swift`
-- Create: `metalbot-ios/Sources/Agent/MemoryStore.swift`
+- Create: `openotter-ios/Sources/Agent/SkillRegistry.swift`
+- Create: `openotter-ios/Sources/Agent/MemoryStore.swift`
 
 - [ ] **Step 1: Implement SkillRegistry stub**
 
 ```swift
-// metalbot-ios/Sources/Agent/SkillRegistry.swift
+// openotter-ios/Sources/Agent/SkillRegistry.swift
 import Foundation
 
 protocol SkillProviding {
@@ -1044,7 +1044,7 @@ final class NoOpSkillRegistry: SkillRegistering {
 - [ ] **Step 2: Implement MemoryStore stub**
 
 ```swift
-// metalbot-ios/Sources/Agent/MemoryStore.swift
+// openotter-ios/Sources/Agent/MemoryStore.swift
 import Foundation
 
 protocol MemoryStoring {
@@ -1063,13 +1063,13 @@ final class NoOpMemoryStore: MemoryStoring {
 
 - [ ] **Step 3: Verify build**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh build`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh build`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/SkillRegistry.swift metalbot-ios/Sources/Agent/MemoryStore.swift
+git add openotter-ios/Sources/Agent/SkillRegistry.swift openotter-ios/Sources/Agent/MemoryStore.swift
 git commit -m "feat(agent): Add SkillRegistry and MemoryStore stub protocols for future extension"
 ```
 
@@ -1078,15 +1078,15 @@ git commit -m "feat(agent): Add SkillRegistry and MemoryStore stub protocols for
 ## Task 9: AgentRuntime with TDD
 
 **Files:**
-- Create: `metalbot-ios/Sources/Agent/AgentRuntime.swift`
-- Create: `metalbot-ios/Tests/Agent/AgentRuntimeTests.swift`
+- Create: `openotter-ios/Sources/Agent/AgentRuntime.swift`
+- Create: `openotter-ios/Tests/Agent/AgentRuntimeTests.swift`
 
 - [ ] **Step 1: Write failing tests**
 
 ```swift
-// metalbot-ios/Tests/Agent/AgentRuntimeTests.swift
+// openotter-ios/Tests/Agent/AgentRuntimeTests.swift
 import XCTest
-@testable import metalbot
+@testable import openotter
 
 private final class MockGoalReceiver: GoalReceiving {
     var lastGoal: PlannerGoal?
@@ -1153,13 +1153,13 @@ final class AgentRuntimeTests: XCTestCase {
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: FAIL — `AgentRuntime` not defined
 
 - [ ] **Step 3: Implement AgentRuntime**
 
 ```swift
-// metalbot-ios/Sources/Agent/AgentRuntime.swift
+// openotter-ios/Sources/Agent/AgentRuntime.swift
 import Foundation
 import Combine
 
@@ -1238,13 +1238,13 @@ final class AgentRuntime: ObservableObject {
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All `AgentRuntimeTests` PASS
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Agent/AgentRuntime.swift metalbot-ios/Tests/Agent/AgentRuntimeTests.swift
+git add openotter-ios/Sources/Agent/AgentRuntime.swift openotter-ios/Tests/Agent/AgentRuntimeTests.swift
 git commit -m "feat(agent): Add AgentRuntime orchestrator with full pipeline tests"
 ```
 
@@ -1253,14 +1253,14 @@ git commit -m "feat(agent): Add AgentRuntime orchestrator with full pipeline tes
 ## Task 10: AgentDebugView
 
 **Files:**
-- Create: `metalbot-ios/Sources/Views/AgentDebugView.swift`
+- Create: `openotter-ios/Sources/Views/AgentDebugView.swift`
 
 - [ ] **Step 1: Implement AgentDebugView**
 
 This view follows the same forced-landscape, card-based pattern as `RaspberryPiControlView` and `STM32ControlView`. It uses the existing `GroupBox` card layout.
 
 ```swift
-// metalbot-ios/Sources/Views/AgentDebugView.swift
+// openotter-ios/Sources/Views/AgentDebugView.swift
 import SwiftUI
 
 struct AgentDebugView: View {
@@ -1513,13 +1513,13 @@ private final class GatewayBridge: TelegramGatewayDelegate {
 
 - [ ] **Step 2: Verify build**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh build`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh build`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Views/AgentDebugView.swift
+git add openotter-ios/Sources/Views/AgentDebugView.swift
 git commit -m "feat(agent): Add AgentDebugView for isolated subsystem testing"
 ```
 
@@ -1528,7 +1528,7 @@ git commit -m "feat(agent): Add AgentDebugView for isolated subsystem testing"
 ## Task 11: Add Agent Diagnostics to HomeView
 
 **Files:**
-- Modify: `metalbot-ios/Sources/Views/HomeView.swift:140-205` (DiagnosticsView)
+- Modify: `openotter-ios/Sources/Views/HomeView.swift:140-205` (DiagnosticsView)
 
 - [ ] **Step 1: Add Agent Diagnostics entry to DiagnosticsView**
 
@@ -1549,13 +1549,13 @@ Section("Agent") {
 
 - [ ] **Step 2: Verify build**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh build`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh build`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add metalbot-ios/Sources/Views/HomeView.swift
+git add openotter-ios/Sources/Views/HomeView.swift
 git commit -m "feat(agent): Add Agent Diagnostics entry to HomeView DiagnosticsView"
 ```
 
@@ -1564,28 +1564,28 @@ git commit -m "feat(agent): Add Agent Diagnostics entry to HomeView DiagnosticsV
 ## Task 12: Regenerate Xcode project and run full test suite
 
 **Files:**
-- Regenerate: `metalbot-ios/metalbot.xcodeproj`
+- Regenerate: `openotter-ios/openotter.xcodeproj`
 
 - [ ] **Step 1: Regenerate Xcode project**
 
 The new `Sources/Agent/` directory and `Tests/Agent/` directory need to be picked up by XcodeGen.
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh generate`
-Expected: `metalbot.xcodeproj` regenerated with new Agent source and test files
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh generate`
+Expected: `openotter.xcodeproj` regenerated with new Agent source and test files
 
 - [ ] **Step 2: Run full test suite**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh test`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh test`
 Expected: All tests pass — existing planner/safety tests plus all new Agent tests
 
 - [ ] **Step 3: Build for device**
 
-Run: `cd /Users/fxu/Projects/metalbot/metalbot-ios && ./build.sh build`
+Run: `cd /Users/fxu/Projects/openotter/openotter-ios && ./build.sh build`
 Expected: BUILD SUCCEEDED
 
 - [ ] **Step 4: Commit generated project if changed**
 
 ```bash
-git add metalbot-ios/metalbot.xcodeproj
+git add openotter-ios/openotter.xcodeproj
 git commit -m "chore: Regenerate Xcode project with Agent sources and tests"
 ```

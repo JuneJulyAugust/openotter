@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file    ble_app.c
- * @brief   Metalbot BLE Application
+ * @brief   OpenOtter BLE Application
  *
  *          Architecture:
  *          - Uses BlueNRG-MS stack via SPI3 (SPBTLE-RF module)
@@ -162,7 +162,7 @@ static void BLE_InitGATTService(void)
      * Max_Attribute_Records = 1 (service) + 2 (cmd char) + 2 (status char)
      *                       + 1 (CCCD for notify) = 6
      */
-    uuid = METALBOT_CONTROL_SVC_UUID;
+    uuid = OPENOTTER_CONTROL_SVC_UUID;
     ret = aci_gatt_add_serv(UUID_TYPE_16,
                             (const uint8_t *)&uuid,
                             PRIMARY_SERVICE,
@@ -177,7 +177,7 @@ static void BLE_InitGATTService(void)
      * Add Command Characteristic (Write Without Response)
      * Payload: 4 bytes = [int16_t steering_us, int16_t throttle_us]
      */
-    uuid = METALBOT_COMMAND_CHAR_UUID;
+    uuid = OPENOTTER_COMMAND_CHAR_UUID;
     ret = aci_gatt_add_char(bleCtx.svcHandle,
                             UUID_TYPE_16,
                             (const uint8_t *)&uuid,
@@ -193,7 +193,7 @@ static void BLE_InitGATTService(void)
      * Add Status Characteristic (Notify)
      * We can send status/heartbeat back to iOS
      */
-    uuid = METALBOT_STATUS_CHAR_UUID;
+    uuid = OPENOTTER_STATUS_CHAR_UUID;
     ret = aci_gatt_add_char(bleCtx.svcHandle,
                             UUID_TYPE_16,
                             (const uint8_t *)&uuid,
@@ -217,8 +217,8 @@ static void BLE_StartAdvertising(void)
 
     const uint8_t svc_uuid_list[] = {
         AD_TYPE_16_BIT_SERV_UUID_CMPLT_LIST,
-        (uint8_t)(METALBOT_CONTROL_SVC_UUID & 0xFF),
-        (uint8_t)(METALBOT_CONTROL_SVC_UUID >> 8)
+        (uint8_t)(OPENOTTER_CONTROL_SVC_UUID & 0xFF),
+        (uint8_t)(OPENOTTER_CONTROL_SVC_UUID >> 8)
     };
 
     tBleStatus ret = aci_gap_set_discoverable(

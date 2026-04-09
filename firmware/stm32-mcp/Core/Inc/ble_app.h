@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file    ble_app.h
- * @brief   Metalbot BLE Application — public interface
+ * @brief   OpenOtter BLE Application — public interface
  *
  *          Exposes a custom GATT service for receiving steering and throttle
  *          commands over BLE, and applying them as TIM3 PWM pulse widths.
@@ -21,9 +21,9 @@ extern "C" {
 /* ---- Custom GATT Service UUIDs ---- */
 /* 128-bit base UUID: 00000000-BEEF-CAFE-C0DE-METALB0T0001
  * We use 16-bit short UUIDs within the BlueNRG stack for simplicity. */
-#define METALBOT_CONTROL_SVC_UUID    0xFE40  /* Custom control service */
-#define METALBOT_COMMAND_CHAR_UUID   0xFE41  /* Write char: steering + throttle */
-#define METALBOT_STATUS_CHAR_UUID    0xFE42  /* Notify char: status feedback */
+#define OPENOTTER_CONTROL_SVC_UUID    0xFE40  /* Custom control service */
+#define OPENOTTER_COMMAND_CHAR_UUID   0xFE41  /* Write char: steering + throttle */
+#define OPENOTTER_STATUS_CHAR_UUID    0xFE42  /* Notify char: status feedback */
 
 /* ---- PWM Constants (matching TIM3 config: PSC=79, ARR=19999 → 50Hz) ---- */
 #define PWM_PERIOD_US       20000   /* 20ms full period */

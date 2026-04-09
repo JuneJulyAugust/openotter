@@ -1,4 +1,4 @@
-# metalbot Walkthrough (Development Log)
+# openotter Walkthrough (Development Log)
 
 This file is for implementation-time learning, not upfront planning.
 
@@ -16,7 +16,7 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 - Current primary path: iPhone app -> STM32 control board.
 - Legacy path: Raspberry Pi WiFi bridge.
 - Historical entries below may still use older MCP wording where they describe work done before the rename.
-- BLE device name `METALBOT-MCP` is retained for STM32 compatibility.
+- BLE device name `OPENOTTER-MCP` is retained for STM32 compatibility.
 
 ## Entry Template
 
@@ -65,7 +65,7 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 ### 2026-04-05 - Agent Runtime & Telegram Gateway Design
 
 - **Context:** Enabling remote control of the car from a second phone without building a separate app or webpage.
-- **What we designed:** An OpenClaw-inspired Agent Runtime architecture inside the metalbot-ios app. A Telegram bot (long polling via URLSession, no third-party dependencies) receives commands, a swappable `CommandInterpreter` protocol parses them (keyword matching in v1, LLM in the future), an `ActionDispatcher` routes actions through the existing `PlannerOrchestrator` and `SafetySupervisor`, and `SpeechOutput` (AVSpeechSynthesizer) speaks confirmations aloud. Stub interfaces for `SkillRegistry` and `MemoryStore` are included for future AI agent capabilities.
+- **What we designed:** An OpenClaw-inspired Agent Runtime architecture inside the openotter-ios app. A Telegram bot (long polling via URLSession, no third-party dependencies) receives commands, a swappable `CommandInterpreter` protocol parses them (keyword matching in v1, LLM in the future), an `ActionDispatcher` routes actions through the existing `PlannerOrchestrator` and `SafetySupervisor`, and `SpeechOutput` (AVSpeechSynthesizer) speaks confirmations aloud. Stub interfaces for `SkillRegistry` and `MemoryStore` are included for future AI agent capabilities.
 - **Key decisions:** (1) No arm/disarm — the system is always under software control. (2) Telegram chosen over custom app/webpage for zero-infrastructure remote control. (3) Long polling (30s timeout, back-to-back) over webhooks to avoid needing a server. (4) Bot token in iOS Keychain, never in source. (5) Chat ID whitelist for authorization. (6) Standalone `AgentDebugView` for isolated subsystem testing before integration.
 - **Design spec:** `docs/superpowers/specs/2026-04-05-agent-runtime-telegram-design.md`
 - **Follow-up:** Implement the Agent subsystem following the phased integration plan (isolated dev → Telegram → App Core wiring → HomeView entry).
@@ -114,13 +114,13 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 - **Context:** The iOS app connected once, then stayed in scanning mode on reconnect while nRF Connect still saw the peripheral.
 - **Root cause:** BlueNRG still exposed the GAP device name as `BlueNRG` with a 7-byte characteristic, so iOS cached the wrong peripheral name after the first connection and the scanner filtered out the device on subsequent runs.
-- **Resolution:** Renamed the GAP device to `METALBOT-MCP`, expanded the GAP device-name length, updated the iOS scanner to match both cached and advertising names, and rebuilt/flashed the firmware.
+- **Resolution:** Renamed the GAP device to `OPENOTTER-MCP`, expanded the GAP device-name length, updated the iOS scanner to match both cached and advertising names, and rebuilt/flashed the firmware.
 - **Validation:** Firmware rebuilt successfully and the iOS reconnect path now accepts the STM32 peripheral again.
 
 ### 2026-03-27 - STM32 BLE Advertising Debugging & Initialization Root Causes (Superseded)
 
 - **Context:** Initial debugging session — see entry above for resolution.
-- **Issue observed:** The STM32 firmware successfully built and flashed, but the BLE device "METALBOT-MCP" never appeared on nRF Connect or iOS. Adding a heartbeat LED in the main loop confirmed the main loop was entirely frozen.
+- **Issue observed:** The STM32 firmware successfully built and flashed, but the BLE device "OPENOTTER-MCP" never appeared on nRF Connect or iOS. Adding a heartbeat LED in the main loop confirmed the main loop was entirely frozen.
 - **Root cause:** Multiple initialization issues (see 2026-03-28 entry above).
 
 ### 2026-03-27 - STM32 Firmware Target Setup
@@ -286,7 +286,7 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 - **Issue observed:** The firmware README described timeout neutralization, but the sketch only logs a warning when no command arrives.
 - **Root cause:** `neutralize()` is intentionally commented out in the sketch for debugging.
 - **Resolution:** Updated the firmware README to match the current warning-only timeout behavior.
-- **Validation:** The implemented protocol and timeout behavior are reflected in `firmware/raspberry-pi-mcp/README.md` and `firmware/metalbot-arduino/metalbot-arduino.ino`.
+- **Validation:** The implemented protocol and timeout behavior are reflected in `firmware/raspberry-pi-mcp/README.md` and `firmware/openotter-arduino/openotter-arduino.ino`.
 - **Follow-up:** Revisit timeout neutralization before vehicle-level driving tests.
 
 ### 2026-03-19 - MVP1 Step 2: Raspberry Pi MCP Bridge and iOS Diagnostics UI

@@ -79,8 +79,8 @@ When tasked with a feature, refactor, or fix, process the request through these 
 
 ## 6. Version Release Protocol
 When releasing a new version:
-1. Bump version string in `metalbot-ios/VERSION`.
-2. Document new features, changed behavior, and fixes in `metalbot-ios/CHANGELOG.md` under a new release heading.
+1. Bump version string in `openotter-ios/VERSION`.
+2. Document new features, changed behavior, and fixes in `openotter-ios/CHANGELOG.md` under a new release heading.
 3. Keep the same structure: `### Added`, `### Changed`, `### Fixed`.
 4. Commit the changes strictly as `Docs: Release ios-vX.Y.Z <milestone name>`.
 5. Run `git tag ios-vX.Y.Z`.

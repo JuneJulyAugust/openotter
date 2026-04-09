@@ -1,6 +1,6 @@
 # Coordinate Systems Reference
 
-## Vehicle Robot Frame (metalbot)
+## Vehicle Robot Frame (openotter)
 Based on physical mounting:
 - **Mounting**: Phone is in Landscape Left orientation (top of phone points left). Back camera is on the left side, facing forward.
 - **+X**: Forward

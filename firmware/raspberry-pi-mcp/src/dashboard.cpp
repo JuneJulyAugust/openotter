@@ -50,7 +50,7 @@ Element RenderMeter(const std::string& label, float value) {
 Element RenderDashboard(const StatusSnapshot& s) {
     auto header = vbox(Elements{
         hbox(Elements{
-            text(" 🏎️  METALBOT MCP ") | bold | color(Color::White) | bgcolor(Color::Blue),
+            text(" 🏎️  OPENOTTER MCP ") | bold | color(Color::White) | bgcolor(Color::Blue),
             filler(),
             text(" PI TIME: " + getCurrentTime() + " ") | color(Color::Yellow),
             separator(),

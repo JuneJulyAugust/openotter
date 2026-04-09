@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file    ble_config.h
- * @brief   BLE configuration for metalbot STM32 MCP
+ * @brief   BLE configuration for openotter STM32 MCP
  *          Derived from STM32CubeL4 P2P_LedButton config.h
  ******************************************************************************
  */

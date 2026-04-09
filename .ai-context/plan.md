@@ -1,4 +1,4 @@
-# metalbot Plan
+# openotter Plan
 
 This file defines the stable system contract. `task.md` tracks unfinished work, and `walkthrough.md` records implementation evidence.
 
@@ -36,7 +36,7 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Minimal operator intervention during a run.
 - Safe stop behavior when sensor data or link health becomes stale.
 - Both phones (operator and car) have internet connectivity (WiFi or cellular).
-- The metalbot app is always running in the foreground on the car's iPhone.
+- The openotter app is always running in the foreground on the car's iPhone.
 
 ### 2.4 MVP1 Success Definition
 
