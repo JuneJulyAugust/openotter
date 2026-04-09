@@ -18,7 +18,7 @@ struct RaspberryPiControlView: View {
                     .padding(.horizontal)
 
                     // --- CONNECTION CARD ---
-                    GroupBox(label: 
+                    GroupBox(label:
                         Label("NETWORK METRICS", systemImage: "antenna.radiowaves.left.and.right")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
@@ -28,7 +28,7 @@ struct RaspberryPiControlView: View {
                                 Circle()
                                     .fill(viewModel.connectionStatus == "Connected" ? Color.green : Color.red)
                                     .frame(width: 8, height: 8)
-                                
+
                                 Text(viewModel.connectionStatus)
                                     .font(.subheadline.bold())
                                     .foregroundColor(viewModel.connectionStatus == "Connected" ? .green : .red)
@@ -37,9 +37,9 @@ struct RaspberryPiControlView: View {
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
-                            
+
                             Divider()
-                            
+
                             HStack(alignment: .top) {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("IPHONE TX")
@@ -64,7 +64,7 @@ struct RaspberryPiControlView: View {
                     .groupBoxStyle(ModernGroupBoxStyle())
 
                     // --- ESC TELEMETRY CARD ---
-                    GroupBox(label: 
+                    GroupBox(label:
                         Label("ESC TELEMETRY (Direct BLE)", systemImage: "bolt.horizontal.fill")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
@@ -74,19 +74,19 @@ struct RaspberryPiControlView: View {
                                 Circle()
                                     .fill(viewModel.escStatus == .connected ? Color.green : Color.orange)
                                     .frame(width: 8, height: 8)
-                                
+
                                 Text(viewModel.escStatus.rawValue)
                                     .font(.subheadline.bold())
                                     .foregroundColor(viewModel.escStatus == .connected ? .green : .orange)
-                                
+
                                 if viewModel.escStatus == .connected {
                                     Text("(\(viewModel.escDeviceName))")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 if let telemetry = viewModel.escTelemetry {
                                     Text("\(String(format: "%.1f", telemetry.updateFrequency)) Hz")
                                         .font(.caption.monospacedDigit().bold())
@@ -97,9 +97,9 @@ struct RaspberryPiControlView: View {
                                         .cornerRadius(4)
                                 }
                             }
-                            
+
                             Divider()
-                            
+
                             HStack(alignment: .top) {
                                 VStack(alignment: .leading, spacing: 12) {
                                     MetricRow(label: "Motor Speed", value: "\(viewModel.escTelemetry?.rpm ?? 0) RPM")
@@ -113,7 +113,7 @@ struct RaspberryPiControlView: View {
                                     MetricRow(label: "Motor Temp", value: String(format: "%.1f °C", viewModel.escTelemetry?.motorTemperature ?? 0.0))
                                 }
                             }
-                            
+
                             if let telemetry = viewModel.escTelemetry {
                                 Text("Last update: \(telemetry.timestamp.formatted(date: .omitted, time: .complete)) • Messages: \(telemetry.messageCount)")
                                     .font(.system(size: 8, design: .monospaced))
@@ -126,7 +126,7 @@ struct RaspberryPiControlView: View {
                     .groupBoxStyle(ModernGroupBoxStyle())
 
                     // --- CONTROL CARD ---
-                    GroupBox(label: 
+                    GroupBox(label:
                         Label("MANUAL CONTROL", systemImage: "gamecontroller.fill")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
@@ -139,7 +139,7 @@ struct RaspberryPiControlView: View {
                                 color: .yellow,
                                 onUpdate: { viewModel.updateSteering($0) }
                             )
-                            
+
                             ControlSlider(
                                 label: "Motor Power",
                                 icon: "engine.combustion.fill",
@@ -147,7 +147,7 @@ struct RaspberryPiControlView: View {
                                 color: .orange,
                                 onUpdate: { viewModel.updateMotor($0) }
                             )
-                            
+
                             Button(action: {
                                 viewModel.updateSteering(0)
                                 viewModel.updateMotor(0)
@@ -177,9 +177,9 @@ struct RaspberryPiControlView: View {
                         }
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
-                        
+
                         Divider()
-                        
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text("WHAT'S NEW (v0.2.0)")
                                 .font(.caption.bold())

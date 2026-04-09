@@ -43,7 +43,7 @@ typedef enum
  *        The application shall not send a new command when the status is set to TL_BLE_HCI_CmdBusy.
  *        At least, TL_BLE_HCI_UserEvtProc shall not be executed while the TL remains busy
  *        This __WEAK function has to be OVERLOADED by the application, because only the application
- *        knows which TASKs are currently running and should be paused/resumed 
+ *        knows which TASKs are currently running and should be paused/resumed
  * @param status
  * @retval None
  */
@@ -143,6 +143,6 @@ void TL_BLE_HCI_UserEvtProc(void);
  * @param  pckt: The user event received from the BlueNRG device
  * @retval None
  */
-void TL_BLE_HCI_UserEvtRx(void *pckt);  
+void TL_BLE_HCI_UserEvtRx(void *pckt);
 
 #endif /* __TL_BLE_IO_H_ */

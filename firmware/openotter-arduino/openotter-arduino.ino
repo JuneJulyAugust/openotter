@@ -2,7 +2,7 @@
 
 /**
  * OpenOtter Arduino Control Module
- * 
+ *
  * Protocols:
  *   Input: "S:float,M:float\n"
  *          S (steering): -1.0 (left) to 1.0 (right), 0.0 (center)
@@ -66,7 +66,7 @@ void loop() {
 
   // Safety timeout (Neutralization disabled per user request for debugging)
   if (armed && (millis() - last_cmd_time > HEARTBEAT_TIMEOUT_MS)) {
-    // neutralize(); 
+    // neutralize();
     // Periodically log timeout to serial for debugging
     static unsigned long last_log = 0;
     if (millis() - last_log > 1000) {

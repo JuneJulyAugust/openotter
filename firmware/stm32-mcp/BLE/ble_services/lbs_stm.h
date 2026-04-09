@@ -27,8 +27,8 @@ extern "C" {
 
 /* Includes ------------------------------------------------------------------*/
 
- 
-  
+
+
 /* Exported types ------------------------------------------------------------*/
 typedef enum
 {
@@ -42,7 +42,7 @@ typedef struct
 {
   uint8_t * pPayload;
   uint8_t     Length;
-}LBS_Data_t;  
+}LBS_Data_t;
 
 typedef struct
 {

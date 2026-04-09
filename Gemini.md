@@ -7,21 +7,21 @@ You are a world top level software engineer. Your goal is to produce code that i
 ## 1. Core Implementation Philosophy
 Before providing code or implementation strategies, you must follow this internal workflow:
 
-* **Derive Principles First:** First, derive the correct math, physics, or invariant logic. 
+* **Derive Principles First:** First, derive the correct math, physics, or invariant logic.
 * **No Hacking:** Do not rely on ad‑hoc heuristics or "magic" fixes. Fix issues by correcting the underlying model, not by patching symptoms.
 * **Value Semantics First:** Prefer immutable value types and pure functions over shared mutable state. This eliminates side effects and makes parallel execution or testing significantly safer.
 
 ---
 
 ## 2. The DRY Rule (Don't Repeat Yourself)
-**Scope:** All languages, all folders.  
+**Scope:** All languages, all folders.
 **Goal:** One source of truth. Zero copy‑paste duplication.
 
 ### Actionable Directives:
 - **Search & Reuse:** Always check for existing helpers.
-- **Rule of Two:** If logic repeats twice, extract it. 
+- **Rule of Two:** If logic repeats twice, extract it.
 - **Parameterization over Duplication:** Pass behavior as arguments (callbacks, strategies, or lambdas) rather than writing near-identical functions for slightly different use cases.
-- **Centralize Constants:** No scattered literals. 
+- **Centralize Constants:** No scattered literals.
 - **Exceptions:** Tiny glue code ($\le 3$ lines), explicit performance-critical inlining (must document rationale), and isolated test fixtures.
 
 ---
@@ -36,11 +36,11 @@ Software design is not about piling on features; it is the art of managing depen
 
 ### Guideline 2: Design for Change via Separation of Concerns (SoC)
 - **Separate Logical vs. Physical Coupling:** Two components might be logically related, but they should not be physically coupled (e.g., forcing a recompile of the whole project) unless necessary.
-- **Avoid Artificial Coupling:** Do not group unrelated functionality into a single god-class or utility file just because it is convenient. 
+- **Avoid Artificial Coupling:** Do not group unrelated functionality into a single god-class or utility file just because it is convenient.
 - **Avoid Premature Separation:** Only separate concerns when a clear distinction of responsibilities emerges. Over-engineering early leads to fragmented, hard-to-follow code.
 
 ### Guideline 3: Separate Interfaces to Avoid Artificial Coupling
-- **Segregate Interfaces:** Do not force clients to depend on methods they do not use. 
+- **Segregate Interfaces:** Do not force clients to depend on methods they do not use.
 - **Minimize Requirements:** When writing generic code (like templates or generics), demand the absolute minimum capabilities from your input arguments. Narrow interfaces prevent unrelated systems from tangling together.
 
 ### Guideline 4: Design for Testability (The Private Method Rule)
@@ -86,11 +86,11 @@ When releasing a new version:
 5. Run `git tag ios-vX.Y.Z`.
 6. Run `git push origin main` and `git push origin --tags` to publish the release.
 
+# Whitespace Rules
+- Never leave trailing whitespace at the end of any line in any file.
+
 # ASCII Diagram Rules
 - All ASCII box diagrams MUST be well-aligned: vertical lines (`│`) must line up column-by-column, horizontal lines (`─`) must span the correct width, and corners (`┌┐└┘├┤┬┴┼`) must connect precisely.
 - Use consistent box widths within a diagram. Pad text with spaces so all rows in a box are the same length.
 - Prefer simple, flat layouts over deeply nested boxes. If a diagram is too complex to align cleanly, split it into multiple smaller diagrams.
 - Verify alignment before outputting: every `│` in a column must be at the same character offset across all rows.
-
-# Git Rules
-- NEVER include "Co-Authored-By" or any other AI attribution trailers in git commit messages. Commits must be authored normally without AI signatures.

@@ -112,7 +112,7 @@ extern "C" {
    * @retval None
    */
   void SVCCTL_App_Notification(void *pckt);
-  
+
 /**
  * @brief This callback is triggered when an user event is received from the BlueNRG device. The event is returned in
  *        a HCI packet. The full HCI packet is stored in a single buffer and is available when this callback is triggered.
@@ -124,7 +124,7 @@ extern "C" {
  * @param  pckt: The user event received from the BlueNRG device
  * @retval None
  */
-  void SVCCTL_HCI_UserEvtRx(void *pckt);  
+  void SVCCTL_HCI_UserEvtRx(void *pckt);
 
   /**
    * @brief Request the BLE BD Address from the application
@@ -132,8 +132,8 @@ extern "C" {
    *
    * @param  None
    * @retval Reference of the LSB of the BD Address
-   * @note  The application can overload this function for example 
-            in case it needs to retrieve the value from OTP 
+   * @note  The application can overload this function for example
+            in case it needs to retrieve the value from OTP
             instead of using the hardcoded value in the config.h
    */
   const uint8_t* SVCCTL_GetBdAddress( void );

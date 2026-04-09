@@ -101,7 +101,7 @@
 #define RINGER_CNTRL_POINT_CHARAC_UUID                                 (0x2A40)
 #define RINGER_SETTING_CHARAC_UUID                                     (0x2A41)
 
-/* UUIDs for battery service */ 
+/* UUIDs for battery service */
 #define BATTERY_SERVICE_UUID                                           (0x180F)
 #define BATTERY_LEVEL_CHAR_UUID                                        (0x2A19)
 
@@ -166,20 +166,20 @@
 #define MAGNETIC_DECLINATION_UUID                                      (0x2A2C)
 #define MAGNETIC_FLUX_DENSITY_2D_UUID                                  (0x2AA0)
 #define MAGNETIC_FLUX_DENSITY_3D_UUID                                  (0x2AA1)
-   
+
 /* UUIDs for body composition service */
 #define BODY_COMPOSITION_SERVICE_UUID                                  (0x181B)
 #define BODY_COMPOSITION_MEASUREMENT_CHAR_UUID                         (0x2A9C)
-#define BODY_COMPOSITION_FEATURE_CHARAC                                (0x2A9B)      
-   
+#define BODY_COMPOSITION_FEATURE_CHARAC                                (0x2A9B)
+
 /* UUIDs for weight scale profile */
 #define WEIGHT_SCALE_SERVICE_UUID                                      (0x181D)
 #define WEIGHT_SCALE_MEASUREMENT_CHAR_UUID                             (0x2A9D)
-#define WEIGHT_SCALE_FEATURE_CHARAC                                    (0x2A9E)  
-   
+#define WEIGHT_SCALE_FEATURE_CHARAC                                    (0x2A9E)
+
 /* UUIDs for Internet Support Service */
 #define INTERNET_SUPPORT_SERVICE_UUID                                  (0x1820)
-   
+
 /* UUIDs for HTTP proxy Service */
 #define HTTP_PROXY_SERVICE_UUID                                        (0x1823)
 #define HTTP_URI_CHAR_UUID                                             (0x2AB6)
@@ -188,14 +188,14 @@
 #define HTTP_ENTITY_BODY_CHAR_UUID                                     (0x2AB9)
 #define HTTP_CONTROL_POINT_CHAR_UUID                                   (0x2ABA)
 #define HTTP_SECURITY_CHAR_UUID                                        (0x2ABB)
-   
+
 /* Custom Services*/
 /* UUIDs for data transfer service */
 #define DATA_TRANSFER_SERVICE_UUID                                     (0xF2E0)
 #define DATA_TRANSFER_TX_CHAR_UUID                                     (0xF2E1)
-#define DATA_TRANSFER_RX_CHAR_UUID                                     (0xF2E2)    
+#define DATA_TRANSFER_RX_CHAR_UUID                                     (0xF2E2)
 
-/* UUIDs for custom battery service */ 
+/* UUIDs for custom battery service */
 #define CUSTOM_BATTERY_SERVICE_UUID                                    (0xF2F0)
 #define CUSTOM_BATTERY_LEVEL_CHAR_UUID                                 (0xF2F1)
 
@@ -203,11 +203,11 @@
 /* UUIDs for data transfer service */
 #define LED_BUTTON_SERVICE_UUID                                         (0x1A30)
 #define LED_CHAR_UUID                                                   (0x2B50)
-#define BUTTON_CHAR_UUID                                                (0x2B51)    
- 
+#define BUTTON_CHAR_UUID                                                (0x2B51)
+
 /*UUIDs for End Device Management Service*/
 #define END_DEVICE_MGT_SERVICE_UUID                                     (0x1A40)
-#define END_DEVICE_STATUS_CHAR_UUID                                     (0x2B60)   
+#define END_DEVICE_STATUS_CHAR_UUID                                     (0x2B60)
 
 
 #endif  /* _UUID_H_ */

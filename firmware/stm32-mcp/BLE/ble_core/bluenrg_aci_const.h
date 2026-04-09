@@ -46,7 +46,7 @@ typedef __packed struct _hal_read_config_data_cp{
 #define HAL_READ_CONFIG_DATA_RP_SIZE 1
 
 #ifdef __GNUC__
-typedef struct __packed _hal_read_config_data_rp{ 
+typedef struct __packed _hal_read_config_data_rp{
 #else
 typedef __packed struct _hal_read_config_data_rp{
 #endif
@@ -95,7 +95,7 @@ typedef __packed struct _hal_tone_start_cp{
 typedef struct __packed _hal_get_link_status_rp{
 #else
 typedef __packed struct _hal_get_link_status_rp{
-#endif  
+#endif
   uint8_t       status;
   uint8_t       link_status[8];
   uint16_t      conn_handle[8];
@@ -120,7 +120,7 @@ typedef __packed struct _hal_get_anchor_period_rp{
 typedef struct __packed _get_updater_version_rp{
 #else
 typedef __packed struct _get_updater_version_rp{
-#endif  
+#endif
     uint8_t        status;
   uint8_t        version;
 } PACKED get_updater_version_rp;
@@ -131,7 +131,7 @@ typedef __packed struct _get_updater_version_rp{
 typedef struct __packed _get_updater_bufsize_rp{
 #else
 typedef __packed struct _get_updater_bufsize_rp{
-#endif  
+#endif
     uint8_t        status;
   uint8_t        buffer_size;
 } PACKED get_updater_bufsize_rp;
@@ -146,7 +146,7 @@ typedef __packed struct _get_updater_bufsize_rp{
 typedef struct __packed _updater_erase_sector_cp{
 #else
 typedef __packed struct _updater_erase_sector_cp{
-#endif  
+#endif
   uint32_t  address;
 } PACKED updater_erase_sector_cp;
 #define UPDATER_ERASE_SECTOR_CP_SIZE 4
@@ -157,7 +157,7 @@ typedef __packed struct _updater_erase_sector_cp{
 typedef struct __packed _updater_prog_data_block_cp{
 #else
 typedef __packed struct _updater_prog_data_block_cp{
-#endif  
+#endif
   uint32_t  address;
     uint16_t    data_len;
     uint8_t    data[HCI_MAX_PAYLOAD_SIZE-UPDATER_PROG_DATA_BLOCK_CP_SIZE];
@@ -178,7 +178,7 @@ typedef __packed struct _updater_read_data_block_cp{
 typedef struct __packed _updater_read_data_block_rp{
 #else
 typedef __packed struct _updater_read_data_block_rp{
-#endif  
+#endif
   uint8_t        status;
   uint8_t        data[VARIABLE_SIZE];
 } PACKED updater_read_data_block_rp;
@@ -189,7 +189,7 @@ typedef __packed struct _updater_read_data_block_rp{
 typedef struct __packed _updater_calc_crc_cp{
 #else
 typedef __packed struct _updater_calc_crc_cp{
-#endif  
+#endif
   uint32_t  address;
     uint8_t    num_sectors;
 } PACKED updater_calc_crc_cp;
@@ -199,7 +199,7 @@ typedef __packed struct _updater_calc_crc_cp{
 typedef struct __packed _updater_calc_crc_rp{
 #else
 typedef __packed struct _updater_calc_crc_rp{
-#endif  
+#endif
   uint8_t        status;
   uint32_t    crc;
 } PACKED updater_calc_crc_rp;
@@ -210,7 +210,7 @@ typedef __packed struct _updater_calc_crc_rp{
 typedef struct __packed _updater_hw_version_rp{
 #else
 typedef __packed struct _updater_hw_version_rp{
-#endif  
+#endif
   uint8_t        status;
   uint8_t        version;
 } PACKED updater_hw_version_rp;
@@ -245,7 +245,7 @@ typedef __packed struct _gap_set_direct_conectable_cp{
 #endif
   uint8_t   own_bdaddr_type;
   uint8_t   direct_bdaddr_type;
-  tBDAddr   direct_bdaddr;  
+  tBDAddr   direct_bdaddr;
 } PACKED gap_set_direct_conectable_cp;
 #endif
 
@@ -254,7 +254,7 @@ typedef __packed struct _gap_set_direct_conectable_cp{
 typedef struct __packed _gap_set_io_capability_cp{
 #else
 typedef __packed struct _gap_set_io_capability_cp{
-#endif  
+#endif
   uint8_t    io_capability;
 } PACKED gap_set_io_capability_cp;
 #define GAP_SET_IO_CAPABILITY_CP_SIZE 1
@@ -292,7 +292,7 @@ typedef __packed struct _gap_set_author_requirement_cp{
 typedef struct __packed _gap_passkey_response_cp{
 #else
 typedef __packed struct _gap_passkey_response_cp{
-#endif  
+#endif
   uint16_t conn_handle;
   uint32_t passkey;
 } PACKED gap_passkey_response_cp;
@@ -303,7 +303,7 @@ typedef __packed struct _gap_passkey_response_cp{
 typedef struct __packed _gap_authorization_response_cp{
 #else
 typedef __packed struct _gap_authorization_response_cp{
-#endif  
+#endif
   uint16_t conn_handle;
   uint8_t  authorize;
 } PACKED gap_authorization_response_cp;
@@ -319,7 +319,7 @@ typedef __packed struct _gap_init_cp{
 #endif
     uint8_t  role;
     uint8_t  privacy_enabled;
-    uint8_t device_name_char_len; 
+    uint8_t device_name_char_len;
 } PACKED gap_init_cp;
 #define GAP_INIT_CP_SIZE 3
 ///@endcond
@@ -329,7 +329,7 @@ typedef __packed struct _gap_init_cp{
 typedef struct __packed _gap_init_cp{
 #else
 typedef __packed struct _gap_init_cp{
-#endif  
+#endif
   uint8_t  role;
 } PACKED gap_init_cp;
 #define GAP_INIT_CP_SIZE 1
@@ -617,7 +617,7 @@ typedef __packed struct _gap_resolve_private_address_rp{
 } PACKED gap_resolve_private_address_rp;
 ///@endcond
 #endif
-  
+
 #define OCF_GAP_SET_BROADCAST_MODE   0x00A1
 #define GAP_SET_BROADCAST_MODE_CP_SIZE 6
 #ifdef __GNUC__
@@ -687,7 +687,7 @@ typedef struct __packed _gatt_include_serv_rp{
 typedef __packed struct _gatt_include_serv_rp{
 #endif
   uint8_t        status;
-  uint16_t    handle;    
+  uint16_t    handle;
 } PACKED gatt_include_serv_rp;
 #define GATT_INCLUDE_SERV_RP_SIZE 3
 

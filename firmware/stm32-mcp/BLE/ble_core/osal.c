@@ -16,11 +16,11 @@
  *
  ******************************************************************************
  */
-  
+
 /* Includes ------------------------------------------------------------------*/
 #include <string.h>
 #include "osal.h"
- 
+
  /**
  * @brief  Osal_MemCpy
  * @param  dest: Pointer to the destination buffer
@@ -31,12 +31,12 @@
  */
 void* Osal_MemCpy(void *dest, const void *src, unsigned int size)
 {
-    return(memcpy(dest,src,size)); 
+    return(memcpy(dest,src,size));
 }
 
 /**
  * @brief  Osal_MemSet
- * @param  ptr  : Pointer to block of memory to fill  
+ * @param  ptr  : Pointer to block of memory to fill
  * @param  value: Value to assign to each byte of the memory block
  * @param  size : Number of bytes to be set to "value"
  * @retval Pointer to the filled block of memory
@@ -48,5 +48,5 @@ void* Osal_MemSet(void *ptr, int value, unsigned int size)
 
 /******************************************************************************
  * local Functions
- *****************************************************************************/ 
- 
+ *****************************************************************************/
+

@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    hci_tl_io_template.c
  * @author  MCD Application Team
- * @brief   This lower API is imposed by the MW to the applic TL (transport layer). 
+ * @brief   This lower API is imposed by the MW to the applic TL (transport layer).
  ******************************************************************************
  * @attention
  *
@@ -23,6 +23,6 @@
 
 int32_t hci_send_req(struct hci_request *r, uint8_t async)
 {
-  return 0; 
+  return 0;
 }
 

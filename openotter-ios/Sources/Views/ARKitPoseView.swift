@@ -4,24 +4,24 @@ import simd
 struct ARKitPoseView: View {
     @StateObject private var viewModel = ARKitPoseViewModel()
     @Environment(\.presentationMode) var presentationMode
-    
+
     // View state for interaction
     @State private var scale: CGFloat = 40.0 // pixels per meter (~5m visible per side)
     @State private var offset: CGSize = .zero
     @State private var lastScale: CGFloat = 40.0
     @State private var lastOffset: CGSize = .zero
     @State private var canvasSize: CGSize = .zero
-    
+
     var body: some View {
         GeometryReader { geo in
             let isPortrait = geo.size.height > geo.size.width
             let screenWidth = geo.size.width
             let screenHeight = geo.size.height
-            
+
             // Invert dimensions if portrait to force landscape layout
             let width = isPortrait ? screenHeight : screenWidth
             let height = isPortrait ? screenWidth : screenHeight
-            
+
             // Fixed safe areas for iPhone 13 Pro Max (Landscape Left orientation)
             // When physically in portrait but forced landscape:
             // Top of phone (notch) becomes Left padding
@@ -30,7 +30,7 @@ struct ARKitPoseView: View {
             let leftPad: CGFloat = 50.0 // Notch area
             let rightPad: CGFloat = 34.0 // Home indicator area
             let topPad: CGFloat = 10.0
-            
+
             landscapeContent(leftPad: leftPad, rightPad: rightPad, topPad: topPad)
                 .frame(width: width, height: height)
                 .rotationEffect(isPortrait ? .degrees(90) : .degrees(0))
@@ -58,7 +58,7 @@ struct ARKitPoseView: View {
             MapManagerView(viewModel: viewModel)
         }
     }
-    
+
     @ViewBuilder
     private func landscapeContent(leftPad: CGFloat, rightPad: CGFloat, topPad: CGFloat) -> some View {
         HStack(spacing: 0) {
@@ -68,12 +68,12 @@ struct ARKitPoseView: View {
                 .frame(width: 160 + leftPad) // Narrower panel
                 .background(Color(.systemBackground).shadow(radius: 2))
                 .zIndex(1)
-            
+
             // CENTER: Map Canvas
             mapCanvas
                 .zIndex(0)
                 .clipped()
-            
+
             // RIGHT: Thumb Controls
             controlsPanel
                 .padding(.trailing, rightPad)
@@ -83,7 +83,7 @@ struct ARKitPoseView: View {
         }
         .background(Color(.systemGray6))
     }
-    
+
     private func dataPanel(topPad: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 12) { // Tighter spacing
             // Custom Back Button
@@ -100,9 +100,9 @@ struct ARKitPoseView: View {
                 .foregroundColor(.blue)
             }
             .padding(.top, topPad + 8)
-            
+
             Divider()
-            
+
             if let pose = viewModel.currentPose {
                 VStack(alignment: .leading, spacing: 6) { // Tighter spacing
                     Text(String(format: "X(Fwd): %+.2f", pose.x))
@@ -110,7 +110,7 @@ struct ARKitPoseView: View {
                     Text(String(format: "Z(Rgt): %+.2f", pose.z))
                 }
                 .font(.system(.subheadline, design: .monospaced)) // Smaller font
-                
+
                 let yawDeg = pose.yaw * 180 / .pi
                 Text(String(format: "Yaw: %+.1f°", yawDeg))
                     .font(.system(.subheadline, design: .monospaced))
@@ -125,7 +125,7 @@ struct ARKitPoseView: View {
                     .font(.system(.subheadline, design: .monospaced))
                     .foregroundColor(.secondary)
             }
-            
+
             // Tracking State + Hz
             HStack(spacing: 4) {
                 Circle()
@@ -201,7 +201,7 @@ struct ARKitPoseView: View {
         }
         .padding(.horizontal, 10)
     }
-    
+
     private var trackingStateColor: Color {
         if viewModel.isInterrupted { return .red }
         if viewModel.isRelocalizing { return .orange }
@@ -265,7 +265,7 @@ struct ARKitPoseView: View {
                 .clipShape(Circle())
         }
     }
-    
+
     private var mapCanvas: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottomLeading) {
@@ -302,7 +302,7 @@ struct ARKitPoseView: View {
                             lastScale = scale
                         }
                 )
-                
+
                 // Overlay for scale indicator
                 Text("Grid: 1.0 m")
                     .font(.caption.monospaced())
@@ -322,12 +322,12 @@ struct ARKitPoseView: View {
             }
         }
     }
-    
+
     // MARK: - Auto Zoom
-    
+
     private func updateAutoZoom(size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        
+
         let allPoses = viewModel.poses + (viewModel.currentPose.map { [$0] } ?? [])
         guard !allPoses.isEmpty else {
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -338,46 +338,46 @@ struct ARKitPoseView: View {
             self.lastOffset = .zero
             return
         }
-        
+
         var minX = allPoses[0].x
         var maxX = allPoses[0].x
         var minZ = allPoses[0].z
         var maxZ = allPoses[0].z
-        
+
         for p in allPoses {
             minX = min(minX, p.x)
             maxX = max(maxX, p.x)
             minZ = min(minZ, p.z)
             maxZ = max(maxZ, p.z)
         }
-        
+
         let rangeX = CGFloat(maxX - minX)
         let rangeZ = CGFloat(maxZ - minZ)
-        
+
         let padding: CGFloat = 80 // Increased Canvas padding to accommodate axes and texts
         let availableWidth = size.width - padding * 2
         let availableHeight = size.height - padding * 2
-        
+
         // Scale to fit ranges. If range is tiny, default to 40 pixels/m (~5m visible).
         let scaleX = rangeZ > 0.05 ? availableWidth / rangeZ : 40.0
         let scaleY = rangeX > 0.05 ? availableHeight / rangeX : 40.0
-        
+
         let targetScale = min(scaleX, scaleY)
         let finalScale = max(20, min(targetScale, 400)) // Clamp scale limits
-        
+
         let centerX = CGFloat(minZ + maxZ) / 2.0
         let centerY = CGFloat(minX + maxX) / 2.0
-        
+
         let targetOffset = CGSize(
             width: -centerX * finalScale,
             height: centerY * finalScale // centerY is positive because Canvas Y is inverted
         )
-        
+
         withAnimation(.easeInOut(duration: 0.1)) {
             self.scale = finalScale
             self.offset = targetOffset
         }
-        
+
         self.lastScale = finalScale
         self.lastOffset = targetOffset
     }

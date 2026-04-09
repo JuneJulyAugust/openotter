@@ -41,7 +41,7 @@
 
 //typedef uint8_t BOOL;
 
-#ifndef TRUE 
+#ifndef TRUE
 #define TRUE (1)
 #endif
 
@@ -51,5 +51,5 @@
 
 
 
-#endif /* __BLUENRG_PRIVATE_HAL_TYPES_H__ */ 
+#endif /* __BLUENRG_PRIVATE_HAL_TYPES_H__ */
 

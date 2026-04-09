@@ -51,11 +51,11 @@ class RaspberryPiControlViewModel: ObservableObject {
         escManager.$status
             .receive(on: DispatchQueue.main)
             .assign(to: &$escStatus)
-        
+
         escManager.$telemetry
             .receive(on: DispatchQueue.main)
             .assign(to: &$escTelemetry)
-        
+
         escManager.$deviceName
             .receive(on: DispatchQueue.main)
             .assign(to: &$escDeviceName)

@@ -269,5 +269,5 @@ int32_t hci_send_req(struct hci_request *r, uint8_t async)
 }
 
 
-	
+
 

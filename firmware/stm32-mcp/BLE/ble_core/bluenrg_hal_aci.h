@@ -42,7 +42,7 @@ tBleStatus aci_hal_get_fw_build_number(uint16_t *build_number);
  * @param[out] val Data to be written
  * @return Value indicating success or error code.
  */
-tBleStatus aci_hal_write_config_data(uint8_t offset, 
+tBleStatus aci_hal_write_config_data(uint8_t offset,
                                     uint8_t len,
                                     const uint8_t *val);
 /**
@@ -193,7 +193,7 @@ typedef __packed struct _evt_hal_events_lost{
 typedef struct __packed _evt_hal_crash_info{
 #else
 typedef __packed struct _evt_hal_crash_info{
-#endif  
+#endif
   uint8_t  crash_type; /**< Type of crash: Assert failed (0), NMI Fault (1), Hard Fault (2)  */
   uint32_t sp; /**< SP register */
   uint32_t r0; /**< R0 register  */
@@ -205,7 +205,7 @@ typedef __packed struct _evt_hal_crash_info{
   uint32_t pc; /**< PC register  */
   uint32_t xpsr; /**< xPSR register  */
   uint8_t  debug_data_len; /**< length of debug_data field  */
-  uint8_t  debug_data[VARIABLE_SIZE]; /**< Debug data */  
+  uint8_t  debug_data[VARIABLE_SIZE]; /**< Debug data */
 } PACKED evt_hal_crash_info;
 
 ///@endcond
@@ -323,7 +323,7 @@ typedef __packed struct _evt_hal_crash_info{
  * @name Lost events bitmap
  * See @ref EVT_BLUE_HAL_EVENTS_LOST.
  * @{
- */   
+ */
 #define EVT_DISCONN_COMPLETE_BIT                                     0
 #define EVT_ENCRYPT_CHANGE_BIT                                       1
 #define EVT_READ_REMOTE_VERSION_COMPLETE_BIT                         2
@@ -372,11 +372,11 @@ typedef __packed struct _evt_hal_crash_info{
 #define EVT_LL_ADVERTISING_REPORT_BIT                                45
 #define EVT_LL_CONNECTION_UPDATE_COMPLETE_BIT                        46
 #define EVT_LL_READ_REMOTE_USED_FEATURES_BIT                         47
-#define EVT_LL_LTK_REQUEST_BIT                                       48   
+#define EVT_LL_LTK_REQUEST_BIT                                       48
 /**
  * @}
  */
-   
+
 /**
  * @name Hardware error event codes
  * See @ref EVT_HARDWARE_ERROR.
@@ -395,8 +395,8 @@ typedef __packed struct _evt_hal_crash_info{
  * Caused by a slow crystal startup and they are an indication that the HS_STARTUP_TIME
  * in the device configuration needs to be tuned. After this event is recommended to hardware reset the device.
  */
-#define TIMER_OVERRUN_ERROR         2 
-   
+#define TIMER_OVERRUN_ERROR         2
+
 /**
  * @}
  */

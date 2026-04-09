@@ -64,7 +64,7 @@
 #define BNRG_SPI_RESET_STDBY_PIN        LL_PWR_GPIO_BIT_8
 #define BNRG_SPI_RESET_STDBY_PORT       LL_PWR_GPIO_A
 
-  // SCLK: 
+  // SCLK:
 #define BNRG_SPI_SCLK_PIN               GPIO_PIN_10
 #define BNRG_SPI_SCLK_MODE              GPIO_MODE_AF_PP
 #define BNRG_SPI_SCLK_PULL              GPIO_NOPULL
@@ -73,7 +73,7 @@
 #define BNRG_SPI_SCLK_PORT              GPIOC
 #define BNRG_SPI_SCLK_CLK_ENABLE()      __HAL_RCC_GPIOC_CLK_ENABLE()
 
-  // MISO (Master Input Slave Output): 
+  // MISO (Master Input Slave Output):
 #define BNRG_SPI_MISO_PIN               GPIO_PIN_11
 #define BNRG_SPI_MISO_MODE              GPIO_MODE_AF_PP
 #define BNRG_SPI_MISO_PULL              GPIO_NOPULL
@@ -82,7 +82,7 @@
 #define BNRG_SPI_MISO_PORT              GPIOC
 #define BNRG_SPI_MISO_CLK_ENABLE()      __HAL_RCC_GPIOC_CLK_ENABLE()
 
-  // MOSI (Master Output Slave Input): 
+  // MOSI (Master Output Slave Input):
 #define BNRG_SPI_MOSI_PIN               GPIO_PIN_12
 #define BNRG_SPI_MOSI_MODE              GPIO_MODE_AF_PP
 #define BNRG_SPI_MOSI_PULL              GPIO_NOPULL
@@ -113,7 +113,7 @@
 
 /* EXTI PIN and PORT and Handler defined in the hw.h */
 #define BNRG_SPI_EXTI_NVIC_PREEMPT_PRIO 2
-#define BNRG_SPI_EXTI_NVIC_SUB_PRIO     0 
+#define BNRG_SPI_EXTI_NVIC_SUB_PRIO     0
 
 #define BNRG_SPI_FORCE_RESET()          __SPI3_FORCE_RESET()
 #define BNRG_SPI_RELEASE_RESET()        __SPI3_RELEASE_RESET()
@@ -332,7 +332,7 @@ static void TimerTransmitCallback(void)
 
 
 /**
- * @brief  This function is used for low level initialization of the SPI 
+ * @brief  This function is used for low level initialization of the SPI
  *         communication with the BlueNRG Expansion Board.
  * @param  Pointer to the handle of the STM32Cube HAL SPI interface.
  * @retval None
@@ -348,7 +348,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
   {
     /* Enable peripherals clock */
 
-    /* Enable GPIO Ports Clock */  
+    /* Enable GPIO Ports Clock */
     BNRG_SPI_SCLK_CLK_ENABLE();
     BNRG_SPI_MISO_CLK_ENABLE();
     BNRG_SPI_MOSI_CLK_ENABLE();
@@ -364,7 +364,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     GPIO_InitStruct.Pull = BNRG_SPI_SCLK_PULL;
     GPIO_InitStruct.Speed = BNRG_SPI_SCLK_SPEED;
     GPIO_InitStruct.Alternate = BNRG_SPI_SCLK_ALTERNATE;
-    HAL_GPIO_Init(BNRG_SPI_SCLK_PORT, &GPIO_InitStruct); 
+    HAL_GPIO_Init(BNRG_SPI_SCLK_PORT, &GPIO_InitStruct);
 
     /* MISO */
     GPIO_InitStruct.Pin = BNRG_SPI_MISO_PIN;
@@ -399,10 +399,10 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     GPIO_InitStruct.Alternate = BNRG_SPI_IRQ_ALTERNATE;
     HAL_GPIO_Init(BNRG_SPI_IRQ_PORT, &GPIO_InitStruct);
 
-    /*##-3- Configure the DMA channel ##########################################*/ 
+    /*##-3- Configure the DMA channel ##########################################*/
 
     /* Enable DMA1 clock */
-    BNRG_DMA_CLK_ENABLE();   
+    BNRG_DMA_CLK_ENABLE();
 
     /* Configure the DMA handler for Transmission process */
     hdma_tx.Init.Request             = BNRG_SPI_TX_DMA_REQUEST;
@@ -415,7 +415,7 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     hdma_tx.Init.Priority            = DMA_PRIORITY_HIGH;
     hdma_tx.Instance                 = BNRG_SPI_TX_DMA_CHANNEL_INSTANCE;
 
-    HAL_DMA_Init(&hdma_tx);   
+    HAL_DMA_Init(&hdma_tx);
     peripheral_address = LL_SPI_DMA_GetRegAddr(BNRG_SPI_INSTANCE);
     LL_DMA_SetPeriphAddress(BNRG_SPI_TX_DMA_ID, BNRG_SPI_TX_DMA_CHANNEL, peripheral_address);
 
@@ -438,23 +438,23 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* hspi)
     LL_DMA_SetPeriphAddress(BNRG_SPI_RX_DMA_ID, BNRG_SPI_RX_DMA_CHANNEL, peripheral_address);
 
     /* Associate the initialized DMA handle to the SPI handle */
-    __HAL_LINKDMA(hspi, hdmarx, hdma_rx); 
+    __HAL_LINKDMA(hspi, hdmarx, hdma_rx);
 
-    /* Configure the NVIC for SPI */  
-    HAL_NVIC_SetPriority(BNRG_SPI_DMA_TX_IRQn, 
-                         BNRG_SPI_TX_DMA_NVIC_PREEMPT_PRIO, 
+    /* Configure the NVIC for SPI */
+    HAL_NVIC_SetPriority(BNRG_SPI_DMA_TX_IRQn,
+                         BNRG_SPI_TX_DMA_NVIC_PREEMPT_PRIO,
                          BNRG_SPI_TX_DMA_NVIC_SUB_PRIO);
     HAL_NVIC_EnableIRQ(BNRG_SPI_DMA_TX_IRQn);
 
-    HAL_NVIC_SetPriority(BNRG_SPI_DMA_RX_IRQn, 
-                         BNRG_SPI_RX_DMA_NVIC_PREEMPT_PRIO, 
+    HAL_NVIC_SetPriority(BNRG_SPI_DMA_RX_IRQn,
+                         BNRG_SPI_RX_DMA_NVIC_PREEMPT_PRIO,
                          BNRG_SPI_RX_DMA_NVIC_SUB_PRIO);
     HAL_NVIC_EnableIRQ(BNRG_SPI_DMA_RX_IRQn);
 
-    /* Configure the NVIC for SPI */  
-    HAL_NVIC_SetPriority(BNRG_SPI_EXTI_IRQn, 
-                         BNRG_SPI_EXTI_NVIC_PREEMPT_PRIO, 
-                         BNRG_SPI_EXTI_NVIC_SUB_PRIO);    
+    /* Configure the NVIC for SPI */
+    HAL_NVIC_SetPriority(BNRG_SPI_EXTI_IRQn,
+                         BNRG_SPI_EXTI_NVIC_PREEMPT_PRIO,
+                         BNRG_SPI_EXTI_NVIC_SUB_PRIO);
   }
 
   return;
@@ -530,7 +530,7 @@ void ResetBlueNRG(void)
  * @retval None
  */
 static void Enable_SPI_Receiving_Path(void)
-{  
+{
   __HAL_GPIO_EXTI_CLEAR_IT(BNRG_SPI_EXTI_PIN);
   HAL_NVIC_ClearPendingIRQ(BNRG_SPI_EXTI_IRQn);
   HAL_NVIC_EnableIRQ(BNRG_SPI_EXTI_IRQn);
@@ -547,7 +547,7 @@ static void Enable_SPI_Receiving_Path(void)
  * @retval None
  */
 static void Disable_SPI_Receiving_Path(void)
-{  
+{
   HAL_NVIC_DisableIRQ(BNRG_SPI_EXTI_IRQn);
 }
 
@@ -623,7 +623,7 @@ static void WakeupBlueNRG(void)
  * @retval None
  */
 static void TransmitClosure(void)
-{ 
+{
   LPM_SetStopMode(LPM_SPI_TX_Id, LPM_StopMode_Dis);
   SpiContext.SpiPeripheralState = SPI_AVAILABLE;
   Disable_SPI_CS();
@@ -837,7 +837,7 @@ void HW_BNRG_Init(HW_BNRG_InitMode_t InitMode)
 
 
 void HW_BNRG_Send(uint8_t* payload_data, uint16_t payload_size)
-{  
+{
   SpiContext.SpiTransmitContext.pPayloadData = payload_data;
   SpiContext.SpiTransmitContext.PayloadSizeLeftToTransmit = payload_size;
 
@@ -879,7 +879,7 @@ void HW_BNRG_EvtReq(uint8_t *buffer, uint16_t buff_size)
 
 
 void HW_BNRG_SpiIrqCb(void)
-{  
+{
   __disable_irq();
   if(SpiContext.SpiPeripheralState == SPI_AVAILABLE)
   {
@@ -1061,18 +1061,18 @@ void HW_BNRG_TimStartAllowed(void)
    * @brief  Request a timer to be started
    * @param  None
    * @retval None
-   * @Note   If the specific application need to wait before starting the timer 
-   *         this function can be overloaded in the specific application itself 
+   * @Note   If the specific application need to wait before starting the timer
+   *         this function can be overloaded in the specific application itself
    */
 __weak void HW_BNRG_TimStartReq(void)
 {
   /**
-   * In this file (part of the COMMON code) it is assumed that the TimerServer  
+   * In this file (part of the COMMON code) it is assumed that the TimerServer
    * implements critical section by default (CFG_HW_TS_USE_PRIMASK_AS_CRITICAL_SECTION = 1)
    * the Timer requested can be started immediately because there is no risk that
    * the timer is already in use.
    * If a specific application needs to handle the timer differently,
-   * it is suggested to overload the function without change the COMMON one. 
+   * it is suggested to overload the function without change the COMMON one.
    */
   HW_BNRG_TimStartAllowed();
 

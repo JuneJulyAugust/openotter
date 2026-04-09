@@ -37,9 +37,9 @@ typedef enum
  typedef struct{
     uint8_t                                     Device_Led_Selection;
     uint8_t                                     Led1Control;
-   
+
  }LBR_LedCharValue_t;
- 
+
  typedef struct{
     uint8_t                                     Device_Button_Selection;
     uint8_t                                     ButtonStatus;
@@ -63,7 +63,7 @@ typedef struct
 /* Exported types LBR Client Implementation-----------------------------------*/
 
 typedef enum
-{  
+{
   LBC_IDLE                            = 0,
   LBC_DISCOVER_SERVICES               = 1,
   LBC_DISCOVER_CHARACS                = 2,
@@ -74,9 +74,9 @@ typedef enum
   LBC_ADV                             = 7,
   LBC_SCAN                            = 8,
   LBC_CONNECTING                      = 9,
-  LBC_CONNECTED                       = 10,    
+  LBC_CONNECTED                       = 10,
 } LBR_Gap_Gatt_State;
-  
+
 typedef enum
 {
   LBC_START_TIMER_EVT,
@@ -88,7 +88,7 @@ typedef struct
 {
   uint8_t * pPayload;
   uint8_t     Length;
-}LBR_Client_Data_t;  
+}LBR_Client_Data_t;
 
 typedef struct
 {

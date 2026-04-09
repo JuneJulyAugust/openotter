@@ -40,7 +40,7 @@ void DebugMon_Handler(void);
 void PendSV_Handler(void);
 void SysTick_Handler(void);
 
-void RTC_WKUP_IRQHandler(void); 
+void RTC_WKUP_IRQHandler(void);
 void EXTI9_5_IRQHandler(void);         /* BNRG_SPI_EXTI_IRQHandler   */
 void DMA2_Channel1_IRQHandler(void);   /* BNRG_SPI_RX_DMA_IRQHandler */
 void DMA2_Channel2_IRQHandler(void);   /* BNRG_SPI_TX_DMA_IRQHandler */

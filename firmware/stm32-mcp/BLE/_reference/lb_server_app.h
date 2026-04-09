@@ -30,7 +30,7 @@ extern "C" {
 /* External variables --------------------------------------------------------*/
 /* Exported macros -----------------------------------------------------------*/
 /* Exported functions ------------------------------------------------------- */
-  
+
 void LB_App_Button_Trigger_Received(void);
 void BLE_App_LedButton_EndDevice_Init(void);
 

@@ -407,7 +407,7 @@ typedef enum
 /******************************************************************************
  * SPI and other timing defines
  *****************************************************************************/
- 
+
   /**
    * When the STM32xx runs too fast, there could be a false detection on the SPI_IRQ after a packet has been received.
    * To prevent this, a timeout is added to wait after receiving a packet from the BlueNRG before checking the SPI_IRQ.

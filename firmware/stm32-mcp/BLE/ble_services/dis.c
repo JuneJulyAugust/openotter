@@ -17,7 +17,7 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
-#include <string.h>   
+#include <string.h>
 
 #include "config.h"   /* provided by the applic. see config/ble_config_templete.h */
 #include "debug.h"    /* provided by the applic. see config/ble_debug_templete.h */
@@ -153,12 +153,12 @@ void DIS_Init(uint16_t *options)
 
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Device Information Service (DIS) is added Successfully %04X\n", 
+    DIS_DBG_MSG ("DIS_Init(), Device Information Service (DIS) is added Successfully %04X\n",
                  DIS_Context.DeviceInformationSvcHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Device Information Service (DIS), Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Device Information Service (DIS), Error: %02X !!\n",
                  hciCmdResult);
   }
 
@@ -180,12 +180,12 @@ void DIS_Init(uint16_t *options)
 
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Manufacturer Name Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), Manufacturer Name Characteristic Added Successfully  %04X \n",
                  DIS_Context.ManufacturerNameStringCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Manufacturer Name Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Manufacturer Name Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 
@@ -208,12 +208,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.ModelNumberStringCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Model Number String Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), Model Number String Characteristic Added Successfully  %04X \n",
                  DIS_Context.ModelNumberStringCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Model Number String Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Model Number String Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 
@@ -236,12 +236,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.SerialNumberStringCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Serial Number String Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), Serial Number String Characteristic Added Successfully  %04X \n",
                  DIS_Context.SerialNumberStringCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Serial Number String Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Serial Number String Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 
@@ -264,12 +264,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.HardwareRevisionStringCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Hardware Revision String Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), Hardware Revision String Characteristic Added Successfully  %04X \n",
                  DIS_Context.HardwareRevisionStringCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Hardware Revision String Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Hardware Revision String Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 
@@ -292,12 +292,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.FirmwareRevisionStringCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Firmware Revision String Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), Firmware Revision String Characteristic Added Successfully  %04X \n",
                  DIS_Context.FirmwareRevisionStringCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Firmware Revision String Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Firmware Revision String Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 #endif
@@ -319,12 +319,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.SoftwareRevisionStringCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Software Revision String Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), Software Revision String Characteristic Added Successfully  %04X \n",
                  DIS_Context.SoftwareRevisionStringCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Software Revision String Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Software Revision String Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 #endif
@@ -346,12 +346,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.SystemIDCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), System ID Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), System ID Characteristic Added Successfully  %04X \n",
                  DIS_Context.SystemIDCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add System ID Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add System ID Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 #endif
@@ -373,12 +373,12 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.IEEECertificationCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), IEEE Certification Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), IEEE Certification Characteristic Added Successfully  %04X \n",
                  DIS_Context.IEEECertificationCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add IEEE Certification Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add IEEE Certification Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 #endif
@@ -400,24 +400,24 @@ void DIS_Init(uint16_t *options)
                                    &(DIS_Context.PNPIDCharHdle));
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), PNP ID Characteristic Added Successfully  %04X \n", 
+    DIS_DBG_MSG ("DIS_Init(), PNP ID Characteristic Added Successfully  %04X \n",
                  DIS_Context.PNPIDCharHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add PNP ID Characteristic, Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add PNP ID Characteristic, Error: %02X !!\n",
                 hciCmdResult);
   }
 #endif
 #else
   uint8_t nb_attrib = 1, i;
-  
+
   for(i = 0; i < NB_DIS_OPTIONS; i++)
     if(*options & (1 << i))
       nb_attrib += 2;
 
   nb_attrib += (2*BLE_CFG_DIS_NUMBER_OF_CUSTOM_CHAR);
-  
+
   /**
    *  Add Device Information Service
    */
@@ -430,12 +430,12 @@ void DIS_Init(uint16_t *options)
 
   if (hciCmdResult == BLE_STATUS_SUCCESS)
   {
-    DIS_DBG_MSG ("DIS_Init(), Device Information Service (DIS) is added Successfully %04X\n", 
+    DIS_DBG_MSG ("DIS_Init(), Device Information Service (DIS) is added Successfully %04X\n",
                  DIS_Context.DeviceInformationSvcHdle);
   }
   else
   {
-    DIS_DBG_MSG ("DIS_Init(), FAILED to add Device Information Service (DIS), Error: %02X !!\n", 
+    DIS_DBG_MSG ("DIS_Init(), FAILED to add Device Information Service (DIS), Error: %02X !!\n",
                  hciCmdResult);
   }
 
@@ -459,12 +459,12 @@ void DIS_Init(uint16_t *options)
 
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), Manufacturer Name Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), Manufacturer Name Characteristic Added Successfully  %04X \n",
                    DIS_Context.ManufacturerNameStringCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add Manufacturer Name Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add Manufacturer Name Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -488,12 +488,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.ModelNumberStringCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), Model Number String Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), Model Number String Characteristic Added Successfully  %04X \n",
                    DIS_Context.ModelNumberStringCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add Model Number String Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add Model Number String Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -517,12 +517,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.SerialNumberStringCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), Serial Number String Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), Serial Number String Characteristic Added Successfully  %04X \n",
                    DIS_Context.SerialNumberStringCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add Serial Number String Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add Serial Number String Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -546,12 +546,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.HardwareRevisionStringCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), Hardware Revision String Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), Hardware Revision String Characteristic Added Successfully  %04X \n",
                    DIS_Context.HardwareRevisionStringCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add Hardware Revision String Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add Hardware Revision String Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -575,12 +575,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.FirmwareRevisionStringCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), Firmware Revision String Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), Firmware Revision String Characteristic Added Successfully  %04X \n",
                    DIS_Context.FirmwareRevisionStringCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add Firmware Revision String Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add Firmware Revision String Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -604,12 +604,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.SoftwareRevisionStringCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), Software Revision String Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), Software Revision String Characteristic Added Successfully  %04X \n",
                    DIS_Context.SoftwareRevisionStringCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add Software Revision String Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add Software Revision String Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -633,12 +633,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.SystemIDCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), System ID Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), System ID Characteristic Added Successfully  %04X \n",
                    DIS_Context.SystemIDCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add System ID Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add System ID Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -662,12 +662,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.IEEECertificationCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), IEEE Certification Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), IEEE Certification Characteristic Added Successfully  %04X \n",
                    DIS_Context.IEEECertificationCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add IEEE Certification Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add IEEE Certification Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }
@@ -691,12 +691,12 @@ void DIS_Init(uint16_t *options)
                                      &(DIS_Context.PNPIDCharHdle));
     if (hciCmdResult == BLE_STATUS_SUCCESS)
     {
-      DIS_DBG_MSG ("DIS_Init(), PNP ID Characteristic Added Successfully  %04X \n", 
+      DIS_DBG_MSG ("DIS_Init(), PNP ID Characteristic Added Successfully  %04X \n",
                    DIS_Context.PNPIDCharHdle);
     }
     else
     {
-      DIS_DBG_MSG ("DIS_Init(), FAILED to add PNP ID Characteristic, Error: %02X !!\n", 
+      DIS_DBG_MSG ("DIS_Init(), FAILED to add PNP ID Characteristic, Error: %02X !!\n",
                   hciCmdResult);
     }
   }

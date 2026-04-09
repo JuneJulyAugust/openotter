@@ -22,23 +22,23 @@ struct SelfDrivingView: View {
 
     // Repeating alarm timer — active while safety override is engaged.
     @State private var alarmTimer: Timer?
-    
+
     var body: some View {
         GeometryReader { geo in
             let isPortrait = geo.size.height > geo.size.width
             let screenWidth = geo.size.width
             let screenHeight = geo.size.height
-            
+
             // Invert dimensions if portrait to force landscape layout
             let width = isPortrait ? screenHeight : screenWidth
             let height = isPortrait ? screenWidth : screenHeight
-            
+
             // Fixed safe areas for landscape orientation
             let leftPad: CGFloat = 50.0 // Notch area
             let rightPad: CGFloat = 34.0 // Home indicator area
             let topPad: CGFloat = 20.0
             let bottomPad: CGFloat = 20.0
-            
+
             landscapeContent(leftPad: leftPad, rightPad: rightPad, topPad: topPad, bottomPad: bottomPad)
                 .frame(width: width, height: height)
                 .rotationEffect(isPortrait ? .degrees(90) : .degrees(0))
@@ -56,7 +56,7 @@ struct SelfDrivingView: View {
             MapManagerView(viewModel: viewModel.poseModel)
         }
     }
-    
+
     @ViewBuilder
     private func landscapeContent(leftPad: CGFloat, rightPad: CGFloat, topPad: CGFloat, bottomPad: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
@@ -88,9 +88,9 @@ struct SelfDrivingView: View {
             overridden ? startAlarm() : stopAlarm()
         }
     }
-    
+
     // MARK: - Components
-    
+
     private func topBar(leftPad: CGFloat, rightPad: CGFloat, topPad: CGFloat) -> some View {
         HStack(spacing: 16) {
             // Custom Back Button
@@ -109,9 +109,9 @@ struct SelfDrivingView: View {
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial, in: Capsule())
             }
-            
+
             Spacer()
-            
+
             // Subsystem Status
             HStack(spacing: 16) {
                 // ARKit Status + Hz
@@ -134,9 +134,9 @@ struct SelfDrivingView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                
+
                 Divider().frame(height: 16)
-                
+
                 // Map Status
                 HStack(spacing: 6) {
                     Circle()
@@ -148,9 +148,9 @@ struct SelfDrivingView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Divider().frame(height: 16)
-                
+
                 // ESC Status
                 HStack(spacing: 6) {
                     Circle()
@@ -159,9 +159,9 @@ struct SelfDrivingView: View {
                     Text("ESC")
                         .font(.caption.bold())
                 }
-                
+
                 Divider().frame(height: 16)
-                
+
                 // STM32 Status
                 HStack(spacing: 6) {
                     Circle()
@@ -191,9 +191,9 @@ struct SelfDrivingView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(.ultraThinMaterial, in: Capsule())
-            
+
             Spacer()
-            
+
             // Map Manager Button
             Button(action: {
                 viewModel.showMapManager = true
@@ -209,7 +209,7 @@ struct SelfDrivingView: View {
         .padding(.trailing, rightPad)
         .padding(.top, topPad)
     }
-    
+
     private var arkitColor: Color {
         if viewModel.poseModel.isInterrupted { return .red }
         if viewModel.poseModel.isRelocalizing { return .orange }
@@ -220,7 +220,7 @@ struct SelfDrivingView: View {
         @unknown default: return .gray
         }
     }
-    
+
     private var mapStatusColor: Color {
         switch viewModel.poseModel.worldMappingStatus {
         case .mapped: return .green
@@ -230,7 +230,7 @@ struct SelfDrivingView: View {
         @unknown default: return .gray
         }
     }
-    
+
     private var mapStatusText: String {
         switch viewModel.poseModel.worldMappingStatus {
         case .mapped: return "Mapped"
@@ -279,7 +279,7 @@ struct SelfDrivingView: View {
         }
     }
 
-    
+
     private func bottomHUD(leftPad: CGFloat, rightPad: CGFloat, bottomPad: CGFloat) -> some View {
         HStack(alignment: .bottom, spacing: 20) {
             // LEFT: Telemetry
@@ -296,7 +296,7 @@ struct SelfDrivingView: View {
             .padding(12)
             .frame(width: 150)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-            
+
             // LEFT-CENTER: Actuation
             VStack(alignment: .leading, spacing: 6) {
                 Text("ACTUATION")
@@ -355,7 +355,7 @@ struct SelfDrivingView: View {
         .padding(.trailing, rightPad)
         .padding(.bottom, bottomPad)
     }
-    
+
     // MARK: - Alarm
 
     private func startAlarm() {
@@ -440,7 +440,7 @@ struct SelfDrivingView: View {
                             lastScale = scale
                         }
                 )
-                
+
                 // Overlay for scale indicator
                 Text("Grid: 1.0 m")
                     .font(.caption.monospaced())

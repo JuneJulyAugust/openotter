@@ -36,32 +36,32 @@ public class ESCBleManager: NSObject, ObservableObject {
     private var peripheral: CBPeripheral?
     private var writeChar: CBCharacteristic?
     private var notifyChar: CBCharacteristic?
-    
+
     private let targetDeviceName = "ESDM_4181FB"
     private let targetService = CBUUID(string: "AE3A")
     private let targetWrite = CBUUID(string: "AE3B")
     private let targetNotify = CBUUID(string: "AE3C")
-    
+
     private var pollTimer: Timer?
     private var handshakeTimer: Timer?
-    
+
     // Filtering and Frequency calculation
     private var rpmFilter = MovingAverageFilter(size: 4)
     private var lastPacketTimes: [Date] = []
     private let frequencyWindowSize = 10
     public var messageCount = 0
-    
+
     public override init() {
         super.init()
         centralManager = CBCentralManager(delegate: self, queue: nil)
     }
-    
+
     public func start() {
         guard status == .disconnected else { return }  // already running
         guard centralManager.state == .poweredOn else { return }
         scan()
     }
-    
+
     public func stop() {
         cancelTimers()
         if let peripheral = peripheral {
@@ -69,19 +69,19 @@ public class ESCBleManager: NSObject, ObservableObject {
         }
         status = .disconnected
     }
-    
+
     private func scan() {
         status = .scanning
         centralManager.scanForPeripherals(withServices: nil, options: nil)
     }
-    
+
     private func cancelTimers() {
         pollTimer?.invalidate()
         pollTimer = nil
         handshakeTimer?.invalidate()
         handshakeTimer = nil
     }
-    
+
     private func preferredWriteType(for characteristic: CBCharacteristic) -> CBCharacteristicWriteType {
         if characteristic.properties.contains(.write) {
             return .withResponse
@@ -91,13 +91,13 @@ public class ESCBleManager: NSObject, ObservableObject {
         }
         return .withResponse
     }
-    
+
     private func startHandshake() {
         cancelTimers()
         let initCommand: [UInt8] = [0x02, 0x01, 0x00, 0x00, 0x00, 0x03]
         var count = 0
         let type = writeChar.flatMap { preferredWriteType(for: $0) } ?? .withResponse
-        
+
         handshakeTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             guard let self = self, let p = self.peripheral, let char = self.writeChar else { return }
             p.writeValue(Data(initCommand), for: char, type: type)
@@ -108,7 +108,7 @@ public class ESCBleManager: NSObject, ObservableObject {
             }
         }
     }
-    
+
     private func startPolling() {
         let pollCommand: [UInt8] = [0x02, 0x01, 0x04, 0x40, 0x84, 0x03]
         let type = writeChar.flatMap { preferredWriteType(for: $0) } ?? .withResponse
@@ -117,16 +117,16 @@ public class ESCBleManager: NSObject, ObservableObject {
             p.writeValue(Data(pollCommand), for: char, type: type)
         }
     }
-    
+
     private func updateFrequency() -> Double {
         let now = Date()
         lastPacketTimes.append(now)
         if lastPacketTimes.count > frequencyWindowSize {
             lastPacketTimes.removeFirst()
         }
-        
+
         guard lastPacketTimes.count >= 2 else { return 0.0 }
-        
+
         let duration = now.timeIntervalSince(lastPacketTimes.first!)
         return Double(lastPacketTimes.count - 1) / duration
     }
@@ -145,7 +145,7 @@ extension ESCBleManager: CBCentralManagerDelegate {
             status = .disconnected
         }
     }
-    
+
     public func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral, advertisementData: [String : Any], rssi RSSI: NSNumber) {
         let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? "Unknown"
         if name == targetDeviceName {
@@ -156,13 +156,13 @@ extension ESCBleManager: CBCentralManagerDelegate {
             centralManager.connect(peripheral, options: nil)
         }
     }
-    
+
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         status = .discovering
         peripheral.delegate = self
         peripheral.discoverServices([targetService])
     }
-    
+
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         status = .disconnected
         telemetry = nil
@@ -178,7 +178,7 @@ extension ESCBleManager: CBPeripheralDelegate {
             peripheral.discoverCharacteristics([targetWrite, targetNotify], for: service)
         }
     }
-    
+
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard let chars = service.characteristics else { return }
         for char in chars {
@@ -190,25 +190,25 @@ extension ESCBleManager: CBPeripheralDelegate {
             }
         }
     }
-    
+
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         if characteristic.uuid == targetNotify && characteristic.isNotifying {
             status = .connected
             startHandshake()
         }
     }
-    
+
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == targetNotify, let data = characteristic.value else { return }
-        
+
         if let packet = TelemetryPacket(data) {
             messageCount += 1
             let freq = updateFrequency()
-            
+
             // Apply filtering and conversion
             let filteredRpm = rpmFilter.update(Double(packet.rpm))
             let speedMps = MotorSpeedConverter.rpmToMps(filteredRpm)
-            
+
             DispatchQueue.main.async {
                 self.telemetry = ESCTelemetry(
                     rpm: Int(filteredRpm),
@@ -243,10 +243,10 @@ private struct TelemetryPacket {
 
         escTemperatureC = Double(Self.signed16BE(bytes[3], bytes[4])) / 10.0
         motorTemperatureC = Double(Self.signed16BE(bytes[5], bytes[6])) / 10.0
-        
+
         let erpmRaw = Self.signed32BE(bytes[25], bytes[26], bytes[27], bytes[28])
         rpm = Int((Double(erpmRaw) * 2.0) / Double(poleCount))
-        
+
         let voltageRaw = (UInt16(bytes[29]) << 8) | UInt16(bytes[30])
         voltageV = Double(voltageRaw) / 10.0
     }

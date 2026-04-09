@@ -43,7 +43,7 @@ extern "C" {
 
 
   /******************************************************************************
-   * HW TimerServer 
+   * HW TimerServer
    ******************************************************************************/
   /* Exported types ------------------------------------------------------------*/
   /**
@@ -204,7 +204,7 @@ extern "C" {
 
 
   /******************************************************************************
-   * HW BlueNRG SPI 
+   * HW BlueNRG SPI
    ******************************************************************************/
 
   /* Exported Defines  */
@@ -222,9 +222,9 @@ extern "C" {
 #define BNRG_SPI_EXTI_PORT              BNRG_SPI_IRQ_PORT
 #define BNRG_SPI_EXTI_IRQn              EXTI9_5_IRQn
 #define BNRG_SPI_EXTI_IRQHandler        EXTI9_5_IRQHandler
-  
+
   /* Exported Type  */
-  
+
    typedef enum
   {
     HW_BNRG_Limited,
@@ -232,7 +232,7 @@ extern "C" {
   } HW_BNRG_InitMode_t;
 
   /* Exported function prototypes */
-  
+
   /**
    * @brief  Closes the SPI when BLE is disabled by the application
    *         Releases allocated resources
@@ -324,13 +324,13 @@ extern "C" {
   void HW_BNRG_TimStartAllowed(void);
 
   /* __weak function prototypes */
-  
+
 /**
    * @brief  Request a timer to be started
    * @param  None
    * @retval None
-   * @Note   If the specific application need to wait before starting the timer 
-   *         this function can be overloaded in the specific application itself 
+   * @Note   If the specific application need to wait before starting the timer
+   *         this function can be overloaded in the specific application itself
    */
   void HW_BNRG_TimStartReq(void);
 

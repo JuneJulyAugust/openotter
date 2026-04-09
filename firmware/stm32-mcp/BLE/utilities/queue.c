@@ -2,7 +2,7 @@
  ****************************************************************************
  * @file    queue.c
  * @author  MCD Application Team
- * @brief   Circurlar FIFO queue management code 
+ * @brief   Circurlar FIFO queue management code
  ******************************************************************************
  * @attention
  *
@@ -40,8 +40,8 @@
 
 /**
   * @brief   Initilaiilze queue structure .
-  * @note   This function is used to initialize the global queue structure.  
-  * @param  q: pointer on queue structure to be initialised 
+  * @note   This function is used to initialize the global queue structure.
+  * @param  q: pointer on queue structure to be initialised
   * @param  queueBuffer: pointer on Queue Buffer
   * @param  queueSize:  Size of Queue Buffer
   * @param  elementSize: Size of an element in the queue. if =0, the queue will manage variable sizze elements
@@ -62,9 +62,9 @@ int CircularQueue_Init(queue_t *q, uint8_t* queueBuffer, uint32_t queueSize, uin
 
 /**
   * @brief   Add  element to the queue .
-  * @note   This function is used to add one or more  element(s) to the Circular Queue .  
+  * @note   This function is used to add one or more  element(s) to the Circular Queue .
   * @param  q: pointer on queue structure   to be handled
-  * @param  X; pointer on element(s) to be added 
+  * @param  X; pointer on element(s) to be added
   * @param  elementSize:  Size of element to be added to the queue. Only used if the queue manage variable size elements
   * @param  nbElements:  number of elements in the in buffer pointed by x
   * //@retval   number of elements in the queue, -1 if the element to be added do not fit in the queue (too big)
@@ -82,35 +82,35 @@ uint8_t* CircularQueue_Add(queue_t *q, uint8_t* x, uint16_t elementSize, uint32_
   elemSizeStorageRoom  = (q->elementSize == 0) ? 2 : 0;
 
   /* retrieve the size of last element sored: the value stored at the beginning of the queue element if element size is variable otherwise take it from fixed element Size member */
-  if (q->byteCount) 
+  if (q->byteCount)
         {
           curElementSize = (q->elementSize == 0) ? q->qBuff[q->last] + ((q->qBuff[MOD((q->last+1), q->queueMaxSize)])<<8) + 2 : q->elementSize;
   }
   /* if queue element have fixed size , reset the elementSize arg with fixed element size value */
-  if (q->elementSize > 0)               
+  if (q->elementSize > 0)
   {
            elementSize = q->elementSize;
   }
 
   /* Store now the elements */
-  if (elementSize && (q->byteCount + ((elementSize + elemSizeStorageRoom )*nbElements)) <= q->queueMaxSize) 
-  { 
-    for (i=0; i < nbElements; i++) 
+  if (elementSize && (q->byteCount + ((elementSize + elemSizeStorageRoom )*nbElements)) <= q->queueMaxSize)
+  {
+    for (i=0; i < nbElements; i++)
     {
       q->last = MOD ((q->last + curElementSize),q->queueMaxSize);
       curBuffPosition = q->last;
 
       /* store the element  */
       /* store first the element size if element size is variable */
-      if (q->elementSize == 0) 
+      if (q->elementSize == 0)
       {
         q->qBuff[curBuffPosition++]= elementSize & 0xFF;
         curBuffPosition = MOD(curBuffPosition, q->queueMaxSize);
          q->qBuff[curBuffPosition++]= (elementSize & 0xFF00) >> 8 ;
         curBuffPosition = MOD(curBuffPosition, q->queueMaxSize);
-      }     
+      }
 
-      
+
       /* Copy First Par from current position up to the end  of the buffer queue (or before if enough room) if any) */
       NbBytesToCopy = MIN((q->queueMaxSize-curBuffPosition),elementSize);
       if (NbBytesToCopy)
@@ -118,7 +118,7 @@ uint8_t* CircularQueue_Add(queue_t *q, uint8_t* x, uint16_t elementSize, uint32_
           memcpy(&q->qBuff[curBuffPosition],&x[i*elementSize],NbBytesToCopy);
       }
       curBuffPosition = MOD((curBuffPosition+NbBytesToCopy),q->queueMaxSize);
-        
+
       /* Copy second Part to beginning of buffer queue */
       if (NbBytesToCopy != elementSize)
       {
@@ -126,7 +126,7 @@ uint8_t* CircularQueue_Add(queue_t *q, uint8_t* x, uint16_t elementSize, uint32_
       }
       curElementSize = (elementSize) + elemSizeStorageRoom ;
     }
-               
+
     q->byteCount+=((elementSize + elemSizeStorageRoom )*nbElements);
     q->elementCount+=nbElements;
     ptr = q->qBuff + (MOD((q->last+elemSizeStorageRoom ),q->queueMaxSize));
@@ -138,19 +138,19 @@ uint8_t* CircularQueue_Add(queue_t *q, uint8_t* x, uint16_t elementSize, uint32_
 
 /**
   * @brief  Remove element from  the queue.
-  * @note   This function is used to remove and element from  the Circular Queue .  
+  * @note   This function is used to remove and element from  the Circular Queue .
   * @param  q: pointer on queue structure  to be handled
-  * @param  elementSize: Pointer to return Size of element to be removed  
+  * @param  elementSize: Pointer to return Size of element to be removed
   * @retval Pointer on removed element. NULL if queue was empty
   */
 uint8_t* CircularQueue_Remove(queue_t *q, uint16_t* elementSize)
 {
   uint8_t  elemSizeStorageRoom = 0;
   uint8_t* ptr= NULL;
-  
+
   elemSizeStorageRoom = (q->elementSize == 0) ? 2 : 0;
   *elementSize = 0;
-  if (q->byteCount > 0) 
+  if (q->byteCount > 0)
   {
     *elementSize = (q->elementSize == 0) ? q->qBuff[q->first]+ ((q->qBuff[MOD((q->first+1), q->queueMaxSize)])<<8) : q->elementSize;
     ptr = q->qBuff + (MOD((q->first+elemSizeStorageRoom ),q->queueMaxSize));
@@ -167,9 +167,9 @@ uint8_t* CircularQueue_Remove(queue_t *q, uint16_t* elementSize)
 
 /**
   * @brief  "Sense" first element of the quque, without removing it.
-  * @note   This function is used to return a pointer on the first element of the queue without removing it.  
+  * @note   This function is used to return a pointer on the first element of the queue without removing it.
   * @param  q: pointer on queue structure  to be handled
-  * @param  elementSize:  Pointer to return Size of element to be removed  
+  * @param  elementSize:  Pointer to return Size of element to be removed
   * @retval Pointer on sensed element. NULL if queue was empty
   */
 uint8_t* CircularQueue_Sense(queue_t *q, uint16_t* elementSize)
@@ -177,10 +177,10 @@ uint8_t* CircularQueue_Sense(queue_t *q, uint16_t* elementSize)
   //int ret = -1;
   uint8_t  elemSizeStorageRoom = 0;
   uint8_t* x= NULL;
-  
+
   elemSizeStorageRoom = (q->elementSize == 0) ? 2 : 0;
   *elementSize = 0;
-  if (q->byteCount > 0) 
+  if (q->byteCount > 0)
   {
     *elementSize = (q->elementSize == 0) ? q->qBuff[q->first]+ ((q->qBuff[MOD((q->first+1), q->queueMaxSize)])<<8) : q->elementSize;
     x = q->qBuff + (MOD((q->first+elemSizeStorageRoom), q->queueMaxSize));
@@ -190,17 +190,17 @@ uint8_t* CircularQueue_Sense(queue_t *q, uint16_t* elementSize)
 
 /**
   * @brief   Check if queue is empty.
-  * @note    This function is used to to check if the queue is empty.  
+  * @note    This function is used to to check if the queue is empty.
   * @param  q: pointer on queue structure  to be handled
-  * @retval   TRUE (1) if the queue is empyu otherwise FALSE (0) 
+  * @retval   TRUE (1) if the queue is empyu otherwise FALSE (0)
   */
 int CircularQueue_Empty(queue_t *q)
 {
   int ret=FALSE;
-  if (q->byteCount <= 0) 
+  if (q->byteCount <= 0)
   {
     ret=TRUE;
-  } 
+  }
   return ret;
 }
 

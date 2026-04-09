@@ -40,35 +40,35 @@ extern "C" {
  ******************************************************************************/
 
 /******************************************************************************
- * LB CONFIGURATION //Routeur or End Dev 1 or End Dev 2 
+ * LB CONFIGURATION //Routeur or End Dev 1 or End Dev 2
  ******************************************************************************/
 
 #define LB_CLIENT  0    /*1 = Device is GAP Central & GATT Client */
 #define LB_SERVER  1    /*1 = Device is GAP Peripherique & GATT SERVER*/
 
 
-#if (LB_CLIENT == 1)  
+#if (LB_CLIENT == 1)
 
 #define LEDBUTTON_CONN_ADV_INTERVAL_MIN  (0x80)  /**< 20ms */
 #define LEDBUTTON_CONN_ADV_INTERVAL_MAX  (0xA0)  /**< 30ms */
 
 #define CFG_ADV_BD_ADDRESS 0xEDDE11EDDE11
 
-#define REMOTE_BD_ADDRESS 0xAA22334455AA   
+#define REMOTE_BD_ADDRESS 0xAA22334455AA
 
 #define CONN_L(x)      ((int)((x)/0.625f))
 #define CONN_P(x)      ((int)((x)/1.25f))
 #define SCAN_P         (0x20)
-#define SCAN_L         (0x30)    
-#define CONN_P1        (CONN_P(20)) 
-#define CONN_P2        (CONN_P(50)) 
+#define SCAN_L         (0x30)
+#define CONN_P1        (CONN_P(20))
+#define CONN_P2        (CONN_P(50))
 #define SUPERV_TIMEOUT (400)
-#define CONN_L1        (CONN_L(10)) 
-#define CONN_L2        (CONN_L(10)) 
+#define CONN_L1        (CONN_L(10))
+#define CONN_L2        (CONN_L(10))
 
-   
+
 //#define GATT_SERVER 1     /*1 = Device support GATT Server */
-//#define GATT_CLIENT 0     /*1 = Device support GATT Client */  
+//#define GATT_CLIENT 0     /*1 = Device support GATT Client */
 /**
  * This setting shall be set to '1' if the device needs to support the Peripheral Role
  * In the MS configuration, both BLE_CFG_PERIPHERAL and BLE_CFG_CENTRAL shall be set to '1'
@@ -83,14 +83,14 @@ extern "C" {
 
 #endif
 
- 
+
 #if (LB_SERVER == 1)
 
 #define LEDBUTTON_CONN_ADV_INTERVAL_MIN  (0x1F4)  /**< 312.5ms */
 #define LEDBUTTON_CONN_ADV_INTERVAL_MAX  (0x640)  /**< 1000ms */
 
 
-#define CFG_ADV_BD_ADDRESS 0xAA22334455AA 
+#define CFG_ADV_BD_ADDRESS 0xAA22334455AA
 
 /**
  * This setting shall be set to '1' if the device needs to support the Peripheral Role
@@ -532,7 +532,7 @@ typedef enum
 /******************************************************************************
  * SPI and other timing defines
  *****************************************************************************/
- 
+
   /**
    * When the STM32xx runs too fast, there could be a false detection on the SPI_IRQ after a packet has been received.
    * To prevent this, a timeout is added to wait after receiving a packet from the BlueNRG before checking the SPI_IRQ.

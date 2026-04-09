@@ -76,7 +76,7 @@ Extensive architectural refactoring for both iOS and MCP (Raspberry Pi) componen
 ## 2026-03-22 - ARKit 6D Pose Estimation
 ...
 ### Summary
-Successfully implemented and visualized the 6D pose estimation using ARKit's Visual-Inertial Odometry (VIO). We pivoted from pure IMU-based velocity/position tracking to ARKit for localization and Bluetooth ESC telemetry for velocity. 
+Successfully implemented and visualized the 6D pose estimation using ARKit's Visual-Inertial Odometry (VIO). We pivoted from pure IMU-based velocity/position tracking to ARKit for localization and Bluetooth ESC telemetry for velocity.
 
 ### Achievements
 1.  **Home Page Redesign**: Reorganized `HomeView.swift` to act as the primary landing page, categorizing features into Perception, Estimation, and Diagnostics.
@@ -133,11 +133,11 @@ To reproduce the current state of the MCP bridge (Raspberry Pi + iOS), follow th
 - Create a C++17 project with `CMake`.
 - Dependencies: `asio` (libasio-dev), `ftxui` (cloned from GitHub).
 - Port: UDP 8888.
-- Protocol: 
+- Protocol:
   - Rx `hb_iphone:<count>` -> Increment HB RX, update Brain Info (Name/IP).
   - Rx `cmd:s=<float>,m=<float>` -> Increment CMD RX, update Steering/Motor values.
   - Tx `hb_pi:<count>` -> Every 1.0s to the last seen iPhone endpoint.
-- Features: 
+- Features:
   - Bi-directional dashboard TUI.
   - Stationary meters (Blue/Left for negative, Green/Right for positive).
   - 1.5s timeout logic (mark OFFLINE if no data received).

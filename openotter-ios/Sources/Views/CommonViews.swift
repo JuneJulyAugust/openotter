@@ -20,7 +20,7 @@ struct ControlSlider: View {
     var value: Binding<Float>
     let color: Color
     let onUpdate: (Float) -> Void
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -33,7 +33,7 @@ struct ControlSlider: View {
                     .font(.subheadline.monospacedDigit().bold())
                     .foregroundColor(color)
             }
-            
+
             Slider(value: Binding(
                 get: { value.wrappedValue },
                 set: { newValue in
@@ -42,7 +42,7 @@ struct ControlSlider: View {
                 }
             ), in: -1.0...1.0)
             .tint(color)
-            
+
             HStack {
                 Text("-100").font(.caption2).foregroundColor(.secondary)
                 Spacer()
@@ -60,7 +60,7 @@ struct DeviceMiniCard: View {
     let icon: String
     let color: Color
     let label: String
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)

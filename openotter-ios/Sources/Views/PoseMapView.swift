@@ -35,74 +35,74 @@ struct PoseMapView: View {
             drawCurrentPose(context: context, center: center)
         }
     }
-    
+
     // MARK: - Core Drawing Logic
-    
+
     private func drawGrid(context: GraphicsContext, size: CGSize, center: CGPoint) {
         var path = Path()
         let step = scale // 1 meter grid interval
-        
+
         let startX = Int(-center.x / step) - 1
         let endX = Int((size.width - center.x) / step) + 1
         let startY = Int(-center.y / step) - 1
         let endY = Int((size.height - center.y) / step) + 1
-        
+
         for x in startX...endX {
             let px = center.x + CGFloat(x) * step
             path.move(to: CGPoint(x: px, y: 0))
             path.addLine(to: CGPoint(x: px, y: size.height))
         }
-        
+
         for y in startY...endY {
             let py = center.y + CGFloat(y) * step
             path.move(to: CGPoint(x: 0, y: py))
             path.addLine(to: CGPoint(x: size.width, y: py))
         }
-        
+
         context.stroke(path, with: .color(.gray.opacity(0.3)), lineWidth: 1)
     }
-    
+
     private func drawAxes(context: GraphicsContext, size: CGSize, center: CGPoint) {
         let axisColor = Color.black
         let lineWidth: CGFloat = 2.0
         let arrowLen: CGFloat = 12.0
         let arrowAngle: CGFloat = .pi / 6
-        
+
         // Z Axis (Right)
         var zAxis = Path()
         zAxis.move(to: center)
         let zEnd = CGPoint(x: size.width, y: center.y)
         zAxis.addLine(to: zEnd)
-        
+
         zAxis.move(to: zEnd)
         zAxis.addLine(to: CGPoint(x: zEnd.x - cos(arrowAngle) * arrowLen, y: zEnd.y - sin(arrowAngle) * arrowLen))
         zAxis.move(to: zEnd)
         zAxis.addLine(to: CGPoint(x: zEnd.x - cos(arrowAngle) * arrowLen, y: zEnd.y + sin(arrowAngle) * arrowLen))
-        
+
         context.stroke(zAxis, with: .color(axisColor), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
-        
+
         // X Axis (Forward = Up on Canvas)
         var xAxis = Path()
         xAxis.move(to: center)
         let xEnd = CGPoint(x: center.x, y: 0)
         xAxis.addLine(to: xEnd)
-        
+
         xAxis.move(to: xEnd)
         xAxis.addLine(to: CGPoint(x: xEnd.x - sin(arrowAngle) * arrowLen, y: xEnd.y + cos(arrowAngle) * arrowLen))
         xAxis.move(to: xEnd)
         xAxis.addLine(to: CGPoint(x: xEnd.x + sin(arrowAngle) * arrowLen, y: xEnd.y + cos(arrowAngle) * arrowLen))
-        
+
         context.stroke(xAxis, with: .color(axisColor), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
     }
-    
+
     private func drawPath(context: GraphicsContext, center: CGPoint) {
         guard !poses.isEmpty else {
             context.fill(Path(ellipseIn: CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)), with: .color(.orange))
             return
         }
-        
+
         let count = poses.count
-        
+
         if isTracking || count < 2 {
             var path = Path()
             for (index, pose) in poses.enumerated() {
@@ -121,10 +121,10 @@ struct PoseMapView: View {
                 context.stroke(segment, with: .color(jetColor(for: fraction)), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
         }
-        
+
         context.fill(Path(ellipseIn: CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)), with: .color(.orange))
     }
-    
+
     private func drawWaypoints(context: GraphicsContext, center: CGPoint) {
         guard !waypoints.isEmpty else { return }
 
@@ -168,20 +168,20 @@ struct PoseMapView: View {
     private func drawCurrentPose(context: GraphicsContext, center: CGPoint) {
         guard let pose = currentPose else { return }
         let pt = canvasPoint(x: pose.x, z: pose.z, center: center)
-        
+
         context.fill(Path(ellipseIn: CGRect(x: pt.x - 6, y: pt.y - 6, width: 12, height: 12)), with: .color(.green))
-        
+
         let canvasAngle = -CGFloat.pi / 2 - CGFloat(pose.yaw)
         let arrowLen: CGFloat = 24
         let endPt = CGPoint(
             x: pt.x + cos(canvasAngle) * arrowLen,
             y: pt.y + sin(canvasAngle) * arrowLen
         )
-        
+
         var arrowPath = Path()
         arrowPath.move(to: pt)
         arrowPath.addLine(to: endPt)
-        
+
         let headAngle: CGFloat = .pi / 6
         let headLen: CGFloat = 10
         let p1 = CGPoint(
@@ -192,15 +192,15 @@ struct PoseMapView: View {
             x: endPt.x - cos(canvasAngle + headAngle) * headLen,
             y: endPt.y - sin(canvasAngle + headAngle) * headLen
         )
-        
+
         arrowPath.move(to: endPt)
         arrowPath.addLine(to: p1)
         arrowPath.move(to: endPt)
         arrowPath.addLine(to: p2)
-        
+
         context.stroke(arrowPath, with: .color(.green), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
     }
-    
+
     /// Convert robot-frame (x, z) to canvas coordinates.
     /// Robot +X maps to canvas up (-Y); robot +Z maps to canvas right (+X).
     private func canvasPoint(x: Float, z: Float, center: CGPoint) -> CGPoint {

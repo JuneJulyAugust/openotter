@@ -22,7 +22,7 @@
 #define __BLESVC_H
 
 #ifdef __cplusplus
-extern "C" 
+extern "C"
 {
 #endif
 
@@ -43,7 +43,7 @@ extern "C"
 #include "lns.h"
 #include "scps.h"
 */
-  
+
 
 /* Exported functions ------------------------------------------------------- */
 void BLESVC_AddCustomChar( uint16_t svc_uuid, uint16_t svc_hdle );

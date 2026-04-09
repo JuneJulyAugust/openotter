@@ -13,7 +13,7 @@ We successfully connected the Arduino Mega 2560 (CH340 chip) to the Jetson, comp
 7. Loaded the module via `modprobe ch34x` and verified the Arduino mounted stably at `/dev/ttyUSB0`.
 
 ## Phase 2: Servo Control Demo (Completed)
-The goal is to write a demo program to control a servo motor connected to **pin 9** of the PWM section on the Sensor Shield. 
+The goal is to write a demo program to control a servo motor connected to **pin 9** of the PWM section on the Sensor Shield.
 We will use `arduino-cli` on the Jetson to compile and upload the sketch to the Arduino.
 
 ### Completed Steps
@@ -29,7 +29,7 @@ The goal is to provide a clean, high-level mechanism to manage the Arduino and d
 ### Completed Steps
 1. **Develop `setup_env.sh`**: A simple bash script to append the `arduino-cli` binary path to `$PATH`.
 2. **Develop `servo_stop` Sketch**: Create a new Arduino script that attaches to the servo and instructs it to stop moving (e.g., hold a neutral 90-degree position or detach).
-3. **Develop High-Level Bash Scripts**: 
+3. **Develop High-Level Bash Scripts**:
     - `run_servo.sh`: Wrapper to compile and flash `servo_demo.ino`.
     - `stop_servo.sh`: Wrapper to compile and flash `servo_stop.ino`.
 4. **Create `README.md`**: Document the end-to-end setup, compile instructions, serial port configuration, and the location of downloaded Arduino tools and libraries (`~/.arduino15`).

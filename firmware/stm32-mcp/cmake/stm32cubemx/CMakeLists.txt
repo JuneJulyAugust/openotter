@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.22)
 # Enable CMake support for ASM and C languages
 enable_language(C ASM)
 # STM32CubeMX generated symbols (macros)
-set(MX_Defines_Syms 
-	USE_HAL_DRIVER 
+set(MX_Defines_Syms
+	USE_HAL_DRIVER
 	STM32L475xx
 	BLUENRG_MS=1
     $<$<CONFIG:Debug>:DEBUG>
@@ -107,11 +107,11 @@ set(MX_LINK_DIRS
 
 )
 # Project static libraries
-set(MX_LINK_LIBS 
+set(MX_LINK_LIBS
     STM32_Drivers
     BLE_Middleware
     ${TOOLCHAIN_LINK_LIBRARIES}
-    
+
 )
 # Interface library for includes and symbols
 add_library(stm32cubemx INTERFACE)

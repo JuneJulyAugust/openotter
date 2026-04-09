@@ -144,26 +144,26 @@ int main(void)
    * It shall be registered before calling LBR_Init()
    */
   /* SCH_RegTask( CFG_IdleTask_MeasReq, HRSAPP_Measurement ); */
-  
+
   SCH_RegTask( CFG_IdleTask_HciAsynchEvt, TL_BLE_HCI_UserEvtProc );
   SCH_RegTask( CFG_IdleTask_TlEvt, TL_BLE_R_EvtProc );
   SCH_RegTask( CFG_IdleTask_Button, LB_App_Button_Trigger_Received );
-#if(LB_CLIENT!=0) 
+#if(LB_CLIENT!=0)
   SCH_RegTask( CFG_IdleTask_ConnDev1, LBR_AppConnReq1 );
   SCH_RegTask( CFG_IdleTask_SearchService, LBR_Client_Update_Service );
 #endif
-#if(LB_SERVER!=0) 
+#if(LB_SERVER!=0)
   SCH_RegTask( CFG_IdleTask_StartAdv, LBR_Adv_Request );
-#endif  
+#endif
 
   /**
    * BLE application start
    */
   LBR_Init(LBR_Full);
-  
+
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
   BSP_LED_Init(LED2);
-  
+
   /* Start the main processes */
   while(1)
   {
@@ -453,7 +453,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
       break;
     case USER_BUTTON_PIN:
       LBR_App_Key_Button_Action();
-      break; 
+      break;
     default:
       break;
   }
@@ -474,7 +474,7 @@ void HAL_Delay(__IO uint32_t Delay)
 
 /**
   * @brief  This function OVERLOADEDs the one defined as __WEAK in the LPM (LowPowerManager)
-  *         The application should implement dedicated code before getting out from Stop Mode. 
+  *         The application should implement dedicated code before getting out from Stop Mode.
   *         This is where the application should reconfigure the clock tree when needed
   * @param  None
   * @retval None
@@ -493,7 +493,7 @@ void LPM_ExitStopMode(void)
 
 /**
   * @brief  This function OVERLOADEDs the one defined as __WEAK in the LPM (LowPowerManager)
-  *         It sets the IO configuration to be applied when in standby mode 
+  *         It sets the IO configuration to be applied when in standby mode
   * @param  None
   * @retval None
   */
@@ -508,7 +508,7 @@ void LPM_EnterOffMode(void)
 
 /**
   * @brief  This function OVERLOADEDs the one defined as __WEAK in the LPM (LowPowerManager)
-  *         The application should implement dedicated code before getting out from Off mode 
+  *         The application should implement dedicated code before getting out from Off mode
   * @param  None
   * @retval None
   */
@@ -533,7 +533,7 @@ HAL_StatusTypeDef HAL_InitTick(uint32_t TickPriority)
 }
 
 /**
- * @brief This function OVERLOADEDs the one defined as __WEAK in the SCH (scheduler) 
+ * @brief This function OVERLOADEDs the one defined as __WEAK in the SCH (scheduler)
  *        The application should enter low power mode
  * @param  None
  * @retval None
@@ -561,20 +561,20 @@ void TL_BLE_HCI_StatusNot(TL_BLE_HCI_CmdStatus_t status)
       SCH_PauseTask( CFG_IdleTask_StartAdv );
       SCH_PauseTask( CFG_IdleTask_Button );
       SCH_PauseTask( CFG_IdleTask_HciAsynchEvt );
-#if(LB_CLIENT!=0)       
+#if(LB_CLIENT!=0)
       SCH_PauseTask( CFG_IdleTask_ConnDev1 );
       SCH_PauseTask( CFG_IdleTask_SearchService );
-#endif      
+#endif
       break;
 
     case TL_BLE_HCI_CmdAvailable:
       SCH_ResumeTask( CFG_IdleTask_StartAdv );
       SCH_ResumeTask( CFG_IdleTask_Button );
       SCH_ResumeTask( CFG_IdleTask_HciAsynchEvt );
-#if(LB_CLIENT!=0)       
+#if(LB_CLIENT!=0)
       SCH_ResumeTask( CFG_IdleTask_ConnDev1 );
       SCH_ResumeTask( CFG_IdleTask_SearchService );
-#endif      
+#endif
       break;
 
     default:
@@ -585,7 +585,7 @@ void TL_BLE_HCI_StatusNot(TL_BLE_HCI_CmdStatus_t status)
 
 /**
   * @brief  This function OVERLOADEDs the one defined as __WEAK in the TS (TimeServer)
-  *         This API is running in the RTC Wakeup interrupt context. 
+  *         This API is running in the RTC Wakeup interrupt context.
   *         The application may implement an Operating System to change the context priority where the timer
   *         callback may be handled. This API provides the module ID to identify which module is concerned and to allow
   *         sending the information to the correct task

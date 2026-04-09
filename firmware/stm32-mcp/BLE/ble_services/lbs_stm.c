@@ -105,7 +105,7 @@ static SVCCTL_EvtAckStatus_t LedButton_Event_Handler(void *Event)
 
               }
             }
-            
+
             if(attribute_modified->attr_handle == (aLedButtonContext.LedsCharHdle + 1))
             {
               //value handle
@@ -113,9 +113,9 @@ static SVCCTL_EvtAckStatus_t LedButton_Event_Handler(void *Event)
               Notification.LBS_Evt_Opcode = ST_SVC_LED_WRITE_EVT;
               Notification.DataTransfered.Length=attribute_modified->data_length;
               Notification.DataTransfered.pPayload=attribute_modified->att_data;
-              LBS_App_Notification(&Notification);  
+              LBS_App_Notification(&Notification);
             }
-          
+
         }
         break;
 
@@ -147,7 +147,7 @@ void LBS_STM_Init(void)
    *  Register the event handler to the BLE controller
    */
   SVCCTL_RegisterSvcHandler(LedButton_Event_Handler);
-  
+
     /**
      *  Led Button Service
      *
@@ -156,7 +156,7 @@ void LBS_STM_Init(void)
      *                                2 for Led characteristic +
      *                                2 for Button characteristic +
      *                                1 for client char configuration descriptor +
-     *                                
+     *
      */
     uuid = LED_BUTTON_SERVICE_UUID;
     aci_gatt_add_serv(UUID_TYPE_16,
@@ -169,11 +169,11 @@ void LBS_STM_Init(void)
      *  Add LED Characteristic
      */
     uuid = LED_CHAR_UUID;
-   
+
     aci_gatt_add_char(aLedButtonContext.LedButtonSvcHdle,
                       UUID_TYPE_16,
                       (const uint8_t *) &uuid ,
-                      2,                                   
+                      2,
                       CHAR_PROP_WRITE_WITHOUT_RESP|CHAR_PROP_READ,
                       ATTR_PERMISSION_NONE,
                       GATT_NOTIFY_ATTRIBUTE_WRITE, /* gattEvtMask */
@@ -195,8 +195,8 @@ void LBS_STM_Init(void)
                       10, /* encryKeySize */
                       1, /* isVariable: 1 */
                       &(aLedButtonContext.ButtonsCharHdle));
-    
-    APPL_MESG_DBG("-- Led Button Service (LBS) is added Successfully %04X\n", 
+
+    APPL_MESG_DBG("-- Led Button Service (LBS) is added Successfully %04X\n",
                  aLedButtonContext.LedButtonSvcHdle);
 
   return;
@@ -206,7 +206,7 @@ void LBS_STM_Init(void)
  * @brief  Characteristic update
  * @param  UUID: UUID of the characteristic
  * @param  Service_Instance: Instance of the service to which the characteristic belongs
- * 
+ *
  */
 tBleStatus BLE_SVC_LedButton_Update_Char(uint16_t UUID, uint8_t *pPayload) //LED_BUTTON_Data_t *pDataValue)
 {
@@ -214,13 +214,13 @@ tBleStatus BLE_SVC_LedButton_Update_Char(uint16_t UUID, uint8_t *pPayload) //LED
   switch(UUID)
   {
     case BUTTON_CHAR_UUID:
-      
+
      result = aci_gatt_update_char_value(aLedButtonContext.LedButtonSvcHdle,
                              aLedButtonContext.ButtonsCharHdle,
                               0, /* charValOffset */
                              2, /* charValueLen */
                              (const uint8_t *)  pPayload);
-    
+
       break;
 
     default:
@@ -237,32 +237,32 @@ tBleStatus BLE_SVC_LedButton_Update_Char(uint16_t UUID, uint8_t *pPayload) //LED
 /**
   * @brief  Calling this function informs the application if the "Button characteristic"
   *         is enabled or disabled, such the client knows when it can receive the
-  *         notification byy the server  
+  *         notification byy the server
   *         The function should be implemented by the application
   *         OVERLOADING this one (which is __weak).
   *         Here just an example
   * @param  pNotification: LBS notification.
   * @retval None
- */ 
+ */
 __weak void LBS_App_Notification(LBS_App_Notification_evt_t *pNotification)
 {
   switch(pNotification->LBS_Evt_Opcode)
   {
     case BUTTON_NOTIFY_ENABLED_EVT:
-      /* Application to fill this code */    
+      /* Application to fill this code */
       break;
 
     case BUTTON_NOTIFY_DISABLED_EVT:
-      /* Application to fill this code */ 
+      /* Application to fill this code */
       break;
 
     case ST_SVC_LED_READ_EVT:
-      /* Application to fill this code */ 
+      /* Application to fill this code */
       /*Create Function to respond to Client-LB Routeur the status of each Led*/
       break;
 
     case ST_SVC_LED_WRITE_EVT:
-      /* Application to fill this code */ 
+      /* Application to fill this code */
       /* create function to switch ON/OFF Leds on selected device. */
       break;
 

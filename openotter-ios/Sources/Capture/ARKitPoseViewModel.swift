@@ -479,9 +479,9 @@ final class ARKitPoseViewModel: NSObject, ObservableObject, ARSessionDelegate {
         }
 
         let speed = self.velocityEstimator.update(x: robotX, z: robotZ, timestamp: timestamp)
-        
+
         let mappingStatus = frame.worldMappingStatus
-        
+
         onFrameUpdate?(entry, centerDepth, speed)
 
         DispatchQueue.main.async {

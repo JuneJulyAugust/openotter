@@ -124,7 +124,7 @@ git commit -m "Initial setup: Add project context and CH341 serial driver source
 **Goal**: Record the physical wiring of the servo motor to the Arduino Main Board and Sensor Shield.
 
 **Actions**:
-Based on the reference image `/disk/projects/arduino_demo/images/arduino_mega_2560_servo_connection.jpeg`, the servo is connected to the PWM section of the Sensor Shield. 
+Based on the reference image `/disk/projects/arduino_demo/images/arduino_mega_2560_servo_connection.jpeg`, the servo is connected to the PWM section of the Sensor Shield.
 Specifically, the control wire of the servo is connected to **PWM Pin 9**.
 
 **Results**:

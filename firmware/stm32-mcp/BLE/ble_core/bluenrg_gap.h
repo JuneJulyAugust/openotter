@@ -3,7 +3,7 @@
 * Author             : AMS - HEA&RF BU
 * Version            : V1.0.0
 * Date               : 19-July-2012
-* Description        : Header file for BlueNRG's GAP layer. 
+* Description        : Header file for BlueNRG's GAP layer.
 ********************************************************************************
 * This software is licensed under terms that can be found in the LICENSE file
 * in the root directory of this software component.
@@ -126,7 +126,7 @@
  */
 
 /* service data AD type */
-#define AD_TYPE_SERVICE_DATA                                              (0x16)  
+#define AD_TYPE_SERVICE_DATA                                              (0x16)
 
 /* manufaturer specific data AD type */
 #define AD_TYPE_MANUFACTURER_SPECIFIC_DATA                                (0xFF)

@@ -23,7 +23,7 @@
 #include "list.h"
 
 /******************************************************************************
- * Function Definitions 
+ * Function Definitions
  ******************************************************************************/
 void LST_init_head (tListNode * listHead)
 {

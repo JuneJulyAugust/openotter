@@ -38,61 +38,61 @@
 
 /**
  * security parameters structure
- */ 
+ */
 typedef struct _tSecurityParams
 {
   /**
   * IO capability of the device
-  */ 
+  */
   uint8_t ioCapability;
-  
+
   /**
   * Authentication requirement of the device
   * Man In the Middle protection required?
-  */ 
+  */
   uint8_t mitm_mode;
-  
+
   /**
   * bonding mode of the device
-  */ 
+  */
   uint8_t bonding_mode;
-  
+
   /**
-  * Flag to tell whether OOB data has 
+  * Flag to tell whether OOB data has
   * to be used during the pairing process
-  */ 
-  uint8_t OOB_Data_Present; 
-  
+  */
+  uint8_t OOB_Data_Present;
+
   /**
-  * OOB data to be used in the pairing process if 
+  * OOB data to be used in the pairing process if
   * OOB_Data_Present is set to TRUE
-  */ 
-  uint8_t OOB_Data[16]; 
-  
+  */
+  uint8_t OOB_Data[16];
+
   /**
-  * this variable indicates whether to use a fixed pin 
-  * during the pairing process or a passkey has to be 
+  * this variable indicates whether to use a fixed pin
+  * during the pairing process or a passkey has to be
   * requested to the application during the pairing process
   * 0 implies use fixed pin and 1 implies request for passkey
-  */ 
-  uint8_t Use_Fixed_Pin; 
-  
+  */
+  uint8_t Use_Fixed_Pin;
+
   /**
   * minimum encryption key size requirement
-  */ 
+  */
   uint8_t encryptionKeySizeMin;
-  
+
   /**
   * maximum encryption key size requirement
-  */ 
+  */
   uint8_t encryptionKeySizeMax;
-  
+
   /**
   * fixed pin to be used in the pairing process if
   * Use_Fixed_Pin is set to 1
-  */ 
+  */
   uint32_t Fixed_Pin;
-  
+
   /**
   * this flag indicates whether the host has to initiate
   * the security, wait for pairing or does not have any security
@@ -103,51 +103,51 @@ typedef struct _tSecurityParams
   * 0x02 : host need not send the clave security request but it
   * has to wait for paiirng to complete before doing any other
   * processing
-  */ 
+  */
   uint8_t initiateSecurity;
 } tSecurityParams;
 
 /**
  * global context
- * contains the variables common to all 
+ * contains the variables common to all
  * services
- */ 
+ */
 typedef struct _tBLEProfileGlobalContext
 {
   /**
    * security requirements of the host
-   */ 
+   */
   tSecurityParams bleSecurityParam;
-  
+
     /**
      * gap service handle
      */
   uint16_t gapServiceHandle;
-  
+
   /**
    * device name characteristic handle
-   */ 
+   */
   uint16_t devNameCharHandle;
-  
+
   /**
    * appearance characteristic handle
-   */ 
+   */
   uint16_t appearanceCharHandle;
-  
+
   /**
    * connection handle of the current active connection
    * When not in connection, the handle is set to 0xFFFF
-   */ 
+   */
     uint16_t connectionHandle[BLE_CFG_MAX_CONNECTION];
 
     /**
    * length of the UUID list to be used while advertising
-   */ 
+   */
     uint8_t advtServUUIDlen;
-  
+
   /**
    * the UUID list to be used while advertising
-   */ 
+   */
     uint8_t advtServUUID[100];
 
 }BleGlobalContext_t;
@@ -167,40 +167,40 @@ typedef struct{
   /**
    * state of the Data Transfer
    * state machine
-   */ 
+   */
   LBR_Gap_Gatt_State state;
 
   /**
-   * connection handle 
-   */ 
+   * connection handle
+   */
   uint16_t connHandle;
 
    /**
    * handle of the Led Button service
-   */ 
+   */
   uint16_t LedButtonServiceHandle;
 
   /**
    * end handle of the Data Transfer service
-   */ 
+   */
   uint16_t LedButtonServiceEndHandle;
 
   /**
-   * handle of the Tx characteristic 
-   * 
-   */ 
+   * handle of the Tx characteristic
+   *
+   */
   uint16_t LedButtonLedCharHdle;
 
   /**
    * handle of the client configuration
    * descriptor of Tx characteristic
-   */ 
+   */
   uint16_t LedButtonLedDescHandle;
 
   /**
    * handle of the client configuration
    * descriptor of new alert characteristic
-   */ 
+   */
 
   uint16_t  LedButtonClientCharHdle;                  /**< Characteristic handle */
   uint16_t  LedButtonClientDescHandle;                  /**< Characteristic handle */
@@ -209,16 +209,16 @@ typedef struct{
 #endif
 
 
-#if (LB_SERVER == 1)  
+#if (LB_SERVER == 1)
 
 static const char local_name[] = {AD_TYPE_COMPLETE_LOCAL_NAME,'L','B','_','P','2','P','_','S','E','R','V','E','R'};
 
 #endif
- 
+
 #if (LB_CLIENT == 1)
 
 /* static  char local_name[] = {AD_TYPE_COMPLETE_LOCAL_NAME,'L','B','_','P','2','P','_','C','L','I','E','N','T'}; */
-tBDAddr LB_SERVER_BDADDR = 
+tBDAddr LB_SERVER_BDADDR =
 {
  (uint8_t)((REMOTE_BD_ADDRESS & 0xFF0000000000) >> 40),
  (uint8_t)((REMOTE_BD_ADDRESS & 0x00FF00000000) >> 32),
@@ -311,13 +311,13 @@ void LBR_Init(LBR_InitMode_t InitMode)
     /**
      * Initialization of the BLE App Context
      */
-   
-    LBRContext.Remote_Connection_Status[0] = LBC_IDLE;
-    
-   
 
-   
-    
+    LBRContext.Remote_Connection_Status[0] = LBC_IDLE;
+
+
+
+
+
     /**
      * Set TX Power to -2dBm.
      * This avoids undesired disconnection due to instability on 32KHz
@@ -363,21 +363,21 @@ void LBR_Init(LBR_InitMode_t InitMode)
       aci_gap_configure_whitelist();
     }
 
-    
+
     /**
      * Initialize LBS Applciation
      */
-#if(LB_SERVER!=0)     
+#if(LB_SERVER!=0)
     LBSAPP_Init();
    // Start Advertise to be connected by Client
-    SCH_SetTask(CFG_IdleTask_StartAdv); 
-#endif    
-#if(LB_CLIENT!=0)    
+    SCH_SetTask(CFG_IdleTask_StartAdv);
+#endif
+#if(LB_CLIENT!=0)
     LBSAPP_Init();
     LBR_Client_Init();
     SCH_SetTask(CFG_IdleTask_ConnDev1);
 #endif
-  
+
   }
 
   return;
@@ -389,39 +389,39 @@ void LBR_Init(LBR_InitMode_t InitMode)
 /*                                                              */
 /*                     DEVICE IS LB CLIENT                     */
 /****************************************************************/
-#if(LB_CLIENT!=0) 
+#if(LB_CLIENT!=0)
 
 
 void LBR_AppConnReq1(void)
 {
   tBleStatus result;
    APPL_MESG_DBG("\r\n\r** CREATE CONNECTION TO SERVER **  \r\n\r");
-  
+
   if(LBRContext.Remote_Connection_Status[0] != LBC_CONNECTED)
   {
-    result = aci_gap_create_connection(SCAN_P, 
-                                       SCAN_L, 
-                                       PUBLIC_ADDR, 
-                                       LB_SERVER_BDADDR, 
-                                       PUBLIC_ADDR, 
-                                       CONN_P1, 
-                                       CONN_P2, 
-                                       0, 
-                                       SUPERV_TIMEOUT, 
-                                       CONN_L1 , 
-                                       CONN_L2);    
-    
+    result = aci_gap_create_connection(SCAN_P,
+                                       SCAN_L,
+                                       PUBLIC_ADDR,
+                                       LB_SERVER_BDADDR,
+                                       PUBLIC_ADDR,
+                                       CONN_P1,
+                                       CONN_P2,
+                                       0,
+                                       SUPERV_TIMEOUT,
+                                       CONN_L1 ,
+                                       CONN_L2);
+
     if( result == BLE_STATUS_SUCCESS ) {
       LBRContext.Remote_Connection_Status[0]=LBC_CONNECTING;
-     
+
     }
-    else 
+    else
     {
       BSP_LED_On(LED2);
       LBRContext.Remote_Connection_Status[0]=LBC_IDLE;
     }
   }
-  
+
   return;
 }
 
@@ -432,17 +432,17 @@ void SVCCTL_App_Notification(void *pckt)
   evt_le_meta_event *meta_evt;
   evt_le_connection_complete * connection_complete_event;
   event_pckt = (hci_event_pckt*)((hci_uart_pckt *)pckt)->data;
-  
+
   uint8_t result;
   uint8_t role;
   evt_disconn_complete *cc = (void *)event_pckt->data;
-  
+
   switch(event_pckt->evt)
   {
-      
+
     case EVT_DISCONN_COMPLETE:
-      
-      
+
+
       if(cc->handle == LBRContext.connectionHandleRemote){
         APPL_MESG_DBG("\r\n\r** DISCONNECTION EVENT OF SERVER \n");
         LBRContext.Remote_Connection_Status[0] = LBC_IDLE;
@@ -451,34 +451,34 @@ void SVCCTL_App_Notification(void *pckt)
         handleNotification.ConnectionHandle=connection_handle;
         LBR_Notification(&handleNotification);
       }
- 
+
       break; /* EVT_DISCONN_COMPLETE */
 
-        
+
     case EVT_LE_META_EVENT:
-    
+
       meta_evt = (evt_le_meta_event*)event_pckt->data;
 
       switch(meta_evt->subevent)
       {
-           
+
         case EVT_LE_CONN_COMPLETE:
           /**
            * The connection is done, there is no need anymore to schedule the LP ADV
            */
           connection_complete_event = (evt_le_connection_complete *)meta_evt->data;
-         
+
           connection_handle = connection_complete_event->handle;
           role = connection_complete_event->role;
           if(role == 0x00){ //ROLE MASTER
-            
+
             uint8_t dev1=1;
-            
+
             for (int i=0 ; i <6 ; i++) {
               dev1 &= (LB_SERVER_BDADDR[i] == connection_complete_event->peer_bdaddr[i]);
-              
+
             }
-             
+
             if(dev1==1) {
              // Inform Application it is End Device 1
               APPL_MESG_DBG("-- CONNECTION SUCCESS WITH SERVER\n");
@@ -488,29 +488,29 @@ void SVCCTL_App_Notification(void *pckt)
               handleNotification.LBR_Evt_Opcode=LB_SERVER_CONN_HANDLE_EVT;
               handleNotification.ConnectionHandle=connection_handle;
               LBR_Notification(&handleNotification);
-              
+
               result = aci_gatt_disc_all_prim_services(connection_handle);
-              
+
               if( result == BLE_STATUS_SUCCESS )     {
                 APPL_MESG_DBG("\r\n\r** GATT SERVICES & CHARACTERISTICS DISCOVERY  \n");
                 APPL_MESG_DBG("* GATT :  Start Searching Primary Services \r\n\r");
               }            else             {
                 APPL_MESG_DBG("BLE_CTRL_App_Notification(), All services discovery Failed \r\n\r");
               }
-                            
+
             }
 
-          } 
-      
-                    
+          }
+
+
          break; /* HCI_EVT_LE_CONN_COMPLETE */
-         
-       
-            
+
+
+
       } //end switch meta_event ...
-    
+
     break; /* HCI_EVT_LE_META_EVENT */
-  
+
   }
 
   return;
@@ -556,7 +556,7 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
                     (aLBRClientContext[index].state != LBC_IDLE))
           {
              LBR_Gap_Gatt_State status;
-                
+
              status = LBR_Get_Client_Connection_Status(aLBRClientContext[index].connHandle);
              if((aLBRClientContext[index].state == LBC_CONNECTED)&&
                  (status == LBC_IDLE))
@@ -569,7 +569,7 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
                 }
             index++;
           }
-          
+
           if(index < BLE_CFG_CLT_MAX_NBR_CB)
           {
             aLBRClientContext[index].connHandle= handle;
@@ -603,10 +603,10 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
         }
         break;
 
-        
+
         case EVT_BLUE_ATT_READ_BY_TYPE_RESP:
         {
-          
+
           evt_att_read_by_type_resp *pr = (void*)blue_evt->data;
           /* APPL_MESG_DBG("EVT_BLUE_ATT_READ_BY_TYPE_RESP - connection handle 0x%x !\n", pr->conn_handle); */
           uint8_t idx;
@@ -618,9 +618,9 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
            * 2 bytes handle
            * 2 or 16 bytes data
            */
-          
+
           uint8_t index;
-              
+
           index = 0;
           while((index < BLE_CFG_CLT_MAX_NBR_CB) &&
                 (aLBRClientContext[index].connHandle != pr->conn_handle))
@@ -632,7 +632,7 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
           {
             /* we are interested in only 16 bit UUIDs */
             idx = 5;
-            if (pr->handle_value_pair_length == 7)  
+            if (pr->handle_value_pair_length == 7)
             {
               pr->event_data_length -= 1;
               while(pr->event_data_length > 0)
@@ -640,7 +640,7 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
                 uuid = UNPACK_2_BYTE_PARAMETER(&pr->handle_value_pair[idx]);
                 /* store the characteristic handle not the attribute handle */
                 handle = UNPACK_2_BYTE_PARAMETER(&pr->handle_value_pair[idx-2]);
-            
+
                 if(uuid == LED_CHAR_UUID)
                 {
                   APPL_MESG_DBG("-- GATT : LED_CHAR_UUID FOUND - connection handle 0x%x\n", aLBRClientContext[index].connHandle);
@@ -660,13 +660,13 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
           }
         }
         break;
-        
-        
+
+
         case EVT_BLUE_ATT_FIND_INFORMATION_RESP:
         {
-          
+
           evt_att_find_information_resp *pr = (void*)blue_evt->data;
-          
+
           uint8_t numDesc, idx, i;
           uint8_t index;
           uint16_t uuid, handle;
@@ -680,9 +680,9 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
           index = 0;
           while((index < BLE_CFG_CLT_MAX_NBR_CB) &&
                 (aLBRClientContext[index].connHandle != pr->conn_handle))
-          {      
+          {
             index++;
-          }  
+          }
 
           if(index < BLE_CFG_CLT_MAX_NBR_CB)
           {
@@ -707,17 +707,17 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
                 }
                 idx += 4;
               }
-            }  
-          }  
+            }
+          }
         }
         break; /*EVT_BLUE_ATT_FIND_INFORMATION_RESP*/
 
-        
+
         case EVT_BLUE_GATT_NOTIFICATION:
         {
           evt_gatt_attr_notification *pr = (void*)blue_evt->data;
           uint8_t index;
-              
+
           index = 0;
           while((index < BLE_CFG_CLT_MAX_NBR_CB) &&
                 (aLBRClientContext[index].connHandle != pr->conn_handle))
@@ -727,7 +727,7 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
 
           if(index < BLE_CFG_CLT_MAX_NBR_CB)
           {
-          
+
             if ( (pr->attr_handle == aLBRClientContext[index].LedButtonClientCharHdle) &&
                  (pr->event_data_length > (2)) )
             {
@@ -736,14 +736,14 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
               Notification.DataTransfered.Length = pr->event_data_length;
               Notification.DataTransfered.pPayload = &pr->attr_value[0];
 
-              LBR_Client_App_Notification(&Notification); 
-            
+              LBR_Client_App_Notification(&Notification);
+
               /* INFORM APPLICATION BUTTON IS PUSHED BY END DEVICE */
             }
           }
         }
         break;/* end EVT_BLUE_GATT_NOTIFICATION */
-        
+
         case EVT_BLUE_GATT_PROCEDURE_COMPLETE:
         {
           evt_gatt_procedure_complete *pr = (void*)blue_evt->data;
@@ -751,7 +751,7 @@ static SVCCTL_EvtAckStatus_t LBR_Client_Event_Handler(void *Event)
           APPL_MESG_DBG("\n");
 
           uint8_t index;
-              
+
           index = 0;
           while((index < BLE_CFG_CLT_MAX_NBR_CB) &&
                 (aLBRClientContext[index].connHandle != pr->conn_handle))
@@ -799,7 +799,7 @@ void LBR_Client_Init(void)
   SVCCTL_RegisterCltHandler(LBR_Client_Event_Handler);
 
   APPL_MESG_DBG("-- LED BUTTON CLIENT INITIALIZED \n");
-  
+
   return;
 }
 
@@ -808,12 +808,12 @@ void LBR_Client_Update_Service()
   uint16_t enable = 0x0001;
   uint8_t index;
   index = 0;
-  
+
   while((index < BLE_CFG_CLT_MAX_NBR_CB) &&
         (aLBRClientContext[index].state != LBC_IDLE))
   {
-  
-  
+
+
     switch(aLBRClientContext[index].state)
     {
       case LBC_DISCOVER_SERVICES:
@@ -830,20 +830,20 @@ void LBR_Client_Update_Service()
         aci_gatt_disc_all_charac_descriptors(aLBRClientContext[index].connHandle,
                                                     aLBRClientContext[index].LedButtonLedCharHdle,
                                                     aLBRClientContext[index].LedButtonLedCharHdle+2);
-        break;  
+        break;
       case LBC_DISCOVER_BUTTON_CHAR_DESC:
         APPL_MESG_DBG("* GATT : Discover Descriptor of Button Characteristic\n");
         aci_gatt_disc_all_charac_descriptors(aLBRClientContext[index].connHandle,
                                                     aLBRClientContext[index].LedButtonClientCharHdle,
                                                     aLBRClientContext[index].LedButtonClientCharHdle+2);
-        break;  
+        break;
       case LBC_ENABLE_NOTIFICATION_BUTTON_DESC:
         APPL_MESG_DBG("* GATT : Enable Button Notification\n");
         aci_gatt_write_charac_descriptor(aLBRClientContext[index].connHandle,
                                                 aLBRClientContext[index].LedButtonClientDescHandle,
                                                 2,
                                                 (uint8_t *)&enable);
-      
+
         aLBRClientContext[index].state = LBC_CONNECTED;
         break;
       case LBC_DISABLE_NOTIFICATION_TX_DESC :
@@ -852,7 +852,7 @@ void LBR_Client_Update_Service()
                                                 aLBRClientContext[index].LedButtonClientDescHandle,
                                                 2,
                                                 (uint8_t *)&enable);
-      
+
         aLBRClientContext[index].state = LBC_CONNECTED;
         break;
       default:
@@ -874,7 +874,7 @@ tBleStatus LBR_Client_Update_Char(uint16_t UUID, uint8_t Service_Instance, uint8
 {
   tBleStatus ret = BLE_STATUS_INVALID_PARAMS;
   uint8_t index;
-  
+
   index = 0;
   while((index < BLE_CFG_CLT_MAX_NBR_CB) &&
         (aLBRClientContext[index].state != LBC_IDLE))
@@ -886,9 +886,9 @@ tBleStatus LBR_Client_Update_Char(uint16_t UUID, uint8_t Service_Instance, uint8
                                         aLBRClientContext[index].LedButtonLedCharHdle,
                                         2, /* charValueLen */
                                          (const uint8_t *)  pPayload);
-      
+
       break;
-   
+
       default:
         break;
     }
@@ -906,11 +906,11 @@ void LBR_App_Key_Button_Action(void)
 
 LBR_Gap_Gatt_State LBR_Get_Client_Connection_Status(uint16_t Connection_Handle)
 {
-  if(LBRContext.connectionHandleRemote == Connection_Handle) 
+  if(LBRContext.connectionHandleRemote == Connection_Handle)
   {
     return LBRContext.Remote_Connection_Status[0];
-  }  
-  else 
+  }
+  else
   {
     return LBC_IDLE;
   }
@@ -924,13 +924,13 @@ LBR_Gap_Gatt_State LBR_Get_Client_Connection_Status(uint16_t Connection_Handle)
 /*                     DEVICE IS SERVER                         */
 /****************************************************************/
 
-#if(LB_SERVER!=0) 
+#if(LB_SERVER!=0)
 void LBR_Adv_Request(void)
 {
   if(LBRContext.Remote_Connection_Status [0]!= LBC_CONNECTED )
   {
     tBleStatus result=0x00;
-    
+
     result = aci_gap_set_discoverable(ADV_IND,
                              LEDBUTTON_CONN_ADV_INTERVAL_MIN,
                              LEDBUTTON_CONN_ADV_INTERVAL_MAX,
@@ -943,12 +943,12 @@ void LBR_Adv_Request(void)
                              0,
                              0);
     /* Send Advertising data */
-   
+
     if( result == BLE_STATUS_SUCCESS )  {
       APPL_MESG_DBG("  \r\n\r");
       APPL_MESG_DBG("** START ADVERTISING **  \r\n\r");
-    }  
-    else   
+    }
+    else
     {
       APPL_MESG_DBG("** START ADVERTISING **  Failed \r\n\r");
     }
@@ -974,7 +974,7 @@ void SVCCTL_App_Notification(void *pckt)
         handleNotification.LBR_Evt_Opcode=LB_CLIENT_DISCON_EVT_EVT;
         handleNotification.ConnectionHandle=connection_handle;
         LBR_Notification(&handleNotification);
-      
+
       }
       break; /* EVT_DISCONN_COMPLETE */
 
@@ -987,17 +987,17 @@ void SVCCTL_App_Notification(void *pckt)
            * The connection is done, there is no need anymore to schedule the LP ADV
            */
           connection_complete_event = (evt_le_connection_complete *)meta_evt->data;
-         
+
           connection_handle = connection_complete_event->handle;
-      
-          //CONNECTION WITH LB ROUTEUR 
+
+          //CONNECTION WITH LB ROUTEUR
            APPL_MESG_DBG("\r\n\r** CONNECTION EVENT WITH CLIENT \n");
           LBRContext.connectionHandleRemote = connection_handle;
           handleNotification.LBR_Evt_Opcode=LB_CLIENT_CONN_HANDLE_EVT;
           handleNotification.ConnectionHandle=connection_handle;
           LBR_Notification(&handleNotification);
-         
-          
+
+
          break; /* HCI_EVT_LE_CONN_COMPLETE */
 
         default:
@@ -1016,13 +1016,13 @@ void LBR_App_Key_Button_Action(void)
   SCH_SetTask(CFG_IdleTask_Button);
 }
 
-#endif 
+#endif
 
 void BLESVC_InitCustomSvc(void)
 {
-#if(LB_SERVER!=0) 
+#if(LB_SERVER!=0)
   LBS_STM_Init();
-#endif    
+#endif
   return;
 }
 

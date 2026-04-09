@@ -2,7 +2,7 @@
  ******************************************************************************
  * @file    hci_tl_io.h
  * @author  MCD Application Team
- * @brief   This lower API is imposed by the MW to the applic TL (transport layer). 
+ * @brief   This lower API is imposed by the MW to the applic TL (transport layer).
  *          API compianl to See Bluetooth Core v 4.0, Vol. 2, Part E.
  ******************************************************************************
  * @attention
