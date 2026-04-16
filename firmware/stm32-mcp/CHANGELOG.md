@@ -3,6 +3,11 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [0.3.0] - 2026-04-16
+
+### Changed
+- **Project Rename**: Updated BLE GAP name and advertising data to reflect OpenOtter branding.
+
 ## [0.2.1] - 2026-03-28
 
 ### Fixed

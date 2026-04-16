@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-16
+
+### Changed
+- **Project Rename**: Rebranded to OpenOtter. Updated device identifiers and TUI headers.
+
 ## [0.3.0-dev] - 2026-03-23
 
 ### Changed
