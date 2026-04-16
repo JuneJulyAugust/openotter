@@ -32,6 +32,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-04-16 - Project Rename to OpenOtter & v0.10.0 Release
+
+- **Context:** Formalizing the project identity and synchronizing versions across all components.
+- **What we built/tested:** Renamed the project from \"Metabot\" to **OpenOtter**. Updated all `CHANGELOG.md` files, `VERSION` files, and git tags.
+- **Issue observed:** Fragmented versioning and legacy naming across components (iOS, Raspberry Pi, STM32) made it difficult to track a unified release state.
+- **Root cause:** Incremental development led to divergent version numbers and inconsistent project naming.
+- **Resolution:** Performed a global search-and-replace for naming. Bumped iOS to `v0.10.0`, Raspberry Pi MCP to `v0.4.0`, and STM32 MCP to `v0.3.0`.
+- **Validation:** Verified all component versions match the new release tags and branding is consistent in the TUI and iOS UI headers.
+- **Follow-up:** Update remaining assets and documentation to reflect the new identity.
+
 ### 2026-04-05 - SpeechOutput AVSpeechSynthesizer Crash Fix & iOS 18.2 Audio Session Override
 
 - **Context:** AVSpeechSynthesizer would not produce audio when running simultaneously with ARKit, and eventually entered a permanently silent state.

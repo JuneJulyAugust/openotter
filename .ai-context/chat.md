@@ -4,6 +4,30 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
+## 2026-04-16 - Project Rename & v0.10.0 Rebrand Release
+
+### Summary
+Formally rebranded the project from \"Metabot\" to **OpenOtter** and synchronized version numbers across all component subsystems to establish a unified release baseline.
+
+### Achievements
+1. **Unified Branding:** Performed a global search-and-replace to rename the project to OpenOtter across the entire codebase, assets, and documentation.
+2. **Version Synchronization:** Bumped and tagged all major components:
+   - iOS App: `v0.10.0` (previously `v0.9.0`)
+   - Raspberry Pi MCP: `v0.4.0` (previously `v0.3.0-dev`)
+   - STM32 MCP: `v0.3.0` (previously `v0.2.1`)
+3. **Documentation Updated:** Refreshed `CHANGELOG.md` files, `VERSION` files, and `.ai-context` documentation (`walkthrough.md`, `achievements.md`, `plan.md`, `task.md`, `chat.md`) to reflect the new identity and release state.
+4. **Git Tags Created:** Applied corresponding git tags (`ios-v0.10.0`, `raspberry-pi-mcp-v0.4.0`, `stm32-mcp-v0.3.0`) to the main branch.
+
+### Current State
+- **Project Identity:** Consistent OpenOtter branding established.
+- **Release Baseline:** Unified v0.10.0 / v0.4.0 / v0.3.0 state achieved.
+- **Next Step:** Resume MVP1 Agent Runtime implementation following the rebranded path.
+
+### Prompt Context for Next Session
+\"In the last session, we formally rebranded the project to OpenOtter and bumped the versions to ios-v0.10.0, rpi-mcp-v0.4.0, and stm32-mcp-v0.3.0. All documentation and tags have been updated. The next priority is to continue with the MVP1 Agent Runtime implementation, specifically focusing on Phase B (Telegram Gateway) and Phase C (App Core wiring) as outlined in the task backlog.\"
+
+---
+
 ## 2026-04-05 - Agent Runtime & Telegram Gateway Design
 
 ### Summary

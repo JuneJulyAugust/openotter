@@ -57,6 +57,11 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Bot token is stored securely in the iOS Keychain.
 - Stub interfaces exist for future LLM interpreter, skill registry, and memory store.
 
+### 2.5 Current Release (v0.10.0)
+
+- The project was formally rebranded to OpenOtter on 2026-04-16.
+- Version 0.10.0 establishes the baseline for the Agent Runtime integration.
+
 ## 3. Product Direction
 
 - MVP1: LiDAR-first closed loop on the STM32 path + Telegram-based agent runtime.
