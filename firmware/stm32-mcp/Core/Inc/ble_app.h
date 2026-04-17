@@ -11,8 +11,8 @@
 #ifndef __BLE_APP_H
 #define __BLE_APP_H
 
-#include <stdint.h>
 #include "stm32l4xx_hal.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,18 +21,20 @@ extern "C" {
 /* ---- Custom GATT Service UUIDs ---- */
 /* 128-bit base UUID: 00000000-BEEF-CAFE-C0DE-METALB0T0001
  * We use 16-bit short UUIDs within the BlueNRG stack for simplicity. */
-#define OPENOTTER_CONTROL_SVC_UUID    0xFE40  /* Custom control service */
-#define OPENOTTER_COMMAND_CHAR_UUID   0xFE41  /* Write char: steering + throttle */
-#define OPENOTTER_STATUS_CHAR_UUID    0xFE42  /* Notify char: status feedback */
+#define OPENOTTER_CONTROL_SVC_UUID 0xFE40 /* Custom control service */
+#define OPENOTTER_COMMAND_CHAR_UUID                                            \
+  0xFE41                                  /* Write char: steering + throttle   \
+                                           */
+#define OPENOTTER_STATUS_CHAR_UUID 0xFE42 /* Notify char: status feedback */
 
 /* ---- PWM Constants (matching TIM3 config: PSC=79, ARR=19999 → 50Hz) ---- */
-#define PWM_PERIOD_US       20000   /* 20ms full period */
-#define PWM_NEUTRAL_US      1500    /* 1.5ms = neutral position */
-#define PWM_MIN_US          1000    /* 1.0ms = full reverse / left */
-#define PWM_MAX_US          2000    /* 2.0ms = full forward / right */
+#define PWM_PERIOD_US 20000 /* 20ms full period */
+#define PWM_NEUTRAL_US 1500 /* 1.5ms = neutral position */
+#define PWM_MIN_US 1000     /* 1.0ms = full reverse / left */
+#define PWM_MAX_US 2000     /* 2.0ms = full forward / right */
 
 /* ---- Safety ---- */
-#define BLE_SAFETY_TIMEOUT_MS  1500  /* Revert to neutral if no command */
+#define BLE_SAFETY_TIMEOUT_MS 1500 /* Revert to neutral if no command */
 
 /* ---- Public API ---- */
 
