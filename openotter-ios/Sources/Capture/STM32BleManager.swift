@@ -35,12 +35,22 @@ public class STM32BleManager: NSObject, ObservableObject {
     /// Notify characteristic: 0xFE42 — heartbeat/status from firmware
     private let statusCharUUID = CBUUID(string: "FE42")
 
+    /// ToF service: 0xFE60
+    private let tofServiceUUID    = CBUUID(string: "FE60")
+    private let tofConfigCharUUID = CBUUID(string: "FE61")
+    private let tofFrameCharUUID  = CBUUID(string: "FE62")
+    private let tofStatusCharUUID = CBUUID(string: "FE63")
+
     // MARK: - Private
 
     private var centralManager: CBCentralManager!
     private var peripheral: CBPeripheral?
     private var commandChar: CBCharacteristic?
     private var statusChar: CBCharacteristic?
+
+    private var tofConfigChar: CBCharacteristic?
+    private var tofFrameChar: CBCharacteristic?
+    private var tofStatusChar: CBCharacteristic?
 
     private let targetDeviceName = "OPENOTTER-MCP"
 
@@ -93,6 +103,10 @@ public class STM32BleManager: NSObject, ObservableObject {
         peripheral = nil
         commandChar = nil
         statusChar = nil
+        tofConfigChar = nil
+        tofFrameChar = nil
+        tofStatusChar = nil
+        STM32TofService.shared.detach()
         status = .disconnected
     }
 
@@ -178,8 +192,16 @@ extension STM32BleManager: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral,
                            didDiscoverServices error: Error?) {
         guard let services = peripheral.services else { return }
-        for service in services where service.uuid == controlServiceUUID {
-            peripheral.discoverCharacteristics([commandCharUUID, statusCharUUID], for: service)
+        for service in services {
+            switch service.uuid {
+            case controlServiceUUID:
+                peripheral.discoverCharacteristics([commandCharUUID, statusCharUUID], for: service)
+            case tofServiceUUID:
+                peripheral.discoverCharacteristics(
+                    [tofConfigCharUUID, tofFrameCharUUID, tofStatusCharUUID], for: service)
+            default:
+                break
+            }
         }
     }
 
@@ -187,32 +209,66 @@ extension STM32BleManager: CBPeripheralDelegate {
                            didDiscoverCharacteristicsFor service: CBService,
                            error: Error?) {
         guard let chars = service.characteristics else { return }
-        for char in chars {
-            switch char.uuid {
-            case commandCharUUID:
-                commandChar = char
-            case statusCharUUID:
-                statusChar = char
-                // Subscribe to status notifications
-                if char.properties.contains(.notify) {
-                    peripheral.setNotifyValue(true, for: char)
-                }
-            default:
-                break
-            }
-        }
 
-        if commandChar != nil {
-            status = .connected
+        switch service.uuid {
+        case controlServiceUUID:
+            for char in chars {
+                switch char.uuid {
+                case commandCharUUID:
+                    commandChar = char
+                case statusCharUUID:
+                    statusChar = char
+                    if char.properties.contains(.notify) {
+                        peripheral.setNotifyValue(true, for: char)
+                    }
+                default:
+                    break
+                }
+            }
+            if commandChar != nil {
+                status = .connected
+            }
+
+        case tofServiceUUID:
+            for char in chars {
+                switch char.uuid {
+                case tofConfigCharUUID: tofConfigChar = char
+                case tofFrameCharUUID:  tofFrameChar  = char
+                case tofStatusCharUUID: tofStatusChar = char
+                default: break
+                }
+            }
+            if let frame = tofFrameChar, let cfg = tofConfigChar, let st = tofStatusChar {
+                STM32TofService.shared.attach(
+                    peripheral: peripheral,
+                    frameChar: frame,
+                    configChar: cfg,
+                    statusChar: st)
+            }
+
+        default:
+            break
         }
     }
 
     public func peripheral(_ peripheral: CBPeripheral,
                            didUpdateValueFor characteristic: CBCharacteristic,
                            error: Error?) {
-        // Handle status notifications from firmware (future use)
-        guard characteristic.uuid == statusCharUUID else { return }
-        // Status payload parsing can be extended here
+        switch characteristic.uuid {
+        case tofFrameCharUUID:
+            if let data = characteristic.value {
+                STM32TofService.shared.handleFrameNotification(data)
+            }
+        case tofStatusCharUUID:
+            if let data = characteristic.value {
+                STM32TofService.shared.handleStatusNotification(data)
+            }
+        case statusCharUUID:
+            // FE42 control-side status — no consumer yet.
+            break
+        default:
+            break
+        }
     }
 
     public func peripheral(_ peripheral: CBPeripheral,

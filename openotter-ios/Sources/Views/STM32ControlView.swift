@@ -75,6 +75,18 @@ struct STM32ControlView: View {
                     }
                     .groupBoxStyle(ModernGroupBoxStyle())
 
+                    // --- TOF DEBUG (FE60 multi-zone grid) ---
+                    GroupBox(label:
+                        Label("TOF DEBUG", systemImage: "square.grid.3x3.fill")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
+                    ) {
+                        TofDebugCard(viewModel: viewModel)
+                    }
+                    .groupBoxStyle(ModernGroupBoxStyle())
+                    .opacity(viewModel.status == .connected ? 1.0 : 0.4)
+                    .disabled(viewModel.status != .connected)
+
                     // --- DIRECT CONTROL (Discrete Steps) ---
                     GroupBox(label:
                         Label("DIRECT CONTROL", systemImage: "gamecontroller.fill")
@@ -244,5 +256,106 @@ private struct DiscreteControlPicker: View {
     private var roundedValue: Float {
         let rounded = (value * 10).rounded() / 10
         return max(-1.0, min(1.0, rounded))
+    }
+}
+
+// MARK: - ToF Debug Card
+
+private struct TofDebugCard: View {
+    @ObservedObject var viewModel: STM32ControlViewModel
+
+    /// UI-side mirror of slider position (ms). Initialised from current cfg.
+    @State private var budgetMs: Double = 33
+
+    /// Hue cap (mm) inferred from distance mode — keeps the heat map readable
+    /// regardless of the configured distance ceiling.
+    private var maxRangeMm: UInt16 {
+        switch viewModel.tofConfig.distMode {
+        case 1:  return 1300
+        case 2:  return 2900
+        default: return 3600
+        }
+    }
+
+    /// Coarse Hz prediction: 1 / (zones × budget). Not a guarantee — actual
+    /// rate is reported by the firmware in tofScanHz.
+    private var predictedHz: Int {
+        let zones = max(1, Int(viewModel.tofConfig.layout) * Int(viewModel.tofConfig.layout))
+        let budgetSec = Double(viewModel.tofConfig.budgetUs) / 1_000_000.0
+        let total = budgetSec * Double(zones)
+        return total > 0 ? Int((1.0 / total).rounded()) : 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Layout", selection: layoutBinding) {
+                Text("1×1").tag(UInt8(1))
+                Text("3×3").tag(UInt8(3))
+                Text("4×4").tag(UInt8(4))
+            }
+            .pickerStyle(.segmented)
+
+            Picker("Distance", selection: distModeBinding) {
+                Text("Short").tag(UInt8(1))
+                Text("Medium").tag(UInt8(2))
+                Text("Long").tag(UInt8(3))
+            }
+            .pickerStyle(.segmented)
+
+            HStack {
+                Text("Budget")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Slider(value: $budgetMs, in: 8...200, step: 1)
+                    .onChange(of: budgetMs) { new in
+                        viewModel.setTofBudgetMs(UInt32(new))
+                    }
+                Text("\(Int(budgetMs)) ms")
+                    .font(.caption.monospaced())
+                    .frame(width: 60, alignment: .trailing)
+            }
+
+            HStack {
+                Text("≈ \(predictedHz) Hz expected")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(viewModel.tofState == .running ? "running" : "\(viewModel.tofState)")
+                    .font(.caption2.monospaced())
+                    .foregroundColor(viewModel.tofState == .running ? .green : .orange)
+            }
+
+            if let f = viewModel.tofFrame {
+                TofGridView(frame: f, maxRangeMm: maxRangeMm)
+                    .padding(.vertical, 4)
+            } else {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.gray.opacity(0.15))
+                    .frame(height: 120)
+                    .overlay(Text("Waiting for frame…").foregroundStyle(.secondary))
+            }
+
+            HStack {
+                Text("seq \(viewModel.tofFrame?.seq ?? 0)")
+                Spacer()
+                Text("\(viewModel.tofScanHz) Hz")
+            }
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            budgetMs = Double(viewModel.tofConfig.budgetUs) / 1000.0
+        }
+    }
+
+    private var layoutBinding: Binding<UInt8> {
+        Binding(get: { viewModel.tofConfig.layout },
+                set: { viewModel.setTofLayout($0) })
+    }
+
+    private var distModeBinding: Binding<UInt8> {
+        Binding(get: { viewModel.tofConfig.distMode },
+                set: { viewModel.setTofDistMode($0) })
     }
 }

@@ -20,10 +20,18 @@ class STM32ControlViewModel: ObservableObject {
     @Published var escTelemetry: ESCTelemetry?
     @Published var escDeviceName: String = "Unknown"
 
+    // ToF (FE60)
+    @Published var tofFrame: TofFrame?
+    @Published var tofState: TofState = .unknown
+    @Published var tofScanHz: UInt8 = 0
+    /// Defaults match firmware Init: 1×1 / LONG / 33 ms.
+    @Published var tofConfig = TofConfig(layout: 1, distMode: 3, budgetUs: 33_000)
+
     // MARK: - Private
 
     private let bleManager = STM32BleManager.shared
     private let escManager = ESCBleManager.shared
+    private let tofService = STM32TofService.shared
     private var cancellables = Set<AnyCancellable>()
 
     /// Debounce timer: waits for picker scroll to settle before sending.
@@ -31,6 +39,9 @@ class STM32ControlViewModel: ObservableObject {
     /// Keepalive timer: re-sends current values every 500ms to prevent the
     /// firmware's 1500ms safety timeout from triggering neutral.
     private var keepaliveTimer: Timer?
+    /// Single debounce window for any ToF picker/slider change — collapses
+    /// rapid touches into one FE61 write.
+    private var tofConfigTimer: Timer?
 
     // MARK: - Timing Constants
 
@@ -58,6 +69,7 @@ class STM32ControlViewModel: ObservableObject {
     deinit {
         debounceTimer?.invalidate()
         keepaliveTimer?.invalidate()
+        tofConfigTimer?.invalidate()
         // Shared singletons are not stopped — they outlive this viewmodel
     }
 
@@ -85,6 +97,39 @@ class STM32ControlViewModel: ObservableObject {
     func reconnect() {
         bleManager.stop()
         bleManager.start()
+    }
+
+    // MARK: - ToF API
+
+    func setTofLayout(_ layout: UInt8) {
+        tofConfig.layout = layout
+        scheduleTofSend()
+    }
+
+    func setTofDistMode(_ mode: UInt8) {
+        tofConfig.distMode = mode
+        scheduleTofSend()
+    }
+
+    func setTofBudgetMs(_ ms: UInt32) {
+        tofConfig.budgetUs = max(8_000, min(1_000_000, ms * 1000))
+        scheduleTofSend()
+    }
+
+    private func scheduleTofSend() {
+        tofConfigTimer?.invalidate()
+        tofConfigTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.debounceInterval,
+            repeats: false
+        ) { [weak self] _ in
+            self?.sendTofConfig()
+        }
+    }
+
+    private func sendTofConfig() {
+        tofService.sendConfig(layout: tofConfig.layout,
+                              distMode: tofConfig.distMode,
+                              budgetUs: tofConfig.budgetUs)
     }
 
     // MARK: - Send Logic
@@ -157,6 +202,18 @@ class STM32ControlViewModel: ObservableObject {
         escManager.$deviceName
             .receive(on: DispatchQueue.main)
             .assign(to: &$escDeviceName)
+
+        tofService.$latestFrame
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofFrame)
+
+        tofService.$state
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofState)
+
+        tofService.$scanHz
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofScanHz)
     }
 
     /// Maps a normalized [-1, +1] control value to a PWM pulse width [1000, 2000] µs.
