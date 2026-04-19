@@ -33,7 +33,7 @@ extern "C" {
  * BLE Stack & Service Config
  *----------------------------------------------------------------------------*/
 #define BLE_CFG_DATA_ROLE_MODE 0x01 /* Peripheral only */
-#define BLE_CFG_SVC_MAX_NBR_CB 2    /* Max registered service handlers */
+#define BLE_CFG_SVC_MAX_NBR_CB 3    /* Max registered service handlers (FE40 + FE60) */
 #define BLE_CFG_CLT_MAX_NBR_CB 0    /* No client handlers */
 #define BLE_CFG_MENU_DEVICE_INFORMATION 0
 #define BLE_CFG_MAX_CONNECTION 1

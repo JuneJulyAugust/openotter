@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ble_app.h"
+#include "ble_tof.h"
 #include "stm32l4xx_ll_pwr.h"
 #include "stm32l4xx_ll_rcc.h"
 #include "tof_l1.h"
@@ -154,6 +155,10 @@ int main(void) {
 
   /* Initialize BLE stack and custom GATT service */
   BLE_App_Init(&htim3);
+
+  /* Register the ToF GATT service (FE60). Must follow BLE_App_Init so the
+   * BlueNRG stack and SVCCTL are already up. */
+  BLE_Tof_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -161,6 +166,7 @@ int main(void) {
   while (1) {
     BLE_App_Process();
     TofL1_Process();
+    BLE_Tof_Process();
 
     /* Toggle LD1 (PA5) every 500ms to show the board is alive */
     static uint32_t last_toggle = 0;

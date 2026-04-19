@@ -35,6 +35,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_app.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1_roi.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c

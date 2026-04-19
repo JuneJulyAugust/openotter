@@ -1,0 +1,220 @@
+/* SPDX-License-Identifier: BSD-3-Clause */
+/******************************************************************************
+ * BLE GATT service for VL53L1CB ToF (svc 0xFE60). Mirrors ble_app.c.
+ *
+ *   FE61  config  write/write-w/o-resp, 8 B fixed
+ *   FE62  frame   notify, 76 B fixed   (== sizeof(TofL1_Frame_t))
+ *   FE63  status  notify + read, 4 B fixed
+ *
+ * Frame publish strategy: BLE_Tof_Process is called once per main-loop
+ * iteration. When TofL1 reports a new frame and a central is connected,
+ * we update the FE62 characteristic value (which auto-pushes a notification
+ * if the CCCD enabled it). Status is refreshed once per second.
+ ******************************************************************************/
+
+#include "ble_tof.h"
+
+#include "ble_app.h"
+#include "common.h"
+#include "tl_types.h"
+#include "tl_ble_hci.h"
+#include "svc_ctl.h"
+#include "ble_lib.h"
+#include "blesvc.h"
+
+#include "tof_l1.h"
+
+#include <string.h>
+
+extern UART_HandleTypeDef huart1;
+
+typedef struct {
+  uint16_t svc_handle;
+  uint16_t config_char_handle;
+  uint16_t frame_char_handle;
+  uint16_t status_char_handle;
+
+  /* Status & rate tracking */
+  uint32_t last_status_tick;
+  uint32_t last_rate_window_tick;
+  uint32_t last_rate_window_seq;
+  uint32_t last_published_seq;
+  uint8_t  scan_hz;
+  uint8_t  state;       /* 0 idle, 1 running, 2 error */
+  uint8_t  last_error;
+} BLE_TofContext_t;
+
+static BLE_TofContext_t s_tof;
+
+#define STATUS_REFRESH_MS  1000u
+
+static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
+
+static void log_str(const char *s)
+{
+  HAL_UART_Transmit(&huart1, (const uint8_t *)s, (uint16_t)strlen(s), 100);
+}
+
+static void publish_status(void)
+{
+  BLE_TofStatusPayload_t st = {
+      .state      = s_tof.state,
+      .last_error = s_tof.last_error,
+      .scan_hz    = s_tof.scan_hz,
+      ._pad       = 0,
+  };
+  (void)aci_gatt_update_char_value(s_tof.svc_handle, s_tof.status_char_handle,
+                                   0, sizeof(st), (uint8_t *)&st);
+}
+
+int BLE_Tof_Init(void)
+{
+  uint16_t uuid;
+  tBleStatus ret;
+
+  memset(&s_tof, 0, sizeof(s_tof));
+  s_tof.state = 1;  /* default scan starts during TofL1_Init */
+
+  SVCCTL_RegisterSvcHandler(BLE_Tof_EventHandler);
+
+  /* Service: 1 (svc) + 2 per char × 3 chars + 1 CCCD per notify char × 2 = 9 */
+  uuid = OPENOTTER_TOF_SVC_UUID;
+  ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
+                          1 + 2 * 3 + 2, &s_tof.svc_handle);
+  if (ret != BLE_STATUS_SUCCESS) {
+    log_str("BLE_Tof: add_serv failed\r\n");
+    return -1;
+  }
+
+  /* FE61 — config (write + write-w/o-resp), fixed 8 B */
+  uuid = OPENOTTER_TOF_CONFIG_CHAR_UUID;
+  ret = aci_gatt_add_char(s_tof.svc_handle, UUID_TYPE_16,
+                          (const uint8_t *)&uuid,
+                          sizeof(BLE_TofConfigPayload_t),
+                          CHAR_PROP_WRITE_WITHOUT_RESP | CHAR_PROP_WRITE,
+                          ATTR_PERMISSION_NONE,
+                          GATT_NOTIFY_ATTRIBUTE_WRITE,
+                          10, /* encryKeySize */
+                          0,  /* fixed length */
+                          &s_tof.config_char_handle);
+  if (ret != BLE_STATUS_SUCCESS) { log_str("BLE_Tof: add_char FE61 failed\r\n"); return -1; }
+
+  /* FE62 — frame (notify), fixed 76 B */
+  uuid = OPENOTTER_TOF_FRAME_CHAR_UUID;
+  ret = aci_gatt_add_char(s_tof.svc_handle, UUID_TYPE_16,
+                          (const uint8_t *)&uuid,
+                          sizeof(TofL1_Frame_t),
+                          CHAR_PROP_NOTIFY,
+                          ATTR_PERMISSION_NONE,
+                          GATT_DONT_NOTIFY_EVENTS,
+                          10,
+                          0,
+                          &s_tof.frame_char_handle);
+  if (ret != BLE_STATUS_SUCCESS) { log_str("BLE_Tof: add_char FE62 failed\r\n"); return -1; }
+
+  /* FE63 — status (notify + read), fixed 4 B */
+  uuid = OPENOTTER_TOF_STATUS_CHAR_UUID;
+  ret = aci_gatt_add_char(s_tof.svc_handle, UUID_TYPE_16,
+                          (const uint8_t *)&uuid,
+                          sizeof(BLE_TofStatusPayload_t),
+                          CHAR_PROP_NOTIFY | CHAR_PROP_READ,
+                          ATTR_PERMISSION_NONE,
+                          GATT_DONT_NOTIFY_EVENTS,
+                          10,
+                          0,
+                          &s_tof.status_char_handle);
+  if (ret != BLE_STATUS_SUCCESS) { log_str("BLE_Tof: add_char FE63 failed\r\n"); return -1; }
+
+  s_tof.last_status_tick      = HAL_GetTick();
+  s_tof.last_rate_window_tick = HAL_GetTick();
+  publish_status();
+  log_str("BLE_Tof ready\r\n");
+  return 0;
+}
+
+void BLE_Tof_Process(void)
+{
+  if (!BLE_App_IsConnected()) return;
+
+  uint32_t now = HAL_GetTick();
+
+  /* Push frame whenever TofL1 has a new one. */
+  if (TofL1_HasNewFrame()) {
+    const TofL1_Frame_t *f = TofL1_GetLatestFrame();
+    if (f->seq != s_tof.last_published_seq) {
+      tBleStatus ret = aci_gatt_update_char_value(
+          s_tof.svc_handle, s_tof.frame_char_handle,
+          0, sizeof(TofL1_Frame_t), (uint8_t *)f);
+      if (ret == BLE_STATUS_SUCCESS) {
+        s_tof.last_published_seq = f->seq;
+        TofL1_ClearNewFrame();
+      }
+      /* On BUSY/INSUFFICIENT_RESOURCES we leave has_new_frame set and
+       * retry next loop iteration — no zone data is lost because TofL1
+       * keeps overwriting the latest buffer. */
+    }
+  }
+
+  /* Recompute scan rate over a 1 s sliding window and push status. */
+  uint32_t since_status = now - s_tof.last_status_tick;
+  if (since_status >= STATUS_REFRESH_MS) {
+    const TofL1_Frame_t *f = TofL1_GetLatestFrame();
+    uint32_t window_ms = now - s_tof.last_rate_window_tick;
+    if (window_ms > 0) {
+      uint32_t delta = f->seq - s_tof.last_rate_window_seq;
+      uint32_t hz    = (delta * 1000u + window_ms / 2u) / window_ms;
+      s_tof.scan_hz  = (hz > 255u) ? 255u : (uint8_t)hz;
+    }
+    s_tof.last_rate_window_tick = now;
+    s_tof.last_rate_window_seq  = f->seq;
+    s_tof.last_status_tick      = now;
+    publish_status();
+  }
+}
+
+static void apply_config_write(const uint8_t *data, uint16_t len)
+{
+  if (len < sizeof(BLE_TofConfigPayload_t)) {
+    s_tof.last_error = TOF_L1_ERR_BAD_LAYOUT;
+    s_tof.state      = 2;
+    publish_status();
+    return;
+  }
+
+  BLE_TofConfigPayload_t cfg;
+  memcpy(&cfg, data, sizeof(cfg));
+
+  int rc = TofL1_Configure((TofL1_Layout_t)cfg.layout,
+                           (TofL1_DistMode_t)cfg.dist_mode,
+                           cfg.budget_us);
+  if (rc != TOF_L1_OK) {
+    s_tof.last_error = (uint8_t)rc;
+    s_tof.state      = 2;
+  } else {
+    s_tof.last_error           = 0;
+    s_tof.state                = 1;
+    s_tof.last_published_seq   = 0;
+    s_tof.last_rate_window_seq = 0;
+    s_tof.last_rate_window_tick = HAL_GetTick();
+  }
+  publish_status();
+}
+
+static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
+{
+  SVCCTL_EvtAckStatus_t ack = SVCCTL_EvtNotAck;
+  hci_event_pckt *event_pckt =
+      (hci_event_pckt *)(((hci_uart_pckt *)Event)->data);
+
+  if (event_pckt->evt != EVT_VENDOR) return ack;
+
+  evt_blue_aci *blue_evt = (evt_blue_aci *)event_pckt->data;
+  if (blue_evt->ecode != EVT_BLUE_GATT_ATTRIBUTE_MODIFIED) return ack;
+
+  evt_gatt_attr_modified *attr_mod = (evt_gatt_attr_modified *)blue_evt->data;
+  if (attr_mod->attr_handle == (uint16_t)(s_tof.config_char_handle + 1)) {
+    ack = SVCCTL_EvtAck;
+    apply_config_write(attr_mod->att_data, attr_mod->data_length);
+  }
+  return ack;
+}
