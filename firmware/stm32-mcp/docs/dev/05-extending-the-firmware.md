@@ -236,6 +236,13 @@ ISR — avoidable cost.
 
 ## 4. VL53L0X time-of-flight range sensor
 
+> **Note:** On the prototype hardware the on-board VL53L0X is disabled
+> (XSHUT held LOW). The project now ships with a longer-range **VL53L1CB**
+> on the VL53L1-Satel breakout wired to Arduino A4/A5 (I²C3). For the
+> VL53L1CB driver, ROI math, GATT service `0xFE60`, and iOS grid viewer,
+> see [06-vl53l1cb-multizone-tof.md](06-vl53l1cb-multizone-tof.md). The
+> section below remains as reference for the on-board L0X.
+
 ### 4.1 Hardware
 
 The VL53L0X sits on **I²C1** (PB8 SCL / PB9 SDA, AF4), **not** I²C2.
@@ -255,10 +262,10 @@ the same factory I²C address (`0x29`) and must be re-addressed at boot.
 
 ### 4.2 Driver
 
-Use ST's VL53L0X platform-independent driver (same upstream repo as the
-IMU: STMems_Standard_C_drivers equivalent for VL53L0X is
-[VL53L0X_API](https://github.com/STMicroelectronics/VL53L0X_API)). Port
-the two I²C callbacks to `HAL_I2C_Mem_Read` / `HAL_I2C_Mem_Write` on
+Use ST's VL53L0X platform-independent driver. Unlike the IMU which lives on GitHub,
+the VL53L0X API is distributed via the ST website as
+[STSW-IMG005](https://www.st.com/en/embedded-software/stsw-img005.html). Download the
+C API from there, and port the two I²C callbacks to `HAL_I2C_Mem_Read` / `HAL_I2C_Mem_Write` on
 `hi2c1`. API you care about:
 
 ```c

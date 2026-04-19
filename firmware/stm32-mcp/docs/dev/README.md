@@ -14,6 +14,7 @@ Read them in order the first time; after that each is self-contained.
 | 03 | [Architecture](03-architecture.md)                       | Source tree layout, boot sequence, cooperative scheduler, IRQ priorities, TIM3 / PWM pin map.         |
 | 04 | [BLE Integration](04-ble-integration.md)                 | BlueNRG-MS stack on SPI3, GATT service definition, full connection flow, STM32CubeL4 source lineage.  |
 | 05 | [Extending the Firmware](05-extending-the-firmware.md)   | Adding IMU / magnetometer / ToF drivers, pose estimation pipeline, adding a second GATT service.      |
+| 06 | [VL53L1CB Multi-Zone ToF](06-vl53l1cb-multizone-tof.md)  | VL53L1-Satel wiring on I²C3, bare-driver layout, ROI math, GATT service 0xFE60, iOS grid viewer.      |
 
 ---
 
@@ -30,6 +31,9 @@ Read them in order the first time; after that each is self-contained.
 
 **"I want to add a sensor / telemetry channel"**
 03 (scheduler pattern) → 05 (sensor-specific recipes and GATT extension).
+
+**"How does the multi-zone ToF work end-to-end?"**
+06 — hardware wiring, bare-driver layout, ROI math, GATT 0xFE60, iOS grid.
 
 ---
 
