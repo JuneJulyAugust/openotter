@@ -24,6 +24,7 @@
 #include "ble_app.h"
 #include "stm32l4xx_ll_pwr.h"
 #include "stm32l4xx_ll_rcc.h"
+#include "tof_l1.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -147,6 +148,10 @@ int main(void) {
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
+  /* Bring up VL53L1CB ToF sensor on I²C3 before BLE so the sensor-id log is
+   * visible even when the BLE stack takes its time coming up. */
+  TofL1_Init();
+
   /* Initialize BLE stack and custom GATT service */
   BLE_App_Init(&htim3);
   /* USER CODE END 2 */
@@ -155,6 +160,7 @@ int main(void) {
   /* USER CODE BEGIN WHILE */
   while (1) {
     BLE_App_Process();
+    TofL1_Process();
 
     /* Toggle LD1 (PA5) every 500ms to show the board is alive */
     static uint32_t last_toggle = 0;
