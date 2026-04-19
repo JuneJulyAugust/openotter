@@ -24,6 +24,9 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities
     ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/debug
     ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE
+    # VL53L1CB bare driver includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/core/inc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/platform/inc
 )
 
 # STM32CubeMX generated application sources
@@ -102,6 +105,13 @@ set(BLE_Middleware_Src
 )
 
 
+# VL53L1CB bare driver sources (globbed so new files stay picked up automatically)
+file(GLOB VL53L1CB_Src CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/core/src/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/platform/src/*.c
+)
+
+
 # Link directories setup
 set(MX_LINK_DIRS
 
@@ -110,6 +120,7 @@ set(MX_LINK_DIRS
 set(MX_LINK_LIBS
     STM32_Drivers
     BLE_Middleware
+    VL53L1CB_Driver
     ${TOOLCHAIN_LINK_LIBRARIES}
 
 )
@@ -127,6 +138,11 @@ target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
 add_library(BLE_Middleware OBJECT)
 target_sources(BLE_Middleware PRIVATE ${BLE_Middleware_Src})
 target_link_libraries(BLE_Middleware PUBLIC stm32cubemx)
+
+# Create VL53L1CB_Driver static library (linker --gc-sections strips unused modes)
+add_library(VL53L1CB_Driver OBJECT)
+target_sources(VL53L1CB_Driver PRIVATE ${VL53L1CB_Src})
+target_link_libraries(VL53L1CB_Driver PUBLIC stm32cubemx)
 
 
 # Add STM32CubeMX generated application sources to the project
