@@ -45,6 +45,7 @@
 DFSDM_Channel_HandleTypeDef hdfsdm1_channel1;
 
 I2C_HandleTypeDef hi2c2;
+I2C_HandleTypeDef hi2c3;
 
 QSPI_HandleTypeDef hqspi;
 
@@ -64,6 +65,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DFSDM1_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_I2C3_Init(void);
 static void MX_QUADSPI_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
@@ -123,6 +125,7 @@ int main(void) {
   MX_GPIO_Init();
   MX_DFSDM1_Init();
   MX_I2C2_Init();
+  MX_I2C3_Init();
   MX_QUADSPI_Init();
   /* SPI3 is owned by the BLE middleware (hw_spi.c) — do NOT init here */
   MX_TIM3_Init();
@@ -301,6 +304,31 @@ static void MX_I2C2_Init(void) {
   /* USER CODE BEGIN I2C2_Init 2 */
 
   /* USER CODE END I2C2_Init 2 */
+}
+
+/**
+ * @brief I2C3 Initialization Function — VL53L1CB on Arduino A4/A5 (PC1/PC0)
+ * @retval None
+ */
+static void MX_I2C3_Init(void) {
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.Timing = 0x10D19CE4; /* 100 kHz @ PCLK1=80 MHz, same as I2C2 */
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK) {
+    Error_Handler();
+  }
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c3, I2C_ANALOGFILTER_ENABLE) != HAL_OK) {
+    Error_Handler();
+  }
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK) {
+    Error_Handler();
+  }
 }
 
 /**
