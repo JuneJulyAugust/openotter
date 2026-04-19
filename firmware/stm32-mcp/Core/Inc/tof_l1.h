@@ -88,6 +88,23 @@ const TofL1_Frame_t *TofL1_GetLatestFrame(void);
 int  TofL1_HasNewFrame(void);
 void TofL1_ClearNewFrame(void);
 
+/* Zone rectangle in VL53L1 SPAD coordinates: X,Y in [0,15]; constraint
+ * tly >= bry (sensor Y grows downward). Exposed as a plain POD so the ROI
+ * builder can be unit-tested without pulling the bare driver headers. */
+typedef struct {
+  uint8_t tlx;
+  uint8_t tly;
+  uint8_t brx;
+  uint8_t bry;
+} TofL1_Roi_t;
+
+/* Pure function. Fills out[] with layout*layout ROIs emitted in
+ * top-to-bottom, left-to-right order (zone 0 = top-left corner) so zone
+ * index maps 1:1 to iOS grid cell index. Returns the number of zones
+ * written, or 0 if layout is invalid. Caller must provide capacity for
+ * 16 entries. */
+uint8_t TofL1_BuildRoi(TofL1_Layout_t layout, TofL1_Roi_t out[16]);
+
 #ifdef __cplusplus
 }
 #endif
