@@ -71,10 +71,40 @@ public final class STM32TofService: NSObject, ObservableObject {
         peripheral.writeValue(payload, for: configChar, type: writeType)
     }
 
+    /// Reassembly buffer for the FE62 chunk stream. BlueNRG-MS is locked to
+    /// ATT_MTU=23, capping a notify PDU at 20 B. The 76-byte TofL1_Frame_t
+    /// arrives as 4 chunks: 1 header byte (idx in low 7 bits, 0x80 = last)
+    /// + 19 payload bytes. We parse only after the chunk with the last bit.
+    private var rxBuf = [UInt8](repeating: 0, count: 76)
+    private var rxNext: UInt8 = 0
+
     public func handleFrameNotification(_ data: Data) {
-        guard let frame = STM32TofService.parseFrame(data) else { return }
-        DispatchQueue.main.async {
-            self.latestFrame = frame
+        guard data.count == 20 else { return }
+        let bytes = [UInt8](data)
+        let hdr   = bytes[0]
+        let idx   = hdr & 0x7F
+        let last  = (hdr & 0x80) != 0
+
+        // Restart on chunk 0; otherwise enforce in-order delivery.
+        if idx == 0 {
+            rxNext = 0
+        }
+        guard idx == rxNext, idx < 4 else {
+            rxNext = 0
+            return
+        }
+
+        let dst = Int(idx) * 19
+        for i in 0..<19 { rxBuf[dst + i] = bytes[1 + i] }
+        rxNext &+= 1
+
+        if last {
+            if let frame = STM32TofService.parseFrame(Data(rxBuf)) {
+                DispatchQueue.main.async {
+                    self.latestFrame = frame
+                }
+            }
+            rxNext = 0
         }
     }
 

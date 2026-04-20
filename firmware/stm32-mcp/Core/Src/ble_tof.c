@@ -28,6 +28,20 @@
 
 extern UART_HandleTypeDef huart1;
 
+/* BlueNRG-MS hardcodes ATT_MTU = 23 → max notify value = 20 bytes. The
+ * 76-byte TofL1_Frame_t is therefore split into 4 × 20-byte chunks. Each
+ * chunk = 1 header byte (chunk_idx, top bit = "last") + 19 payload bytes.
+ * 76 / 19 = 4 exactly, so no padding is needed. iOS reassembles in order
+ * and drops on out-of-sequence delivery.
+ */
+#define TOF_FRAME_CHUNK_PAYLOAD 20u
+#define TOF_FRAME_CHUNK_DATA    19u
+#define TOF_FRAME_CHUNK_COUNT   4u  /* 76 / 19 == 4 */
+
+_Static_assert(TOF_FRAME_CHUNK_DATA * TOF_FRAME_CHUNK_COUNT ==
+                   sizeof(TofL1_Frame_t),
+               "Chunk geometry must cover entire TofL1_Frame_t");
+
 typedef struct {
   uint16_t svc_handle;
   uint16_t config_char_handle;
@@ -42,6 +56,12 @@ typedef struct {
   uint8_t  scan_hz;
   uint8_t  state;       /* 0 idle, 1 running, 2 error */
   uint8_t  last_error;
+
+  /* Frame chunk transmitter state. pending_chunk == 0 means idle; values
+   * 1..TOF_FRAME_CHUNK_COUNT are the next chunk to push. */
+  uint8_t  pending_chunk;
+  uint32_t pending_seq;
+  uint8_t  pending_buf[sizeof(TofL1_Frame_t)];
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
@@ -99,11 +119,12 @@ int BLE_Tof_Init(void)
                           &s_tof.config_char_handle);
   if (ret != BLE_STATUS_SUCCESS) { log_str("BLE_Tof: add_char FE61 failed\r\n"); return -1; }
 
-  /* FE62 — frame (notify), fixed 76 B */
+  /* FE62 — frame chunk (notify), fixed 20 B. Frame is reassembled by the
+   * client from TOF_FRAME_CHUNK_COUNT consecutive notifications. */
   uuid = OPENOTTER_TOF_FRAME_CHAR_UUID;
   ret = aci_gatt_add_char(s_tof.svc_handle, UUID_TYPE_16,
                           (const uint8_t *)&uuid,
-                          sizeof(TofL1_Frame_t),
+                          TOF_FRAME_CHUNK_PAYLOAD,
                           CHAR_PROP_NOTIFY,
                           ATTR_PERMISSION_NONE,
                           GATT_DONT_NOTIFY_EVENTS,
@@ -138,21 +159,36 @@ void BLE_Tof_Process(void)
 
   uint32_t now = HAL_GetTick();
 
-  /* Push frame whenever TofL1 has a new one. */
-  if (TofL1_HasNewFrame()) {
+  /* If no chunk transmission in flight, snapshot the latest frame. */
+  if (s_tof.pending_chunk == 0 && TofL1_HasNewFrame()) {
     const TofL1_Frame_t *f = TofL1_GetLatestFrame();
     if (f->seq != s_tof.last_published_seq) {
-      tBleStatus ret = aci_gatt_update_char_value(
-          s_tof.svc_handle, s_tof.frame_char_handle,
-          0, sizeof(TofL1_Frame_t), (uint8_t *)f);
-      if (ret == BLE_STATUS_SUCCESS) {
-        s_tof.last_published_seq = f->seq;
-        TofL1_ClearNewFrame();
-      }
-      /* On BUSY/INSUFFICIENT_RESOURCES we leave has_new_frame set and
-       * retry next loop iteration — no zone data is lost because TofL1
-       * keeps overwriting the latest buffer. */
+      memcpy(s_tof.pending_buf, f, sizeof(TofL1_Frame_t));
+      s_tof.pending_seq   = f->seq;
+      s_tof.pending_chunk = 1;
+      TofL1_ClearNewFrame();
     }
+  }
+
+  /* Drain pending chunks: 1 header byte (idx, top bit = last) + 19 payload.
+   * Stop on BLE_STATUS_INSUFFICIENT_RESOURCES — TX buffers are full; resume
+   * next loop iteration. The scratch buf is preserved across iterations. */
+  while (s_tof.pending_chunk > 0 &&
+         s_tof.pending_chunk <= TOF_FRAME_CHUNK_COUNT) {
+    uint8_t idx = (uint8_t)(s_tof.pending_chunk - 1u);
+    uint8_t buf[TOF_FRAME_CHUNK_PAYLOAD];
+    buf[0] = idx | ((idx == TOF_FRAME_CHUNK_COUNT - 1u) ? 0x80u : 0u);
+    memcpy(&buf[1], &s_tof.pending_buf[idx * TOF_FRAME_CHUNK_DATA],
+           TOF_FRAME_CHUNK_DATA);
+    tBleStatus ret = aci_gatt_update_char_value(
+        s_tof.svc_handle, s_tof.frame_char_handle,
+        0, TOF_FRAME_CHUNK_PAYLOAD, buf);
+    if (ret != BLE_STATUS_SUCCESS) break;
+    s_tof.pending_chunk++;
+  }
+  if (s_tof.pending_chunk > TOF_FRAME_CHUNK_COUNT) {
+    s_tof.last_published_seq = s_tof.pending_seq;
+    s_tof.pending_chunk      = 0;
   }
 
   /* Recompute scan rate over a 1 s sliding window and push status. */
@@ -196,6 +232,7 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
     s_tof.last_published_seq   = 0;
     s_tof.last_rate_window_seq = 0;
     s_tof.last_rate_window_tick = HAL_GetTick();
+    s_tof.pending_chunk        = 0;
   }
   publish_status();
 }
