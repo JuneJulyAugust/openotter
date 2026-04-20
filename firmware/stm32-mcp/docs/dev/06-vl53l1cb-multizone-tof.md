@@ -339,6 +339,6 @@ out-of-range value — re-check the iOS `sendConfig` payload.
 - [STSW-IMG019 VL53L1CB Bare Driver](https://www.st.com/en/embedded-software/stsw-img019.html)
 - [UM2133 — VL53L1 datasheet](https://www.st.com/resource/en/user_manual/um2133-*.pdf)
 - [UM2978 — X-CUBE-TOF1 integration guide](https://www.st.com/resource/en/user_manual/um2978-*.pdf)
-- VL53L1-Satel breakout schematic — `docs/vl53l1-satel.pdf`.
+- VL53L1-Satel breakout schematic — `docs/hardware/sensors/vl53l1-satel.pdf`.
 - Design spec — `docs/superpowers/specs/2026-04-19-vl53l1cb-multizone-tof-design.md`.
 - Implementation plan — `~/.claude/plans/steady-jumping-toast.md`.

@@ -41,14 +41,14 @@ sees raw radio packets.
 
 Source: `BLE/hw/hw_spi.c` and `Core/Inc/main.h`.
 
-| Signal              | MCU pin | Alt function | Notes                         |
-|---------------------|---------|--------------|-------------------------------|
-| SCK                 | PC10    | AF6 (SPI3)   | 8 MHz (PCLK/2, prescaler = 2) |
-| MISO                | PC11    | AF6 (SPI3)   |                               |
-| MOSI                | PC12    | AF6 (SPI3)   |                               |
-| CSN (chip select)   | PD13    | GPIO out     | Software NSS (`SPI_NSS_SOFT`) |
-| RESET (active low)  | PA8     | GPIO out     | Asserted for ≥ 28 ticks at boot|
-| IRQ / DRDY          | PE6     | EXTI rising  | Module-to-host data-ready     |
+| Signal             | MCU pin | Alt function | Notes                           |
+| ------------------ | ------- | ------------ | ------------------------------- |
+| SCK                | PC10    | AF6 (SPI3)   | 8 MHz (PCLK/2, prescaler = 2)   |
+| MISO               | PC11    | AF6 (SPI3)   |                                 |
+| MOSI               | PC12    | AF6 (SPI3)   |                                 |
+| CSN (chip select)  | PD13    | GPIO out     | Software NSS (`SPI_NSS_SOFT`)   |
+| RESET (active low) | PA8     | GPIO out     | Asserted for ≥ 28 ticks at boot |
+| IRQ / DRDY         | PE6     | EXTI rising  | Module-to-host data-ready       |
 
 Critical detail: `MX_SPI3_Init` is **deliberately not generated** by
 CubeMX for this project. SPI3 ownership is transferred to the BLE
@@ -116,17 +116,17 @@ stay unmodified while we manage our own configuration.
 
 Key settings:
 
-| Macro                               | Value   | Effect                                      |
-|-------------------------------------|---------|---------------------------------------------|
-| `BLE_CFG_PERIPHERAL` / `_CENTRAL`   | `1`/`0` | Operate as peripheral only                  |
-| `BLE_CFG_MAX_CONNECTION`            | `1`     | Single central at a time                    |
-| `CFG_ADV_BD_ADDRESS`                | 0xAABBCCDDEE01 | Factory-programmed BD_ADDR override |
-| `CFG_FAST_CONN_ADV_INTERVAL_MIN/MAX`| 80/100 ms | Advertising interval range                |
-| `CFG_IO_CAPABILITY`                 | `0x03`  | `NoInputNoOutput` — no pairing prompts      |
-| `CFG_MITM_PROTECTION`               | `0`     | Open GATT access (no passkey)               |
-| `CFG_TLBLE_EVT_QUEUE_LENGTH`        | `5`     | HCI event reassembly queue depth            |
-| `CFG_DEBUG_TRACE`                   | `0`     | Disable `PRINT_MESG_DBG` output             |
-| `BLE_SAFETY_TIMEOUT_MS` (in `ble_app.h`) | `1500` | Safety watchdog window in ms           |
+| Macro                                    | Value          | Effect                                 |
+| ---------------------------------------- | -------------- | -------------------------------------- |
+| `BLE_CFG_PERIPHERAL` / `_CENTRAL`        | `1`/`0`        | Operate as peripheral only             |
+| `BLE_CFG_MAX_CONNECTION`                 | `1`            | Single central at a time               |
+| `CFG_ADV_BD_ADDRESS`                     | 0xAABBCCDDEE01 | Factory-programmed BD_ADDR override    |
+| `CFG_FAST_CONN_ADV_INTERVAL_MIN/MAX`     | 80/100 ms      | Advertising interval range             |
+| `CFG_IO_CAPABILITY`                      | `0x03`         | `NoInputNoOutput` — no pairing prompts |
+| `CFG_MITM_PROTECTION`                    | `0`            | Open GATT access (no passkey)          |
+| `CFG_TLBLE_EVT_QUEUE_LENGTH`             | `5`            | HCI event reassembly queue depth       |
+| `CFG_DEBUG_TRACE`                        | `0`            | Disable `PRINT_MESG_DBG` output        |
+| `BLE_SAFETY_TIMEOUT_MS` (in `ble_app.h`) | `1500`         | Safety watchdog window in ms           |
 
 The `ble_config.h` file also sets up the RTC-based timer server (used by
 the stack for its own internal timeouts) and the LPM (low-power manager).
@@ -235,9 +235,9 @@ sending at whatever rate it considers smooth (20–50 Hz typically).
                   no write for > 1500 ms?
                                  ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  BLE_App_Process sees elapsed > BLE_SAFETY_TIMEOUT_MS                 │
-  │    → BLE_ApplyPWM(neutral, neutral)                                   │
-  │    → safetyTriggered = 1                                              │
+  │  BLE_App_Process sees elapsed > BLE_SAFETY_TIMEOUT_MS                │
+  │    → BLE_ApplyPWM(neutral, neutral)                                  │
+  │    → safetyTriggered = 1                                             │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
                    iOS disconnects (or link loss)
@@ -281,22 +281,22 @@ The table below maps the files we ship to their counterparts in
 future engineers can diff against upstream when the middleware behaves
 unexpectedly.
 
-| Local path                       | Upstream origin (STM32CubeL4)                                                 | Notes                   |
-|----------------------------------|-------------------------------------------------------------------------------|-------------------------|
-| `BLE/ble_core/*.{c,h}`           | `Middlewares/ST/BlueNRG-MS/hci/…` and `bluenrg1_*` headers                   | ACI command builders    |
-| `BLE/tl/tl_ble_*.{c,h}`          | `Projects/B-L475E-IOT01A/Applications/BLE/P2P_LedButton/BLE_Application/TL/` | HCI transport over SPI  |
-| `BLE/hw/hw_spi.c`                | same project, `BLE_Application/HW/hw_spi.c`                                   | SPI driver, unmodified  |
-| `BLE/hw/hw_timerserver.c`        | same project, `BLE_Application/HW/hw_timerserver.c`                           | RTC-wakeup timer server |
-| `BLE/hw/hw_lpm.c`                | same project, `BLE_Application/HW/hw_lpm.c`                                   |                         |
-| `BLE/ble_services/svc_ctl.*`     | same project, `BLE_Application/Core/svc_ctl.*`                                | Local edit: GAP name set to `OPENOTTER-MCP` |
-| `BLE/ble_services/lbs_stm.*`     | same project, `LedButtonService/lbs_stm.*`                                    | Kept for reference; unused at runtime |
-| `BLE/ble_services/{dis,hrs}.*`   | `Middlewares/ST/BlueNRG-MS/Profile_Framework/Src/`                            | Device-info / heart-rate; not compiled into our service set |
-| `BLE/utilities/*.{c,h}`          | `Middlewares/ST/BlueNRG-MS/utilities/`                                        | Scheduler, queue, list, memory manager, LPM |
-| `BLE/debug/debug.h`              | same project, `BLE_Application/Debug/debug.h`                                 | Trace macros (disabled) |
-| `BLE/_reference/*`               | verbatim copies of `main.c`, `lb_client_app.c`, etc. from `P2P_LedButton`     | Not compiled; historical reference only |
-| `Core/Inc/ble_config.h`          | derived from `P2P_LedButton/Core/Inc/app_conf.h` + `config.h`                 | Trimmed to peripheral-only, hand-tuned |
-| `Core/Inc/config.h`              | new; one-line wrapper so middleware `#include "config.h"` still resolves      | Hand-written            |
-| `Core/Src/ble_app.c`             | **hand-written** (inspired by `lb_server_app.c`)                              | OpenOtter-specific      |
+| Local path                     | Upstream origin (STM32CubeL4)                                                | Notes                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `BLE/ble_core/*.{c,h}`         | `Middlewares/ST/BlueNRG-MS/hci/…` and `bluenrg1_*` headers                   | ACI command builders                                        |
+| `BLE/tl/tl_ble_*.{c,h}`        | `Projects/B-L475E-IOT01A/Applications/BLE/P2P_LedButton/BLE_Application/TL/` | HCI transport over SPI                                      |
+| `BLE/hw/hw_spi.c`              | same project, `BLE_Application/HW/hw_spi.c`                                  | SPI driver, unmodified                                      |
+| `BLE/hw/hw_timerserver.c`      | same project, `BLE_Application/HW/hw_timerserver.c`                          | RTC-wakeup timer server                                     |
+| `BLE/hw/hw_lpm.c`              | same project, `BLE_Application/HW/hw_lpm.c`                                  |                                                             |
+| `BLE/ble_services/svc_ctl.*`   | same project, `BLE_Application/Core/svc_ctl.*`                               | Local edit: GAP name set to `OPENOTTER-MCP`                 |
+| `BLE/ble_services/lbs_stm.*`   | same project, `LedButtonService/lbs_stm.*`                                   | Kept for reference; unused at runtime                       |
+| `BLE/ble_services/{dis,hrs}.*` | `Middlewares/ST/BlueNRG-MS/Profile_Framework/Src/`                           | Device-info / heart-rate; not compiled into our service set |
+| `BLE/utilities/*.{c,h}`        | `Middlewares/ST/BlueNRG-MS/utilities/`                                       | Scheduler, queue, list, memory manager, LPM                 |
+| `BLE/debug/debug.h`            | same project, `BLE_Application/Debug/debug.h`                                | Trace macros (disabled)                                     |
+| `BLE/_reference/*`             | verbatim copies of `main.c`, `lb_client_app.c`, etc. from `P2P_LedButton`    | Not compiled; historical reference only                     |
+| `Core/Inc/ble_config.h`        | derived from `P2P_LedButton/Core/Inc/app_conf.h` + `config.h`                | Trimmed to peripheral-only, hand-tuned                      |
+| `Core/Inc/config.h`            | new; one-line wrapper so middleware `#include "config.h"` still resolves     | Hand-written                                                |
+| `Core/Src/ble_app.c`           | **hand-written** (inspired by `lb_server_app.c`)                             | OpenOtter-specific                                          |
 
 **Which files are compiled?** Exactly the sources listed in
 `cmake/stm32cubemx/CMakeLists.txt` under `BLE_Middleware_Src`.  Anything

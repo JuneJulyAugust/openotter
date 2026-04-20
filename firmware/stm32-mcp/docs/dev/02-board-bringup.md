@@ -38,7 +38,7 @@ The B-L475E-IOT01A is a single PCB with two USB-C micro-B connectors:
 ```
 
 For the full silkscreen map and reference designator list see the User
-Manual PDF in `docs/um2153-discovery-kit-for-iot-node-...pdf`.
+Manual PDF in `docs/hardware/mcu/um2153-discovery-kit-for-iot-node-...pdf`.
 
 > [!CAUTION]
 > **Check your Power Selection Jumper (JP4)**

@@ -39,7 +39,7 @@ Read them in order the first time; after that each is self-contained.
 
 ## External references
 
-- Board user manual — `../um2153-discovery-kit-for-iot-node-...pdf` (this
+- Board user manual — `../hardware/mcu/um2153-discovery-kit-for-iot-node-...pdf` (this
   repo, under `docs/`).
 - MCU reference manual — RM0351 (STM32L4x5/L4x6), from st.com.
 - BlueNRG-MS programming guide — PM0257, from st.com.
