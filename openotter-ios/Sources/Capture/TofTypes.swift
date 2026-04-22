@@ -58,6 +58,42 @@ public struct TofConfig: Equatable, Sendable {
         self.distMode = distMode
         self.budgetUs = budgetUs
     }
+
+    /// Minimum per-zone budget (µs) that the firmware will accept for a given
+    /// (layout, distMode) combo. Must mirror firmware `TofL1_MinBudgetUs` —
+    /// if the firmware matrix changes, this must change too.
+    public static func minBudgetUs(layout: UInt8, distMode: UInt8) -> UInt32 {
+        if layout == 1 {
+            switch distMode {
+            case 1:  return 20_000   // SHORT
+            case 2:  return 33_000   // MEDIUM
+            case 3:  return 33_000   // LONG
+            default: return 33_000
+            }
+        } else {
+            switch distMode {
+            case 1:  return  8_000
+            case 2:  return 14_000
+            case 3:  return 16_000
+            default: return 16_000
+            }
+        }
+    }
+
+    /// Maximum per-zone budget: keep the total scan (budget × zones) under 1 s.
+    public static func maxBudgetUs(layout: UInt8) -> UInt32 {
+        let zones = UInt32(max(1, layout)) * UInt32(max(1, layout))
+        return 1_000_000 / zones
+    }
+
+    /// Clamp a requested budget into the (min, max) window for this combo.
+    public static func clampBudget(_ requestedUs: UInt32,
+                                   layout: UInt8,
+                                   distMode: UInt8) -> UInt32 {
+        let lo = minBudgetUs(layout: layout, distMode: distMode)
+        let hi = max(lo, maxBudgetUs(layout: layout))
+        return max(lo, min(hi, requestedUs))
+    }
 }
 
 public enum TofState: UInt8, Equatable, Sendable {

@@ -26,16 +26,28 @@ private struct TofCell: View {
 
     var body: some View {
         ZStack {
-            background
+            /* Always render the heat color. Previously we greyed out cells
+             * with non-OK status, but the VL53L1 routinely flips to
+             * SIG/PHA/? between scans and the resulting flash made the
+             * grid unreadable. Status is carried by the border style and
+             * the small status label below the range number instead. */
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(hue: hue, saturation: 0.85, brightness: 0.9))
+
             VStack(spacing: 2) {
                 Text("\(reading.rangeMm)")
                     .font(.system(.caption, design: .monospaced).bold())
+                    .foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.45), radius: 1, x: 0, y: 0)
                 Text("mm")
                     .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(.white.opacity(0.9))
                 Text(reading.status.shortLabel)
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(borderColor)
+                    .font(.system(size: 8, design: .monospaced).bold())
+                    .padding(.horizontal, 3)
+                    .background(Color.black.opacity(0.35))
+                    .foregroundColor(statusLabelColor)
+                    .cornerRadius(2)
             }
             .padding(4)
             .minimumScaleFactor(0.5)
@@ -49,14 +61,14 @@ private struct TofCell: View {
         )
     }
 
-    @ViewBuilder
-    private var background: some View {
-        if reading.status.isUsable {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(hue: hue, saturation: 0.85, brightness: 0.9))
-        } else {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.gray.opacity(0.25))
+    /// Tint for the small status pill — muted white for OK, accent for others
+    /// so the label stands out without repainting the entire cell.
+    private var statusLabelColor: Color {
+        switch reading.status {
+        case .valid:                              return .white
+        case .minRangeClipped, .noWrapCheckFail:  return .yellow
+        case .rangeInvalid, .unknown:             return .white.opacity(0.85)
+        default:                                  return .orange
         }
     }
 

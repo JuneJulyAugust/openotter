@@ -286,6 +286,31 @@ private struct TofDebugCard: View {
         return total > 0 ? Int((1.0 / total).rounded()) : 0
     }
 
+    /// Per-combo budget bounds for the slider. Kept in sync with the firmware
+    /// `TofL1_MinBudgetUs` matrix via TofConfig static helpers.
+    private var minBudgetMs: Double {
+        Double(TofConfig.minBudgetUs(layout: viewModel.tofConfig.layout,
+                                     distMode: viewModel.tofConfig.distMode)) / 1000.0
+    }
+
+    private var maxBudgetMs: Double {
+        Double(TofConfig.maxBudgetUs(layout: viewModel.tofConfig.layout)) / 1000.0
+    }
+
+    /// Human-readable explanation for the last firmware-reported config error.
+    /// Empty string if no error → banner hidden.
+    private var errorBanner: String {
+        switch viewModel.tofLastError {
+        case 0:  return ""
+        case 6:  return "Firmware rejected layout"
+        case 7:  return "Firmware rejected distance mode"
+        case 8:  return "Budget below sensor minimum for this combo"
+        case 9:  return "Driver rejected combo — rolled back to previous"
+        case 10: return "ToF driver offline — reboot the board"
+        default: return "ToF error \(viewModel.tofLastError)"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Picker("Layout", selection: layoutBinding) {
@@ -306,13 +331,20 @@ private struct TofDebugCard: View {
                 Text("Budget")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Slider(value: $budgetMs, in: 8...200, step: 1)
+                Slider(value: $budgetMs, in: minBudgetMs...maxBudgetMs, step: 1)
                     .onChange(of: budgetMs) { new in
                         viewModel.setTofBudgetMs(UInt32(new))
                     }
                 Text("\(Int(budgetMs)) ms")
                     .font(.caption.monospaced())
                     .frame(width: 60, alignment: .trailing)
+            }
+
+            HStack {
+                Text("min \(Int(minBudgetMs)) / max \(Int(maxBudgetMs)) ms")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                Spacer()
             }
 
             HStack {
@@ -323,6 +355,19 @@ private struct TofDebugCard: View {
                 Text(viewModel.tofState == .running ? "running" : "\(viewModel.tofState)")
                     .font(.caption2.monospaced())
                     .foregroundColor(viewModel.tofState == .running ? .green : .orange)
+            }
+
+            if !errorBanner.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                    Text(errorBanner)
+                }
+                .font(.caption2.bold())
+                .foregroundColor(.orange)
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.12))
+                .cornerRadius(6)
             }
 
             if let f = viewModel.tofFrame {
@@ -346,6 +391,13 @@ private struct TofDebugCard: View {
         .padding(.vertical, 4)
         .onAppear {
             budgetMs = Double(viewModel.tofConfig.budgetUs) / 1000.0
+        }
+        .onChange(of: viewModel.tofConfig.budgetUs) { newUs in
+            /* Layout/mode changes can auto-clamp the viewModel budget; mirror
+             * into the slider so the thumb stays in sync without firing
+             * another FE61 write. */
+            let newMs = Double(newUs) / 1000.0
+            if abs(budgetMs - newMs) > 0.5 { budgetMs = newMs }
         }
     }
 

@@ -223,16 +223,31 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
   int rc = TofL1_Configure((TofL1_Layout_t)cfg.layout,
                            (TofL1_DistMode_t)cfg.dist_mode,
                            cfg.budget_us);
-  if (rc != TOF_L1_OK) {
+
+  /* RECOVERED = combo was accepted by validation, driver rejected it, and
+   * we rolled back to the last-known-good config. Sensor is still streaming;
+   * surface the rc so the UI can show a transient warning. */
+  if (rc == TOF_L1_OK) {
+    s_tof.last_error            = 0;
+    s_tof.state                 = 1;
+    s_tof.last_published_seq    = 0;
+    s_tof.last_rate_window_seq  = 0;
+    s_tof.last_rate_window_tick = HAL_GetTick();
+    s_tof.pending_chunk         = 0;
+  } else if (rc == TOF_L1_ERR_RECOVERED) {
+    s_tof.last_error            = (uint8_t)rc;
+    s_tof.state                 = 1;
+    s_tof.last_published_seq    = 0;
+    s_tof.last_rate_window_seq  = 0;
+    s_tof.last_rate_window_tick = HAL_GetTick();
+    s_tof.pending_chunk         = 0;
+  } else if (rc == TOF_L1_ERR_DRIVER_DEAD) {
     s_tof.last_error = (uint8_t)rc;
     s_tof.state      = 2;
   } else {
-    s_tof.last_error           = 0;
-    s_tof.state                = 1;
-    s_tof.last_published_seq   = 0;
-    s_tof.last_rate_window_seq = 0;
-    s_tof.last_rate_window_tick = HAL_GetTick();
-    s_tof.pending_chunk        = 0;
+    /* Bad combo rejected pre-driver. Sensor untouched, still running. */
+    s_tof.last_error = (uint8_t)rc;
+    s_tof.state      = 1;
   }
   publish_status();
 }

@@ -40,10 +40,17 @@ static volatile uint8_t g_has_new_frame;
 /* Last committed config — restamped into every outgoing frame. */
 static TofL1_Layout_t   g_cfg_layout      = TOF_LAYOUT_1x1;
 static TofL1_DistMode_t g_cfg_dist_mode   = TOF_DIST_LONG;
-static uint16_t         g_cfg_budget_us   = 33000;
+static uint32_t         g_cfg_budget_us32 = 33000; /* source of truth */
+static uint16_t         g_cfg_budget_us   = 33000; /* clamped for wire */
 static uint8_t          g_cfg_num_zones   = 1;
 static uint8_t          g_configured;  /* 0 until first successful Configure */
+static uint8_t          g_driver_dead; /* sticky — set when recovery failed */
 static uint32_t         g_seq;         /* monotonic frame counter */
+
+/* Forward. */
+static int apply_config(TofL1_Layout_t layout, TofL1_DistMode_t mode,
+                        uint32_t budget_us);
+static int reset_driver(void);
 
 static void log_str(const char *s)
 {
@@ -135,14 +142,53 @@ static void stamp_frame_header(TofL1_Frame_t *f)
   f->_pad[0] = f->_pad[1] = f->_pad[2] = 0;
 }
 
-int TofL1_Configure(TofL1_Layout_t layout, TofL1_DistMode_t mode,
-                    uint32_t budget_us)
+/* Per-zone minimum budget matrix. Values are what the VL53L1 driver actually
+ * accepts without returning VL53L1_ERROR_INVALID_PARAMS, plus a small margin
+ * taken from the ST XCubeTOF1 reference examples. Anything below these in
+ * MULTIZONES mode silently wedges the FSM on some parts. */
+uint32_t TofL1_MinBudgetUs(TofL1_Layout_t layout, TofL1_DistMode_t mode)
+{
+  if (!is_valid_layout(layout) || !is_valid_mode(mode)) return 0;
+
+  if (layout == TOF_LAYOUT_1x1) {
+    switch (mode) {
+      case TOF_DIST_SHORT:  return 20000u;
+      case TOF_DIST_MEDIUM: return 33000u;
+      case TOF_DIST_LONG:   return 33000u;
+    }
+  } else {
+    switch (mode) {
+      case TOF_DIST_SHORT:  return  8000u;
+      case TOF_DIST_MEDIUM: return 14000u;
+      case TOF_DIST_LONG:   return 16000u;
+    }
+  }
+  return 0;
+}
+
+static int validate_combo(TofL1_Layout_t layout, TofL1_DistMode_t mode,
+                          uint32_t budget_us)
 {
   if (!is_valid_layout(layout)) return TOF_L1_ERR_BAD_LAYOUT;
   if (!is_valid_mode(mode))     return TOF_L1_ERR_BAD_MODE;
-  if (budget_us < 8000u || budget_us > 1000000u) return TOF_L1_ERR_BAD_MODE;
 
-  /* Stop (ignore error — first call has nothing running). */
+  uint32_t min_us = TofL1_MinBudgetUs(layout, mode);
+  if (min_us == 0 || budget_us < min_us) return TOF_L1_ERR_BAD_BUDGET;
+
+  uint32_t num_zones = (uint32_t)layout * (uint32_t)layout;
+  if (budget_us > TOF_L1_MAX_SCAN_US) return TOF_L1_ERR_BAD_BUDGET;
+  if (budget_us * num_zones > TOF_L1_MAX_SCAN_US) return TOF_L1_ERR_BAD_BUDGET;
+
+  return TOF_L1_OK;
+}
+
+/* Apply a pre-validated (layout,mode,budget) tuple to the sensor. No
+ * validation inside — caller must have already passed validate_combo().
+ * Returns TOF_L1_OK or TOF_L1_ERR_IO on any driver error. Does not restore
+ * state on partial failure — callers handle recovery. */
+static int apply_config(TofL1_Layout_t layout, TofL1_DistMode_t mode,
+                        uint32_t budget_us)
+{
   (void)VL53L1_StopMeasurement(&g_dev);
 
   VL53L1_Error s = VL53L1_SetPresetMode(&g_dev, preset_mode_for(layout));
@@ -157,7 +203,7 @@ int TofL1_Configure(TofL1_Layout_t layout, TofL1_DistMode_t mode,
   if (layout != TOF_LAYOUT_1x1) {
     TofL1_Roi_t rois[16];
     uint8_t n = TofL1_BuildRoi(layout, rois);
-    if (n == 0) return TOF_L1_ERR_BAD_LAYOUT;
+    if (n == 0) return TOF_L1_ERR_IO;
 
     VL53L1_RoiConfig_t roi_cfg;
     memset(&roi_cfg, 0, sizeof(roi_cfg));
@@ -172,14 +218,12 @@ int TofL1_Configure(TofL1_Layout_t layout, TofL1_DistMode_t mode,
     if (s != VL53L1_ERROR_NONE) { log_fmt("VL53L1 SetROI err=%d\r\n", (int)s); return TOF_L1_ERR_IO; }
   }
 
-  /* Commit cached config before StartMeasurement so stamp_frame_header uses
-   * the new values on the very next completed scan. */
-  g_cfg_layout    = layout;
-  g_cfg_dist_mode = mode;
-  g_cfg_budget_us = (uint16_t)(budget_us > 65535u ? 65535u : budget_us);
-  g_cfg_num_zones = (uint8_t)((uint8_t)layout * (uint8_t)layout);
+  g_cfg_layout      = layout;
+  g_cfg_dist_mode   = mode;
+  g_cfg_budget_us32 = budget_us;
+  g_cfg_budget_us   = (uint16_t)(budget_us > 65535u ? 65535u : budget_us);
+  g_cfg_num_zones   = (uint8_t)((uint8_t)layout * (uint8_t)layout);
 
-  /* Invalidate buffered data so the first post-reconfig frame is fresh. */
   memset(&g_frame_scratch, 0, sizeof(g_frame_scratch));
   memset(&g_frame_latest,  0, sizeof(g_frame_latest));
   stamp_frame_header(&g_frame_scratch);
@@ -191,6 +235,73 @@ int TofL1_Configure(TofL1_Layout_t layout, TofL1_DistMode_t mode,
 
   g_configured = 1;
   return TOF_L1_OK;
+}
+
+/* Full sensor re-init — last resort when the driver's internal state machine
+ * gets wedged by an illegal config (e.g. mid-scan mode switch failure).
+ * Does not call VL53L1_Init — we never tear down the probe; DataInit +
+ * StaticInit is enough to return the core algo state to boot. */
+static int reset_driver(void)
+{
+  (void)VL53L1_StopMeasurement(&g_dev);
+
+  VL53L1_Error s = VL53L1_DataInit(&g_dev);
+  if (s != VL53L1_ERROR_NONE) {
+    log_fmt("VL53L1 Reset DataInit err=%d\r\n", (int)s);
+    return TOF_L1_ERR_IO;
+  }
+  s = VL53L1_StaticInit(&g_dev);
+  if (s != VL53L1_ERROR_NONE) {
+    log_fmt("VL53L1 Reset StaticInit err=%d\r\n", (int)s);
+    return TOF_L1_ERR_IO;
+  }
+  return TOF_L1_OK;
+}
+
+int TofL1_Configure(TofL1_Layout_t layout, TofL1_DistMode_t mode,
+                    uint32_t budget_us)
+{
+  if (g_driver_dead) return TOF_L1_ERR_DRIVER_DEAD;
+
+  /* Reject bad combos up front — do NOT touch the sensor. The previous
+   * config keeps running so a bad BLE write can't kill the ToF stream. */
+  int vrc = validate_combo(layout, mode, budget_us);
+  if (vrc != TOF_L1_OK) {
+    log_fmt("VL53L1 reject combo L=%u M=%u B=%lu rc=%d\r\n",
+            (unsigned)layout, (unsigned)mode,
+            (unsigned long)budget_us, vrc);
+    return vrc;
+  }
+
+  /* Snapshot last-good so we can restore if the driver rejects us. */
+  TofL1_Layout_t   prev_layout = g_cfg_layout;
+  TofL1_DistMode_t prev_mode   = g_cfg_dist_mode;
+  uint32_t         prev_budget = g_cfg_budget_us32;
+  uint8_t          had_prev    = g_configured;
+
+  int rc = apply_config(layout, mode, budget_us);
+  if (rc == TOF_L1_OK) return TOF_L1_OK;
+
+  log_fmt("VL53L1 apply failed rc=%d — restoring previous\r\n", rc);
+
+  if (had_prev) {
+    int rrc = apply_config(prev_layout, prev_mode, prev_budget);
+    if (rrc == TOF_L1_OK) return TOF_L1_ERR_RECOVERED;
+    log_fmt("VL53L1 restore failed rc=%d — resetting driver\r\n", rrc);
+  }
+
+  /* Restore failed or there was no prior config — full re-init + safe default. */
+  if (reset_driver() != TOF_L1_OK) {
+    g_driver_dead = 1;
+    g_configured  = 0;
+    return TOF_L1_ERR_DRIVER_DEAD;
+  }
+  if (apply_config(TOF_LAYOUT_1x1, TOF_DIST_LONG, 33000u) != TOF_L1_OK) {
+    g_driver_dead = 1;
+    g_configured  = 0;
+    return TOF_L1_ERR_DRIVER_DEAD;
+  }
+  return TOF_L1_ERR_RECOVERED;
 }
 
 static void ingest_zone(const VL53L1_MultiRangingData_t *raw)

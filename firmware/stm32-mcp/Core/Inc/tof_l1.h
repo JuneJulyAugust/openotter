@@ -55,15 +55,32 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(TofL1_Frame_t) == 76, "TofL1_Frame_t must be 76 B on wire");
 
 typedef enum {
-  TOF_L1_OK             = 0,
-  TOF_L1_ERR_NO_SENSOR  = 1,
-  TOF_L1_ERR_BOOT       = 2,
-  TOF_L1_ERR_DATAINIT   = 3,
-  TOF_L1_ERR_STATICINIT = 4,
-  TOF_L1_ERR_IO         = 5,
-  TOF_L1_ERR_BAD_LAYOUT = 6,
-  TOF_L1_ERR_BAD_MODE   = 7,
+  TOF_L1_OK              = 0,
+  TOF_L1_ERR_NO_SENSOR   = 1,
+  TOF_L1_ERR_BOOT        = 2,
+  TOF_L1_ERR_DATAINIT    = 3,
+  TOF_L1_ERR_STATICINIT  = 4,
+  TOF_L1_ERR_IO          = 5,
+  TOF_L1_ERR_BAD_LAYOUT  = 6,
+  TOF_L1_ERR_BAD_MODE    = 7,
+  /* Valid layout+mode but budget below per-zone minimum or scan > 1 s. */
+  TOF_L1_ERR_BAD_BUDGET  = 8,
+  /* Driver error during Configure; last-known-good config was restored. */
+  TOF_L1_ERR_RECOVERED   = 9,
+  /* Sensor wedged and re-init failed. ToF subsystem is offline until reboot. */
+  TOF_L1_ERR_DRIVER_DEAD = 10,
 } TofL1_Status_t;
+
+/* Minimum per-zone timing budget the driver accepts for each (layout,mode)
+ * combo, in microseconds. Derived from ST UM2555 and the VL53L1CB
+ * SetMeasurementTimingBudget internal guards. Exposed so the BLE layer can
+ * reject bad combos with a precise error and so the iOS client can mirror
+ * the firmware's clamp. Returns 0 for invalid (layout,mode) pairs. */
+uint32_t TofL1_MinBudgetUs(TofL1_Layout_t layout, TofL1_DistMode_t mode);
+
+/* Hard ceiling on total scan wall time (per-zone budget × num_zones).
+ * Reasonable default — anything above this makes the refresh rate unusable. */
+#define TOF_L1_MAX_SCAN_US 1000000u
 
 /* Boot the VL53L1CB: I²C probe → WaitDeviceBooted → DataInit → StaticInit.
  * Emits a one-shot UART1 log with the chip ID (expected 0xEACC). Safe to call

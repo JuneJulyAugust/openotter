@@ -24,6 +24,7 @@ class STM32ControlViewModel: ObservableObject {
     @Published var tofFrame: TofFrame?
     @Published var tofState: TofState = .unknown
     @Published var tofScanHz: UInt8 = 0
+    @Published var tofLastError: UInt8 = 0
     /// Defaults match firmware Init: 1×1 / LONG / 33 ms.
     @Published var tofConfig = TofConfig(layout: 1, distMode: 3, budgetUs: 33_000)
 
@@ -103,16 +104,24 @@ class STM32ControlViewModel: ObservableObject {
 
     func setTofLayout(_ layout: UInt8) {
         tofConfig.layout = layout
+        tofConfig.budgetUs = TofConfig.clampBudget(tofConfig.budgetUs,
+                                                   layout: layout,
+                                                   distMode: tofConfig.distMode)
         scheduleTofSend()
     }
 
     func setTofDistMode(_ mode: UInt8) {
         tofConfig.distMode = mode
+        tofConfig.budgetUs = TofConfig.clampBudget(tofConfig.budgetUs,
+                                                   layout: tofConfig.layout,
+                                                   distMode: mode)
         scheduleTofSend()
     }
 
     func setTofBudgetMs(_ ms: UInt32) {
-        tofConfig.budgetUs = max(8_000, min(1_000_000, ms * 1000))
+        tofConfig.budgetUs = TofConfig.clampBudget(ms * 1000,
+                                                   layout: tofConfig.layout,
+                                                   distMode: tofConfig.distMode)
         scheduleTofSend()
     }
 
@@ -214,6 +223,10 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$scanHz
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofScanHz)
+
+        tofService.$lastError
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofLastError)
     }
 
     /// Maps a normalized [-1, +1] control value to a PWM pulse width [1000, 2000] µs.
