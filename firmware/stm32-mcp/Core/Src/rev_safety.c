@@ -39,6 +39,12 @@ struct RevSafetyCtx {
   uint32_t last_notify_refresh_ms;
 };
 
+/* Compile-time guard: callers allocate REV_SAFETY_CTX_STORAGE_BYTES of
+ * max-aligned storage; make sure the real struct still fits. Bump the
+ * constant in rev_safety.h if this ever fires. */
+_Static_assert(sizeof(struct RevSafetyCtx) <= REV_SAFETY_CTX_STORAGE_BYTES,
+               "Grow REV_SAFETY_CTX_STORAGE_BYTES to fit RevSafetyCtx");
+
 void RevSafety_GetDefaultConfig(RevSafetyConfig_t *out) {
   if (!out) return;
   out->t_sys_fw_s         = 0.34f;
