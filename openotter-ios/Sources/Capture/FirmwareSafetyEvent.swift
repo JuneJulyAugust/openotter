@@ -42,33 +42,38 @@ public struct FirmwareSafetyEvent: Equatable {
     public let criticalDistanceM: Float
     public let latchedSpeedMps: Float
 
+    public enum ParseError: Error {
+        case shortPayload
+    }
+
+    /// Parse 20 bytes from the firmware's 0xFE43 characteristic.
+    public init(data: Data) throws {
+        guard data.count >= 20 else { throw ParseError.shortPayload }
+        let parsed = data.withUnsafeBytes { (ptr: UnsafeRawBufferPointer) in
+            (
+                ptr.load(fromByteOffset: 0, as: UInt32.self).littleEndian,
+                ptr.load(fromByteOffset: 4, as: UInt32.self).littleEndian,
+                ptr.load(fromByteOffset: 8, as: UInt8.self),
+                ptr.load(fromByteOffset: 9, as: UInt8.self),
+                ptr.load(fromByteOffset: 12, as: Int16.self).littleEndian,
+                ptr.load(fromByteOffset: 14, as: UInt16.self).littleEndian,
+                ptr.load(fromByteOffset: 16, as: UInt16.self).littleEndian,
+                ptr.load(fromByteOffset: 18, as: UInt16.self).littleEndian
+            )
+        }
+        self.seq = parsed.0
+        self.timestampMs = parsed.1
+        self.state = FirmwareSafetyState(rawValue: parsed.2) ?? .unknown
+        self.cause = FirmwareSafetyCause(rawValue: parsed.3) ?? .unknown
+        self.triggerVelocityMps = Float(parsed.4) / 1000.0
+        self.triggerDepthM = Float(parsed.5) / 1000.0
+        self.criticalDistanceM = Float(parsed.6) / 1000.0
+        self.latchedSpeedMps = Float(parsed.7) / 1000.0
+    }
+
     /// Parse 20 bytes from the firmware's 0xFE43 characteristic.
     /// Returns `nil` when `data` is shorter than 20 bytes.
     public static func parse(from data: Data) -> FirmwareSafetyEvent? {
-        guard data.count >= 20 else { return nil }
-        return data.withUnsafeBytes { ptr in
-            let seq                = ptr.load(fromByteOffset:  0, as: UInt32.self).littleEndian
-            let timestampMs        = ptr.load(fromByteOffset:  4, as: UInt32.self).littleEndian
-            let stateRaw           = ptr.load(fromByteOffset:  8, as: UInt8.self)
-            let causeRaw           = ptr.load(fromByteOffset:  9, as: UInt8.self)
-            // offsets 10-11 are padding
-            let velocityMmS        = ptr.load(fromByteOffset: 12, as: Int16.self).littleEndian
-            let depthMm            = ptr.load(fromByteOffset: 14, as: UInt16.self).littleEndian
-            let criticalMm         = ptr.load(fromByteOffset: 16, as: UInt16.self).littleEndian
-            let latchedMmS         = ptr.load(fromByteOffset: 18, as: UInt16.self).littleEndian
-
-            let state  = FirmwareSafetyState(rawValue: stateRaw)  ?? .unknown
-            let cause  = FirmwareSafetyCause(rawValue: causeRaw)  ?? .unknown
-            return FirmwareSafetyEvent(
-                seq:                seq,
-                timestampMs:        timestampMs,
-                state:              state,
-                cause:              cause,
-                triggerVelocityMps: Float(velocityMmS) / 1000.0,
-                triggerDepthM:      Float(depthMm)     / 1000.0,
-                criticalDistanceM:  Float(criticalMm)  / 1000.0,
-                latchedSpeedMps:    Float(latchedMmS)  / 1000.0
-            )
-        }
+        try? FirmwareSafetyEvent(data: data)
     }
 }
