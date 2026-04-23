@@ -86,17 +86,33 @@ static void BLE_HciUserEvtTask(void);
 static void BLE_TlEvtTask(void);
 static void BLE_AdvTask(void);
 
+/* ---- Rev safety supervisor storage ---- */
+
+/* Max-aligned backing storage for the opaque RevSafetyCtx. Size is set by
+ * REV_SAFETY_CTX_STORAGE_BYTES in rev_safety.h and re-checked at compile
+ * time inside rev_safety.c (_Static_assert against the true struct size). */
+static _Alignas(double) uint8_t s_rev_safety_storage[REV_SAFETY_CTX_STORAGE_BYTES];
+static RevSafetyCtx *s_rev_ctx = (RevSafetyCtx *)s_rev_safety_storage;
+static uint32_t s_last_tof_seq   = 0;
+static uint32_t s_last_event_seq = 0;
 /*============================================================================*/
 /*  PUBLIC API                                                                */
 /*============================================================================*/
 
 int BLE_App_Init(TIM_HandleTypeDef *htim) {
   memset(&bleCtx, 0, sizeof(bleCtx));
-  bleCtx.htim = htim;
-  bleCtx.currentSteering = PWM_NEUTRAL_US;
-  bleCtx.currentThrottle = PWM_NEUTRAL_US;
-  bleCtx.lastCommandTick = HAL_GetTick();
-  bleCtx.mode = OPENOTTER_MODE_DRIVE;
+  bleCtx.htim              = htim;
+  bleCtx.currentSteering   = PWM_NEUTRAL_US;
+  bleCtx.currentThrottle   = PWM_NEUTRAL_US;
+  bleCtx.desiredSteeringUs = PWM_NEUTRAL_US;
+  bleCtx.desiredThrottleUs = PWM_NEUTRAL_US;
+  bleCtx.reportedVelocityMmPerS = 0;
+  bleCtx.mode              = OPENOTTER_MODE_DRIVE;
+  bleCtx.lastCommandTick   = HAL_GetTick();
+
+  RevSafetyConfig_t rscfg;
+  RevSafety_GetDefaultConfig(&rscfg);
+  RevSafety_Init(s_rev_ctx, &rscfg);
 
   BLE_InitLPM();
   BLE_InitRTC();
@@ -114,25 +130,18 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   return 0;
 }
 
-/* Storage for the reverse supervisor. Opaque size queried at boot. */
-static uint8_t s_rev_safety_storage[128]; /* generous; asserted at runtime */
-static RevSafetyCtx *s_rev_ctx = (RevSafetyCtx *)s_rev_safety_storage;
-
-static uint32_t s_last_tof_seq   = 0;
-static uint32_t s_last_event_seq = 0;
-
 static void publish_safety_event(const RevSafetyEvent_t *ev) {
   BLE_SafetyEventPayload_t p = {0};
-  p.seq           = ev->seq;
-  p.timestamp_ms  = ev->trigger_timestamp_ms;
-  p.state         = (uint8_t)ev->state;
-  p.cause         = (uint8_t)ev->cause;
+  p.seq                   = ev->seq;
+  p.timestamp_ms          = ev->trigger_timestamp_ms;
+  p.state                 = (uint8_t)ev->state;
+  p.cause                 = (uint8_t)ev->cause;
   p.trigger_velocity_mm_s = (int16_t)(ev->trigger_velocity_mps * 1000.0f);
   p.trigger_depth_mm      = (uint16_t)(ev->trigger_depth_m * 1000.0f);
   p.critical_distance_mm  = (uint16_t)(ev->critical_distance_m * 1000.0f);
   p.latched_speed_mm_s    = (uint16_t)(ev->latched_speed_mps * 1000.0f);
-  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle, 0,
-                             sizeof(p), (uint8_t *)&p);
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                             0, sizeof(p), (uint8_t *)&p);
 }
 
 void BLE_App_Process(void) {
@@ -143,7 +152,9 @@ void BLE_App_Process(void) {
       bleCtx.isConnected &&
       (now - bleCtx.lastCommandTick) > BLE_SAFETY_TIMEOUT_MS;
 
-  /* 1. Run the reverse supervisor (Drive mode only). */
+  /* 1. Run the reverse supervisor (Drive mode only). In Debug mode the
+   *    supervisor is explicitly disarmed on the mode-edge in the event
+   *    handler, not every tick. */
   RevSafetyEvent_t ev = {0};
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
     const TofL1_Frame_t *f = TofL1_GetLatestFrame();
@@ -151,21 +162,18 @@ void BLE_App_Process(void) {
     s_last_tof_seq = f ? f->seq : s_last_tof_seq;
 
     RevSafetyInput_t in = {0};
-    in.velocity_mps  = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
-    in.throttle_us   = bleCtx.desiredThrottleUs;
-    in.frame_is_new  = new_frame;
+    in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
+    in.throttle_us  = bleCtx.desiredThrottleUs;
+    in.frame_is_new = new_frame;
     if (f && f->num_zones >= 5) {
       /* Center zone in 3x3 is index 4 (top-to-bottom, left-to-right). */
       const TofL1_Zone_t *z = &f->zones[4];
       in.zone_valid = (z->status == 0);
       in.raw_depth_m = (float)z->range_mm / 1000.0f;
     }
-    in.driver_dead = false; /* TofL1 driver surface TBD; wire in a follow-up */
+    in.driver_dead = TofL1_IsDriverDead() ? true : false;
     in.now_ms      = now;
     RevSafety_Tick(s_rev_ctx, &in, &ev);
-  } else {
-    /* Debug mode: supervisor is disarmed and transparent. */
-    RevSafety_Disarm(s_rev_ctx);
   }
 
   /* 2. Compute final throttle (arbitration per spec §3.5). */
@@ -374,10 +382,17 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
         if (attr_mod->data_length >= 1) {
           uint8_t v = attr_mod->att_data[0];
           if (v == OPENOTTER_MODE_DRIVE || v == OPENOTTER_MODE_DEBUG) {
+            OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
-            if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
+            if (prev != bleCtx.mode && bleCtx.mode == OPENOTTER_MODE_DRIVE) {
+              /* Debug→Drive: re-apply safety config and clear any latch
+               * that persisted from the prior Drive session. */
               BLE_Tof_EnforceSafetyConfig();
-              RevSafety_Disarm(s_rev_ctx);  /* clear any stale latch */
+              RevSafety_Disarm(s_rev_ctx);
+            } else if (prev != bleCtx.mode &&
+                       bleCtx.mode == OPENOTTER_MODE_DEBUG) {
+              /* Drive→Debug: disarm once on the edge, not every tick. */
+              RevSafety_Disarm(s_rev_ctx);
             }
           }
         }
