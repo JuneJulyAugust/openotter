@@ -13,9 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `STM32BleManager` writes 0xFE44 = `0x00` (Drive) on connect to enforce safety-critical config.
 
 ### Changed
-- `STM32BleManager.sendCommand` now accepts `velocityMmPerSec` and sends a 6 B payload.
-- `SelfDrivingViewModel` passes the measured `currentSpeedMPS` (from ESC/ARKit) into `sendCommand`.
-- `STM32ControlViewModel` passes `0` velocity to `sendCommand`.
+- **`sendCommand` extended to 6 bytes (breaking BLE wire change)**: `STM32BleManager.sendCommand` now accepts `velocityMmPerSec` and sends a 6 B payload with signed mm/s in bytes 4-5. The on-wire payload is now 6 B and must ship with firmware ≥ 0.4.0.
+- **Velocity threaded through callers**: `SelfDrivingViewModel` and `STM32ControlViewModel` now propagate signed ground speed (ESC telemetry or ARKit) on every command write and keepalive tick.
 
 ## [0.11.0] - 2026-04-22
 

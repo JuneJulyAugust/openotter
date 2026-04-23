@@ -14,8 +14,12 @@ All notable changes to this project will be documented in this file.
 - **Operating Modes**: Drive (default, supervisor armed, ToF config locked, 0xFE62 suppressed) and Debug (supervisor disarmed, ToF config writable, 0xFE62 streamed).
 
 ### Changed
+- **`0xFE41` Command Payload 4 → 6 bytes (breaking wire change)**: Added `int16_t velocity_mm_per_s` field (bytes 4-5, signed little-endian). The firmware now requires `data_length >= 6`; legacy 4-byte writes are silently dropped. Ship with iOS ≥ 0.12.0 together.
 - `BLE_App_Process` now drives PWM after running the supervisor and applying the per-direction reverse clamp (§3.5 of the reverse-safety design doc).
 - `ble_tof.c` rejects 0xFE61 writes in Drive mode with `TOF_L1_ERR_LOCKED_IN_DRIVE`.
+- **`BLE_Tof_Process` Mode-Gated**: Frame notifications (0xFE62) are now suppressed in Drive mode to avoid saturating the BlueNRG-MS TX buffer and starving motor command writes. The ToF sensor continues scanning for the supervisor.
+- **`apply_config_write` Mode-Gated**: Config writes (0xFE61) in Drive mode are now rejected with `TOF_L1_ERR_LOCKED_IN_DRIVE` to prevent accidental reconfiguration of the safety-critical sensor parameters.
+- **`BLE_Tof_EnforceSafetyConfig` Added**: Applies the safety-critical config (3×3 LONG 30 ms) when the MCU transitions from Debug back to Drive.
 
 ## [0.3.1] - 2026-04-22
 
