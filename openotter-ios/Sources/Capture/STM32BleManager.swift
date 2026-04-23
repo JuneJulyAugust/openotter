@@ -77,24 +77,36 @@ public class STM32BleManager: NSObject, ObservableObject {
         cleanup()
     }
 
-    /// Send steering and throttle pulse widths (in µs) to the STM32.
-    /// Values are clamped to [1000, 2000] on the firmware side.
-    public func sendCommand(steeringMicros: Int16, throttleMicros: Int16) {
+    /// Send steering, throttle (pulse widths in µs) and measured velocity
+    /// (mm/s, negative = reversing) to the STM32.
+    public func sendCommand(steeringMicros: Int16,
+                            throttleMicros: Int16,
+                            velocityMmPerSec: Int16) {
         guard let commandChar, let peripheral else { return }
 
-        var payload = Data(count: 4)
+        var payload = Data(count: 6)
         payload.withUnsafeMutableBytes { ptr in
-            ptr.storeBytes(of: steeringMicros.littleEndian, toByteOffset: 0, as: Int16.self)
-            ptr.storeBytes(of: throttleMicros.littleEndian, toByteOffset: 2, as: Int16.self)
+            ptr.storeBytes(of: steeringMicros.littleEndian,
+                           toByteOffset: 0, as: Int16.self)
+            ptr.storeBytes(of: throttleMicros.littleEndian,
+                           toByteOffset: 2, as: Int16.self)
+            ptr.storeBytes(of: velocityMmPerSec.littleEndian,
+                           toByteOffset: 4, as: Int16.self)
         }
 
         let writeType: CBCharacteristicWriteType =
-            commandChar.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+            commandChar.properties.contains(.writeWithoutResponse)
+                ? .withoutResponse : .withResponse
         peripheral.writeValue(payload, for: commandChar, type: writeType)
 
-        DispatchQueue.main.async {
-            self.commandsSent += 1
-        }
+        DispatchQueue.main.async { self.commandsSent += 1 }
+    }
+
+    /// Transitional — delete once all callers pass velocity explicitly.
+    public func sendCommand(steeringMicros: Int16, throttleMicros: Int16) {
+        sendCommand(steeringMicros: steeringMicros,
+                    throttleMicros: throttleMicros,
+                    velocityMmPerSec: 0)
     }
 
     // MARK: - Private
