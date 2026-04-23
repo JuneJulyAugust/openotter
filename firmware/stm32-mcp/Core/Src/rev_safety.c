@@ -145,7 +145,7 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
   }
   RevSafetyState_t prev = ctx->state;
 
-  /* 1. Smoothed depth update (invalid-frame handling) */
+  /* 1. Update smoothed depth and invalid counter */
   if (in->zone_valid) {
     if (!ctx->has_smoothed) {
       ctx->smoothed_depth_m = in->raw_depth_m;
@@ -157,15 +157,63 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
     }
     ctx->invalid_frame_count = 0;
     ctx->last_valid_frame_ms = in->now_ms;
-  } else {
-    if (ctx->invalid_frame_count < 0xFF) ctx->invalid_frame_count++;
+  } else if (ctx->invalid_frame_count < 0xFF) {
+    ctx->invalid_frame_count++;
   }
 
-  /* 2. Invalid-frame policy while armed */
-  if (supervisor_armed(ctx, in) &&
-      ctx->invalid_frame_count >= ctx->config.tof_blind_frames &&
-      ctx->state != REV_SAFETY_STATE_BRAKE) {
-    enter_brake(ctx, in, REV_SAFETY_CAUSE_TOF_BLIND);
+  int16_t neutral     = (int16_t)ctx->config.pwm_neutral_us;
+  int16_t t_eps       = ctx->config.throttle_eps_us;
+  bool    armed       = supervisor_armed(ctx, in);
+  bool    forward_cmd = in->throttle_us > (neutral + t_eps);
+
+  /* 2. SAFE -> BRAKE transitions (invalid, driver_dead, obstacle) */
+  if (ctx->state == REV_SAFETY_STATE_SAFE) {
+    if (armed && in->driver_dead) {
+      enter_brake(ctx, in, REV_SAFETY_CAUSE_DRIVER_DEAD);
+    } else if (armed &&
+               ctx->invalid_frame_count >= ctx->config.tof_blind_frames) {
+      enter_brake(ctx, in, REV_SAFETY_CAUSE_TOF_BLIND);
+    } else if (armed && ctx->has_smoothed) {
+      float critical = RevSafety_CriticalDistance(&ctx->config,
+                                                  in->velocity_mps);
+      if (ctx->smoothed_depth_m <= critical) {
+        enter_brake(ctx, in, REV_SAFETY_CAUSE_OBSTACLE);
+      }
+    }
+  } else {
+    /* BRAKE: evaluate release paths */
+
+    /* (b) Operator forward command drops the latch immediately. */
+    if (forward_cmd) {
+      ctx->state = REV_SAFETY_STATE_SAFE;
+      ctx->cause = REV_SAFETY_CAUSE_NONE;
+      ctx->latched_speed_mps    = 0.0f;
+      ctx->release_timer_running = false;
+    } else {
+      /* (a) Genuine clearance with debounce against latched-speed critical. */
+      float critical = RevSafety_CriticalDistance(&ctx->config,
+                                                  ctx->latched_speed_mps);
+      bool clear = ctx->has_smoothed && ctx->smoothed_depth_m > critical &&
+                   ctx->invalid_frame_count == 0;
+      if (clear) {
+        if (!ctx->release_timer_running) {
+          ctx->release_timer_running = true;
+          ctx->release_start_ms      = in->now_ms;
+        } else {
+          uint32_t held = in->now_ms - ctx->release_start_ms;
+          uint32_t need_ms =
+              (uint32_t)(ctx->config.release_hold_s * 1000.0f);
+          if (held >= need_ms) {
+            ctx->state = REV_SAFETY_STATE_SAFE;
+            ctx->cause = REV_SAFETY_CAUSE_NONE;
+            ctx->latched_speed_mps    = 0.0f;
+            ctx->release_timer_running = false;
+          }
+        }
+      } else {
+        ctx->release_timer_running = false;
+      }
+    }
   }
 
   emit_event(ctx, out, prev != ctx->state, in->now_ms);
