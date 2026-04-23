@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 - **Bringup Checklist**: `docs/dev/07-reverse-safety-bringup.md` documents 8 on-target HIL verification steps.
 
 ### Changed
-- **`0xFE41` Command Payload 4 → 6 bytes**: Added `int16_t velocity_mm_per_s` field (bytes 4-5, signed little-endian). iOS clients using the old 4-byte form continue to work (firmware accepts `data_length >= 6`; shorter writes are silently ignored by the 6-byte guard).
+- **`0xFE41` Command Payload 4 → 6 bytes (breaking wire change)**: Added `int16_t velocity_mm_per_s` field (bytes 4-5, signed little-endian). The firmware now requires `data_length >= 6`; legacy 4-byte writes are silently dropped. Ship with iOS ≥ 0.12.0 together.
 - **`BLE_Tof_Process` Mode-Gated**: Frame notifications (0xFE62) are now suppressed in Drive mode to avoid saturating the BlueNRG-MS TX buffer and starving motor command writes. The ToF sensor continues scanning for the supervisor.
 - **`apply_config_write` Mode-Gated**: Config writes (0xFE61) in Drive mode are now rejected with `TOF_L1_ERR_LOCKED_IN_DRIVE` to prevent accidental reconfiguration of the safety-critical sensor parameters.
 - **`BLE_Tof_EnforceSafetyConfig` Added**: Applies the safety-critical config (3×3 LONG 30 ms) when the MCU transitions from Debug back to Drive.
