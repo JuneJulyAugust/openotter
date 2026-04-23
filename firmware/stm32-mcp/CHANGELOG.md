@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [0.4.0] - 2026-04-23
+
+### Added
+- **Reverse Safety Supervisor**: New HAL-free `rev_safety` module. Critical-distance policy mirrors the iOS forward supervisor (see `openotter-ios/Sources/Planner/Safety/DESIGN.md` §4). Center-zone 3×3 LONG 30 ms ToF feeds the supervisor; invalid-frame (2 consecutive) and frame-gap (500 ms) watchdogs fail-safe to BRAKE.
+- **BLE Protocol**:
+  - 0xFE41 command extended to 6 B (added `int16_t velocity_mm_per_s`).
+  - 0xFE43 safety notify characteristic, 20 B payload with state, cause and trigger snapshot.
+  - 0xFE44 mode characteristic (0 = Drive, 1 = Debug).
+- **Operating Modes**: Drive (default, supervisor armed, ToF config locked, 0xFE62 suppressed) and Debug (supervisor disarmed, ToF config writable, 0xFE62 streamed).
+
+### Changed
+- `BLE_App_Process` now drives PWM after running the supervisor and applying the per-direction reverse clamp (§3.5 of the reverse-safety design doc).
+- `ble_tof.c` rejects 0xFE61 writes in Drive mode with `TOF_L1_ERR_LOCKED_IN_DRIVE`.
+
 ## [0.3.1] - 2026-04-22
 
 ### Added

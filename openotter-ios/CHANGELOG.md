@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-04-23
+
+### Added
+- `FirmwareSafetyEvent` model to parse 0xFE43 firmware notifications.
+- `STM32BleManager` subscribes to 0xFE43 and exposes `lastSafetyEvent` publisher.
+- `STM32BleManager` writes 0xFE44 = `0x00` (Drive) on connect to enforce safety-critical config.
+
+### Changed
+- `STM32BleManager.sendCommand` now accepts `velocityMmPerSec` and sends a 6 B payload.
+- `SelfDrivingViewModel` passes the measured `currentSpeedMPS` (from ESC/ARKit) into `sendCommand`.
+- `STM32ControlViewModel` passes `0` velocity to `sendCommand`.
+
 ## [0.11.0] - 2026-04-22
 
 ### Added
