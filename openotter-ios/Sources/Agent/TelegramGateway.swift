@@ -200,6 +200,7 @@ final class TelegramGateway: ObservableObject {
         let buttons: [[[String: String]]] = [
             [["text": "🚗 Drive"], ["text": "🅿️ Park"]],
             [["text": "🔙 Reverse"], ["text": "📊 Status"]],
+            [["text": "🐢 Slow"], ["text": "🚗 Normal"], ["text": "🐇 Fast"], ["text": "❓ Help"]],
         ]
         return [
             "keyboard": buttons,

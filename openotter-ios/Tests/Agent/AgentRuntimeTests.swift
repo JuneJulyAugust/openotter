@@ -22,12 +22,14 @@ final class AgentRuntimeTests: XCTestCase {
         super.setUp()
         goalReceiver = MockGoalReceiver()
         speech = MuteSpeechOutput()
+        let interpreter = KeywordInterpreter()
         let dispatcher = ActionDispatcher(
             goalReceiver: goalReceiver,
-            statusProvider: StubStatusProvider()
+            statusProvider: StubStatusProvider(),
+            interpreter: interpreter
         )
         runtime = AgentRuntime(
-            interpreter: KeywordInterpreter(),
+            interpreter: interpreter,
             dispatcher: dispatcher,
             responseBuilder: ResponseBuilder(),
             speech: speech
@@ -36,7 +38,7 @@ final class AgentRuntimeTests: XCTestCase {
 
     func testForwardCommandProducesGoalAndSpeech() {
         let response = runtime.handleMessage("/forward")
-        XCTAssertTrue(response.contains("forward"))
+        XCTAssertEqual(response, "Drive")
         XCTAssertEqual(speech.lastSpoken, response)
         if case .constantThrottle(let t) = goalReceiver.lastGoal {
             XCTAssertEqual(t, 0.4, accuracy: 0.001)
@@ -47,7 +49,7 @@ final class AgentRuntimeTests: XCTestCase {
 
     func testStopCommandResetsAndSpeaks() {
         let response = runtime.handleMessage("/stop")
-        XCTAssertTrue(response.lowercased().contains("stop"))
+        XCTAssertEqual(response, "Park")
         XCTAssertTrue(goalReceiver.didReset)
         XCTAssertEqual(speech.lastSpoken, response)
     }
@@ -60,5 +62,13 @@ final class AgentRuntimeTests: XCTestCase {
     func testUnknownCommandReturnHelp() {
         let response = runtime.handleMessage("dance")
         XCTAssertTrue(response.lowercased().contains("unknown"))
+    }
+
+    func testHelpCommandSuppressesSpeech() {
+        speech.lastSpoken = nil
+        let response = runtime.handleMessage("/help")
+        // Response is non-empty (sent via Telegram) but TTS must be silent.
+        XCTAssertTrue(response.contains("OpenOtter"))
+        XCTAssertNil(speech.lastSpoken, "Help response should not be spoken")
     }
 }

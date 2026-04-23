@@ -64,12 +64,14 @@ final class SelfDrivingViewModel: ObservableObject {
             return Set(raw.split(separator: ",").compactMap { Int64($0) })
         }()
 
+        let interpreter = KeywordInterpreter()
         let dispatcher = ActionDispatcher(
             goalReceiver: orch,
-            statusProvider: CarStatusProvider()
+            statusProvider: CarStatusProvider(),
+            interpreter: interpreter
         )
         let rt = AgentRuntime(
-            interpreter: KeywordInterpreter(),
+            interpreter: interpreter,
             dispatcher: dispatcher,
             responseBuilder: ResponseBuilder(),
             speech: speechOutput

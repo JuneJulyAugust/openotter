@@ -21,10 +21,14 @@ final class ActionDispatcher: ActionDispatching {
 
     private weak var goalReceiver: (any GoalReceiving)?
     private let statusProvider: any StatusProviding
+    private let interpreter: KeywordInterpreter
 
-    init(goalReceiver: any GoalReceiving, statusProvider: any StatusProviding) {
+    init(goalReceiver: any GoalReceiving,
+         statusProvider: any StatusProviding,
+         interpreter: KeywordInterpreter) {
         self.goalReceiver = goalReceiver
         self.statusProvider = statusProvider
+        self.interpreter = interpreter
     }
 
     func dispatch(_ action: AgentAction) -> ActionResult {
@@ -48,8 +52,45 @@ final class ActionDispatcher: ActionDispatching {
             let status = statusProvider.currentStatus()
             return ActionResult(success: true, message: status)
 
+        case .setSpeed(let throttle):
+            interpreter.setThrottle(throttle)
+            let pct = Int(interpreter.currentThrottle * 100)
+            return ActionResult(success: true,
+                                message: "Speed set to \(String(format: "%.1f", interpreter.currentThrottle)) (\(pct)%)")
+
+        case .help:
+            return ActionResult(success: true,
+                                message: Self.helpText(currentThrottle: interpreter.currentThrottle),
+                                speakable: false)
+
         case .unknown(let raw):
             return ActionResult(success: false, message: "Unrecognized command: \(raw)")
         }
+    }
+
+    // MARK: - Help Text
+
+    private static func helpText(currentThrottle: Float) -> String {
+        let pct = Int(currentThrottle * 100)
+        return """
+        🤖 OpenOtter Commands
+
+        Movement:
+          🚗 drive / d / go — Drive forward
+          🔙 reverse / r    — Drive backward
+          🅿️ park / p / stop — Stop & park
+
+        Speed presets:
+          🐢 slow            — 20%
+          🚗 normal           — 40% (default)
+          🐇 fast             — 80%
+          speed <0.1–1.0>    — Set exact speed
+
+        Info:
+          📊 status / s      — Vehicle status
+          ❓ help / h        — This message
+
+        Current speed: \(String(format: "%.1f", currentThrottle)) (\(pct)%)
+        """
     }
 }

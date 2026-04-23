@@ -19,12 +19,14 @@ struct AgentDebugView: View {
         let speechOutput = SpeechOutput()
         let gw = TelegramGateway(token: token)
 
+        let interpreter = KeywordInterpreter()
         let dispatcher = ActionDispatcher(
             goalReceiver: StubGoalReceiver(),
-            statusProvider: StubCarStatusProvider()
+            statusProvider: StubCarStatusProvider(),
+            interpreter: interpreter
         )
         let rt = AgentRuntime(
-            interpreter: KeywordInterpreter(),
+            interpreter: interpreter,
             dispatcher: dispatcher,
             responseBuilder: ResponseBuilder(),
             speech: speechOutput
@@ -237,6 +239,8 @@ struct AgentDebugView: View {
         case .move(let dir, let t): return "move(\(dir.rawValue), \(t))"
         case .stop: return "stop"
         case .queryStatus: return "queryStatus"
+        case .setSpeed(let t): return "setSpeed(\(t))"
+        case .help: return "help"
         case .unknown(let raw): return "unknown(\(raw))"
         }
     }

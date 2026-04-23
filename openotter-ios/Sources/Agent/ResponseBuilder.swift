@@ -21,6 +21,10 @@ struct ResponseBuilder: ResponseBuilding {
             return "Park"
         case .queryStatus:
             return result.message
+        case .setSpeed:
+            return result.message
+        case .help:
+            return result.message
         case .unknown(let raw):
             return "Unknown: \(raw)"
         }

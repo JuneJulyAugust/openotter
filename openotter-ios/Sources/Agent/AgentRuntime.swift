@@ -48,7 +48,9 @@ final class AgentRuntime: ObservableObject {
         let result = dispatcher.dispatch(action)
         let response = responseBuilder.build(action: action, result: result)
 
-        speech.speak(response)
+        if result.speakable {
+            speech.speak(response)
+        }
 
         let entry = LogEntry(
             timestamp: Date(),

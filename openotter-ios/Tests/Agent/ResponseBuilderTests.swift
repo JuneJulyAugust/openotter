@@ -8,14 +8,13 @@ final class ResponseBuilderTests: XCTestCase {
     func testMoveForwardSuccess() {
         let result = ActionResult(success: true, message: "Throttle set")
         let text = builder.build(action: .move(direction: .forward, throttle: 0.4), result: result)
-        XCTAssertTrue(text.lowercased().contains("forward"))
-        XCTAssertTrue(text.contains("40%"))
+        XCTAssertEqual(text, "Drive")
     }
 
     func testMoveBackwardSuccess() {
         let result = ActionResult(success: true, message: "Throttle set")
         let text = builder.build(action: .move(direction: .backward, throttle: 0.4), result: result)
-        XCTAssertTrue(text.lowercased().contains("backward"))
+        XCTAssertEqual(text, "Reverse")
     }
 
     func testMoveBlocked() {
@@ -27,7 +26,7 @@ final class ResponseBuilderTests: XCTestCase {
     func testStopSuccess() {
         let result = ActionResult(success: true, message: "Stopped")
         let text = builder.build(action: .stop, result: result)
-        XCTAssertTrue(text.lowercased().contains("stop"))
+        XCTAssertEqual(text, "Park")
     }
 
     func testQueryStatus() {
@@ -36,10 +35,21 @@ final class ResponseBuilderTests: XCTestCase {
         XCTAssertTrue(text.contains("0.5 m/s"))
     }
 
+    func testSetSpeedPassesResultMessage() {
+        let result = ActionResult(success: true, message: "Speed set to 0.6 (60%)")
+        let text = builder.build(action: .setSpeed(throttle: 0.6), result: result)
+        XCTAssertTrue(text.contains("0.6"))
+    }
+
+    func testHelpPassesResultMessage() {
+        let result = ActionResult(success: true, message: "🤖 OpenOtter Commands\n...")
+        let text = builder.build(action: .help, result: result)
+        XCTAssertTrue(text.contains("OpenOtter"))
+    }
+
     func testUnknownCommand() {
         let result = ActionResult(success: false, message: "Unrecognized")
         let text = builder.build(action: .unknown(raw: "dance"), result: result)
-        XCTAssertTrue(text.lowercased().contains("unknown"))
-        XCTAssertTrue(text.contains("dance"))
+        XCTAssertTrue(text.lowercased().contains("unrecognized"))
     }
 }
