@@ -28,9 +28,6 @@ class STM32ControlViewModel: ObservableObject {
     /// Defaults match firmware Init: 1×1 / LONG / 33 ms.
     @Published var tofConfig = TofConfig(layout: 1, distMode: 3, budgetUs: 33_000)
 
-    /// Most recent firmware safety event from 0xFE43.
-    @Published var safetyEvent: FirmwareSafetyEvent?
-
     // MARK: - Private
 
     private let bleManager = STM32BleManager.shared
@@ -158,25 +155,32 @@ class STM32ControlViewModel: ObservableObject {
         }
     }
 
-    /// Transmits current steering + throttle (with signed velocity) once,
-    /// then restarts the keepalive so the firmware's safety timeout never fires.
+    /// Transmits current steering + throttle once, then restarts the keepalive
+    /// so the firmware's safety timeout never fires.
     private func sendNow() {
         debounceTimer?.invalidate()
         debounceTimer = nil
-        let steeringUs  = Self.toPulseWidth(steering)
-        let throttleUs  = Self.toPulseWidth(throttle)
-        let velocityMps = currentSignedVelocityMps()
-        bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs,
-                               velocityMps: velocityMps)
+        let steeringUs = Self.toPulseWidth(steering)
+        let throttleUs = Self.toPulseWidth(throttle)
+        let velocityMmPerSec = Int16(max(-32_000.0, min(32_000.0, currentSignedVelocityMps() * 1000.0)))
+        bleManager.sendCommand(steeringMicros: steeringUs,
+                               throttleMicros: throttleUs,
+                               velocityMmPerSec: velocityMmPerSec)
         restartKeepalive()
     }
 
-    /// Signed ground speed from ESC telemetry; negative when throttle < 0.
+    /// Ground speed reported by the ESC, forwarded to the firmware reverse
+    /// safety supervisor.
+    ///
+    /// The ESC decodes eRPM via `signed32BE`, so `speedMps` preserves sign
+    /// when the firmware actually reports direction. In practice some ESC
+    /// firmwares emit unsigned magnitude; in that case the firmware
+    /// supervisor's velocity-sign gate will not fire for pure coast-backward
+    /// (throttle=0 rolling downhill) and falls back to the commanded-throttle
+    /// gate (spec §3.2 union). Either way we never send a wrong-signed value.
     private func currentSignedVelocityMps() -> Float {
-        let raw = Float(escTelemetry?.speedMps ?? 0.0)
-        return throttle < 0 ? -raw : raw
+        return Float(escTelemetry?.speedMps ?? 0.0)
     }
-
     /// Schedules a repeating timer that re-sends current values every 500ms.
     /// Resets after every explicit send to avoid double-firing.
     private func restartKeepalive() {
@@ -186,11 +190,14 @@ class STM32ControlViewModel: ObservableObject {
             repeats: true
         ) { [weak self] _ in
             guard let self, self.status == .connected else { return }
-            let steeringUs  = Self.toPulseWidth(self.steering)
-            let throttleUs  = Self.toPulseWidth(self.throttle)
-            let velocityMps = self.currentSignedVelocityMps()
-            self.bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs,
-                                        velocityMps: velocityMps)
+            let steeringUs = Self.toPulseWidth(self.steering)
+            let throttleUs = Self.toPulseWidth(self.throttle)
+            let velocityMmPerSec = Int16(max(-32_000.0,
+                                             min(32_000.0,
+                                                 self.currentSignedVelocityMps() * 1000.0)))
+            self.bleManager.sendCommand(steeringMicros: steeringUs,
+                                        throttleMicros: throttleUs,
+                                        velocityMmPerSec: velocityMmPerSec)
         }
     }
 
@@ -240,10 +247,6 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$lastError
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofLastError)
-
-        bleManager.$safetyEvent
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$safetyEvent)
     }
 
     /// Maps a normalized [-1, +1] control value to a PWM pulse width [1000, 2000] µs.

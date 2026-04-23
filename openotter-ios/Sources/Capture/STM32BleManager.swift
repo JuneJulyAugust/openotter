@@ -12,15 +12,8 @@ public enum STM32BleStatus: String {
     case poweredOff = "Bluetooth Off"
 }
 
-/// Operating mode for the firmware (0xFE44 characteristic).
-public enum FirmwareMode: UInt8 {
-    case drive = 0x00
-    case debug = 0x01
-}
-
 /// Manages CoreBluetooth connection to the STM32 OPENOTTER-MCP BLE peripheral.
-/// Sends 6-byte steering + throttle + velocity commands and subscribes to
-/// the 0xFE43 safety characteristic for firmware emergency-brake events.
+/// Sends steering + throttle commands as packed int16_t pairs (4 bytes).
 public class STM32BleManager: NSObject, ObservableObject {
 
     /// Shared singleton — only one connection to OPENOTTER-MCP may exist at a time.
@@ -32,20 +25,19 @@ public class STM32BleManager: NSObject, ObservableObject {
     @Published public var deviceName: String = "Unknown"
     @Published public var rssi: Int = 0
     @Published public var commandsSent: Int = 0
-    /// Most recent safety event from firmware 0xFE43. `nil` until first notification.
-    @Published public var safetyEvent: FirmwareSafetyEvent?
+    @Published public var lastSafetyEvent: FirmwareSafetyEvent? = nil
 
     // MARK: - BLE UUIDs (must match firmware ble_app.h)
 
     /// Custom service: 0xFE40
     private let controlServiceUUID = CBUUID(string: "FE40")
-    /// Write characteristic: 0xFE41 — receives [int16_t steering, int16_t throttle, int16_t velocity_mm_s]
+    /// Write characteristic: 0xFE41 — receives [int16_t steering, int16_t throttle]
     private let commandCharUUID = CBUUID(string: "FE41")
     /// Notify characteristic: 0xFE42 — heartbeat/status from firmware
     private let statusCharUUID = CBUUID(string: "FE42")
-    /// Notify + Read: 0xFE43 — 20 B safety event (FirmwareSafetyEvent)
+    /// Notify characteristic: 0xFE43 — safety event
     private let safetyCharUUID = CBUUID(string: "FE43")
-    /// Write + Read: 0xFE44 — 1 B operating mode (FirmwareMode raw value)
+    /// Write characteristic: 0xFE44 — mode
     private let modeCharUUID = CBUUID(string: "FE44")
 
     /// ToF service: 0xFE60
@@ -60,8 +52,6 @@ public class STM32BleManager: NSObject, ObservableObject {
     private var peripheral: CBPeripheral?
     private var commandChar: CBCharacteristic?
     private var statusChar: CBCharacteristic?
-    private var safetyChar: CBCharacteristic?
-    private var modeChar: CBCharacteristic?
 
     private var tofConfigChar: CBCharacteristic?
     private var tofFrameChar: CBCharacteristic?
@@ -92,48 +82,29 @@ public class STM32BleManager: NSObject, ObservableObject {
         cleanup()
     }
 
-    /// Send steering and throttle pulse widths (in µs) and the current
-    /// ground-speed estimate to the STM32.
-    ///
-    /// - Parameters:
-    ///   - steeringMicros: Pulse width in µs [1000, 2000]; 1500 = center.
-    ///   - throttleMicros: Pulse width in µs [1000, 2000]; 1500 = neutral.
-    ///   - velocityMps:    Signed speed in m/s. Negative = reversing.
-    ///                     Clamped to Int16 range (±32 m/s) before send.
+    /// Send steering, throttle (pulse widths in µs) and measured velocity
+    /// (mm/s, negative = reversing) to the STM32.
     public func sendCommand(steeringMicros: Int16,
-                             throttleMicros: Int16,
-                             velocityMps: Float = 0.0) {
+                            throttleMicros: Int16,
+                            velocityMmPerSec: Int16) {
         guard let commandChar, let peripheral else { return }
-
-        // Convert to Int16 mm/s, clamping to Int16 bounds.
-        let velocityMmS = Int16(
-            max(Float(Int16.min), min(Float(Int16.max), velocityMps * 1000.0))
-        )
 
         var payload = Data(count: 6)
         payload.withUnsafeMutableBytes { ptr in
-            ptr.storeBytes(of: steeringMicros.littleEndian, toByteOffset: 0, as: Int16.self)
-            ptr.storeBytes(of: throttleMicros.littleEndian, toByteOffset: 2, as: Int16.self)
-            ptr.storeBytes(of: velocityMmS.littleEndian,    toByteOffset: 4, as: Int16.self)
+            ptr.storeBytes(of: steeringMicros.littleEndian,
+                           toByteOffset: 0, as: Int16.self)
+            ptr.storeBytes(of: throttleMicros.littleEndian,
+                           toByteOffset: 2, as: Int16.self)
+            ptr.storeBytes(of: velocityMmPerSec.littleEndian,
+                           toByteOffset: 4, as: Int16.self)
         }
 
         let writeType: CBCharacteristicWriteType =
-            commandChar.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+            commandChar.properties.contains(.writeWithoutResponse)
+                ? .withoutResponse : .withResponse
         peripheral.writeValue(payload, for: commandChar, type: writeType)
 
-        DispatchQueue.main.async {
-            self.commandsSent += 1
-        }
-    }
-
-    /// Write the operating mode to 0xFE44.
-    public func writeMode(_ mode: FirmwareMode) {
-        guard let modeChar, let peripheral else { return }
-        var byte = mode.rawValue
-        let data = Data(bytes: &byte, count: 1)
-        let writeType: CBCharacteristicWriteType =
-            modeChar.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
-        peripheral.writeValue(data, for: modeChar, type: writeType)
+        DispatchQueue.main.async { self.commandsSent += 1 }
     }
 
     // MARK: - Private
@@ -142,8 +113,6 @@ public class STM32BleManager: NSObject, ObservableObject {
         peripheral = nil
         commandChar = nil
         statusChar = nil
-        safetyChar = nil
-        modeChar = nil
         tofConfigChar = nil
         tofFrameChar = nil
         tofStatusChar = nil
@@ -236,9 +205,7 @@ extension STM32BleManager: CBPeripheralDelegate {
         for service in services {
             switch service.uuid {
             case controlServiceUUID:
-                peripheral.discoverCharacteristics(
-                    [commandCharUUID, statusCharUUID, safetyCharUUID, modeCharUUID],
-                    for: service)
+                peripheral.discoverCharacteristics([commandCharUUID, statusCharUUID, safetyCharUUID, modeCharUUID], for: service)
             case tofServiceUUID:
                 peripheral.discoverCharacteristics(
                     [tofConfigCharUUID, tofFrameCharUUID, tofStatusCharUUID], for: service)
@@ -265,17 +232,13 @@ extension STM32BleManager: CBPeripheralDelegate {
                         peripheral.setNotifyValue(true, for: char)
                     }
                 case safetyCharUUID:
-                    safetyChar = char
                     if char.properties.contains(.notify) {
                         peripheral.setNotifyValue(true, for: char)
                     }
-                    /* Read the seeded SAFE value immediately after subscribe. */
-                    peripheral.readValue(for: char)
                 case modeCharUUID:
-                    modeChar = char
-                    /* Write Drive (0x00) on every connect so a stale Debug
-                     * mode left over from a previous session is cleared. */
-                    writeMode(.drive)
+                    // Write 0 (Drive) on connect
+                    let mode: UInt8 = 0
+                    peripheral.writeValue(Data([mode]), for: char, type: .withoutResponse)
                 default:
                     break
                 }
@@ -318,16 +281,17 @@ extension STM32BleManager: CBPeripheralDelegate {
             if let data = characteristic.value {
                 STM32TofService.shared.handleStatusNotification(data)
             }
-        case safetyCharUUID:
-            if let data = characteristic.value,
-               let event = FirmwareSafetyEvent.parse(from: data) {
-                DispatchQueue.main.async {
-                    self.safetyEvent = event
-                }
-            }
         case statusCharUUID:
             // FE42 control-side status — no consumer yet.
             break
+        case safetyCharUUID:
+            guard let data = characteristic.value else { return }
+            do {
+                let ev = try FirmwareSafetyEvent(data: data)
+                DispatchQueue.main.async { self.lastSafetyEvent = ev }
+            } catch {
+                // Ignore malformed payloads; firmware should never send them.
+            }
         default:
             break
         }

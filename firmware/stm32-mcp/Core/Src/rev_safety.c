@@ -20,7 +20,6 @@ struct RevSafetyCtx {
 
   float    smoothed_depth_m;
   bool     has_smoothed;
-  bool     first_tick_seen;     /* true after the very first Tick call */
   uint8_t  invalid_frame_count;
   uint32_t last_valid_frame_ms;
 
@@ -38,6 +37,12 @@ struct RevSafetyCtx {
   uint32_t seq;
   uint32_t last_notify_refresh_ms;
 };
+
+/* Compile-time guard: callers allocate REV_SAFETY_CTX_STORAGE_BYTES of
+ * max-aligned storage; make sure the real struct still fits. Bump the
+ * constant in rev_safety.h if this ever fires. */
+_Static_assert(sizeof(struct RevSafetyCtx) <= REV_SAFETY_CTX_STORAGE_BYTES,
+               "Grow REV_SAFETY_CTX_STORAGE_BYTES to fit RevSafetyCtx");
 
 void RevSafety_GetDefaultConfig(RevSafetyConfig_t *out) {
   if (!out) return;
@@ -66,7 +71,7 @@ void RevSafety_Init(RevSafetyCtx *ctx, const RevSafetyConfig_t *config) {
   else        RevSafety_GetDefaultConfig(&ctx->config);
   ctx->state = REV_SAFETY_STATE_SAFE;
   ctx->cause = REV_SAFETY_CAUSE_NONE;
-  ctx->last_valid_frame_ms = 0; /* seeded on first Tick call */
+  ctx->last_valid_frame_ms = 0; /* will be set on first tick call */
 }
 
 /* Exact integral: stopping(v) = v/k - (a0/k^2) * ln(1 + k*v/a0). Falls back
@@ -89,11 +94,11 @@ float RevSafety_CriticalDistance(const RevSafetyConfig_t *config, float v) {
 
 static bool supervisor_armed(const struct RevSafetyCtx *ctx,
                              const RevSafetyInput_t *in) {
-  float   v_eps   = ctx->config.v_eps_mps;
-  int16_t t_eps   = ctx->config.throttle_eps_us;
-  int16_t neutral = (int16_t)ctx->config.pwm_neutral_us;
-  bool moving_back = in->velocity_mps < -v_eps;
-  bool cmd_reverse = in->throttle_us  < (neutral - t_eps);
+  float v_eps       = ctx->config.v_eps_mps;
+  int16_t t_eps     = ctx->config.throttle_eps_us;
+  int16_t neutral   = (int16_t)ctx->config.pwm_neutral_us;
+  bool moving_back  = in->velocity_mps < -v_eps;
+  bool cmd_reverse  = in->throttle_us < (neutral - t_eps);
   return moving_back || cmd_reverse;
 }
 
@@ -138,22 +143,14 @@ static void enter_brake(struct RevSafetyCtx *ctx,
   ctx->release_timer_running = false;
 }
 
-void RevSafety_Tick(RevSafetyCtx *ctx,
+void RevSafety_Tick(struct RevSafetyCtx *ctx,
                     const RevSafetyInput_t *in,
                     RevSafetyEvent_t *out) {
   if (!ctx || !in) {
     if (out) memset(out, 0, sizeof(*out));
     return;
   }
-
-  /* Seed the frame-gap reference once on the very first call so the watchdog
-   * does not false-trip before any frame has ever arrived. The flag prevents
-   * re-seeding on subsequent calls that arrive at now_ms == 0 semantics. */
-  if (!ctx->first_tick_seen) {
-    ctx->first_tick_seen     = true;
-    ctx->last_valid_frame_ms = in->now_ms;
-  }
-
+  if (ctx->last_valid_frame_ms == 0) ctx->last_valid_frame_ms = in->now_ms;
   RevSafetyState_t prev = ctx->state;
 
   /* 1. Update smoothed depth and invalid counter */
@@ -177,11 +174,10 @@ void RevSafety_Tick(RevSafetyCtx *ctx,
   int16_t t_eps       = ctx->config.throttle_eps_us;
   bool    armed       = supervisor_armed(ctx, in);
   bool    forward_cmd = in->throttle_us > (neutral + t_eps);
-
-  bool frame_stale = (in->now_ms - ctx->last_valid_frame_ms) >
+  bool    frame_stale = (in->now_ms - ctx->last_valid_frame_ms) >
                      ctx->config.frame_gap_ms;
 
-  /* 2. SAFE → BRAKE transitions */
+  /* 2. SAFE -> BRAKE transitions (invalid, driver_dead, obstacle) */
   if (ctx->state == REV_SAFETY_STATE_SAFE && armed) {
     if (in->driver_dead) {
       enter_brake(ctx, in, REV_SAFETY_CAUSE_DRIVER_DEAD);
@@ -196,14 +192,14 @@ void RevSafety_Tick(RevSafetyCtx *ctx,
         enter_brake(ctx, in, REV_SAFETY_CAUSE_OBSTACLE);
       }
     }
-  } else if (ctx->state == REV_SAFETY_STATE_BRAKE) {
+  } else if (ctx->state != REV_SAFETY_STATE_SAFE) {
     /* BRAKE: evaluate release paths */
 
     /* (b) Operator forward command drops the latch immediately. */
     if (forward_cmd) {
       ctx->state = REV_SAFETY_STATE_SAFE;
       ctx->cause = REV_SAFETY_CAUSE_NONE;
-      ctx->latched_speed_mps     = 0.0f;
+      ctx->latched_speed_mps    = 0.0f;
       ctx->release_timer_running = false;
     } else {
       /* (a) Genuine clearance with debounce against latched-speed critical. */
@@ -216,12 +212,13 @@ void RevSafety_Tick(RevSafetyCtx *ctx,
           ctx->release_timer_running = true;
           ctx->release_start_ms      = in->now_ms;
         } else {
-          uint32_t held    = in->now_ms - ctx->release_start_ms;
-          uint32_t need_ms = (uint32_t)(ctx->config.release_hold_s * 1000.0f);
+          uint32_t held = in->now_ms - ctx->release_start_ms;
+          uint32_t need_ms =
+              (uint32_t)(ctx->config.release_hold_s * 1000.0f);
           if (held >= need_ms) {
             ctx->state = REV_SAFETY_STATE_SAFE;
             ctx->cause = REV_SAFETY_CAUSE_NONE;
-            ctx->latched_speed_mps     = 0.0f;
+            ctx->latched_speed_mps    = 0.0f;
             ctx->release_timer_running = false;
           }
         }
@@ -242,6 +239,6 @@ void RevSafety_Disarm(RevSafetyCtx *ctx) {
   if (!ctx) return;
   ctx->state = REV_SAFETY_STATE_SAFE;
   ctx->cause = REV_SAFETY_CAUSE_NONE;
-  ctx->latched_speed_mps     = 0.0f;
+  ctx->latched_speed_mps = 0.0f;
   ctx->release_timer_running = false;
 }

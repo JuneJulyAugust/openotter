@@ -4,20 +4,26 @@
 CC      ?= cc
 CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
+BUILD_DIR = build
 
 TESTS = test_tof_l1_roi test_rev_safety
+TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
-.PHONY: all test clean
-all: $(TESTS)
+.PHONY: all test clean dirs
 
-test_tof_l1_roi: test_tof_l1_roi.c ../../Core/Src/tof_l1_roi.c ../../Core/Inc/tof_l1.h
+all: dirs $(TARGETS)
+
+dirs:
+	@mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/test_tof_l1_roi: test_tof_l1_roi.c ../../Core/Src/tof_l1_roi.c ../../Core/Inc/tof_l1.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_l1_roi.c ../../Core/Src/tof_l1_roi.c -o $@
 
-test_rev_safety: test_rev_safety.c ../../Core/Src/rev_safety.c ../../Core/Inc/rev_safety.h
+$(BUILD_DIR)/test_rev_safety: test_rev_safety.c ../../Core/Src/rev_safety.c ../../Core/Inc/rev_safety.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety.c ../../Core/Src/rev_safety.c -o $@ -lm
 
-test: $(TESTS)
-	@set -e; for t in $(TESTS); do echo "=== $$t ==="; ./$$t; done
+test: all
+	@set -e; for t in $(TESTS); do echo "=== $$t ==="; $(BUILD_DIR)/$$t; done
 
 clean:
-	rm -f $(TESTS)
+	rm -rf $(BUILD_DIR)

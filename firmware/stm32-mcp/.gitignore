@@ -24,3 +24,6 @@ ninja_log
 
 # OS-specific
 .DS_Store
+
+# Host tests
+tests/host/build/

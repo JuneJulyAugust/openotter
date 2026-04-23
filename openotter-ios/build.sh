@@ -176,7 +176,7 @@ cmd_test() {
     xcodebuild test \
         -project "$PROJECT_NAME.xcodeproj" \
         -scheme "$SCHEME" \
-        -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+        -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
         -derivedDataPath "$DERIVED_DATA"
     echo "==> Tests complete."
 }

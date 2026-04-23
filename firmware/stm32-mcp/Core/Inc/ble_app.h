@@ -60,6 +60,43 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(BLE_SafetyEventPayload_t) == 20,
                "BLE_SafetyEventPayload_t must be 20 B on wire");
 
+/* Added in v0.4.0 — see
+ * docs/superpowers/specs/2026-04-23-stm32-reverse-safety-and-protocol-design.md */
+#define OPENOTTER_SAFETY_CHAR_UUID 0xFE43 /* Notify: safety state + snapshot */
+#define OPENOTTER_MODE_CHAR_UUID   0xFE44 /* Write+read: 0=Drive, 1=Debug */
+
+typedef enum {
+  OPENOTTER_MODE_DRIVE = 0,
+  OPENOTTER_MODE_DEBUG = 1,
+} OpenOtterMode_t;
+
+typedef struct __attribute__((packed)) {
+  int16_t steering_us;
+  int16_t throttle_us;
+  int16_t velocity_mm_per_s;   /* signed; negative = reversing */
+} BLE_CommandPayload_t;
+
+_Static_assert(sizeof(BLE_CommandPayload_t) == 6,
+               "BLE_CommandPayload_t must be 6 B on wire");
+
+typedef struct __attribute__((packed)) {
+  uint32_t seq;
+  uint32_t timestamp_ms;
+  uint8_t  state;                  /* 0=SAFE, 1=BRAKE */
+  uint8_t  cause;                  /* RevSafetyCause_t */
+  uint8_t  _pad[2];
+  int16_t  trigger_velocity_mm_s;
+  uint16_t trigger_depth_mm;
+  uint16_t critical_distance_mm;
+  uint16_t latched_speed_mm_s;
+} BLE_SafetyEventPayload_t;
+
+_Static_assert(sizeof(BLE_SafetyEventPayload_t) == 20,
+               "BLE_SafetyEventPayload_t must be 20 B on wire");
+
+/* Query current mode (used by ble_tof.c to gate writes/notifications). */
+OpenOtterMode_t BLE_App_GetMode(void);
+
 /* ---- PWM Constants (matching TIM3 config: PSC=79, ARR=19999 → 50Hz) ---- */
 #define PWM_PERIOD_US 20000 /* 20ms full period */
 #define PWM_NEUTRAL_US 1500 /* 1.5ms = neutral position */

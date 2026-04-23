@@ -8,13 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.12.0] - 2026-04-23
 
 ### Added
-- **Firmware Safety Subscriber**: `STM32BleManager` now discovers and subscribes to 0xFE43 (Safety) and writes Drive mode to 0xFE44 on every connect, ensuring the firmware's reverse supervisor is always armed when the app is connected.
-- **`FirmwareSafetyEvent` Model**: New value type parses the 20-byte 0xFE43 characteristic payload (state, cause, trigger snapshot) with full XCTest coverage.
-- **`FirmwareMode` Enum**: Typed wrapper for the 0xFE44 operating-mode byte; `STM32BleManager.writeMode(_:)` public API.
+- `FirmwareSafetyEvent` model to parse 0xFE43 firmware notifications.
+- `STM32BleManager` subscribes to 0xFE43 and exposes `lastSafetyEvent` publisher.
+- `STM32BleManager` writes 0xFE44 = `0x00` (Drive) on connect to enforce safety-critical config.
 
 ### Changed
-- **`sendCommand` extended to 6 bytes**: Added `velocityMps` parameter (default `0.0`) that is packed as a signed `Int16` mm/s in bytes 4-5 and passed to the firmware's reverse safety supervisor. Old 4-byte callers are not broken (default argument).
-- **Velocity threaded through callers**: `SelfDrivingViewModel` and `STM32ControlViewModel` now propagate signed ground speed (ESC telemetry or ARKit, with sign derived from throttle direction) on every command write and keepalive tick.
+- **`sendCommand` extended to 6 bytes (breaking BLE wire change)**: `STM32BleManager.sendCommand` now accepts `velocityMmPerSec` and sends a 6 B payload with signed mm/s in bytes 4-5. The on-wire payload is now 6 B and must ship with firmware ≥ 0.4.0.
+- **Velocity threaded through callers**: `SelfDrivingViewModel` and `STM32ControlViewModel` now propagate signed ground speed (ESC telemetry or ARKit) on every command write and keepalive tick.
 
 ## [0.11.0] - 2026-04-22
 

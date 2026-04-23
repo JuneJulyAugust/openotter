@@ -28,6 +28,9 @@
 #include "svc_ctl.h"
 #include "ble_lib.h"
 #include "blesvc.h"
+#include "rev_safety.h"
+#include "tof_l1.h"
+#include "ble_tof.h"
 
 #include <string.h>
 
@@ -84,14 +87,14 @@ static void BLE_TlEvtTask(void);
 static void BLE_AdvTask(void);
 
 /* ---- Rev safety supervisor storage ---- */
-#include "rev_safety.h"
-#include "tof_l1.h"
 
-static uint8_t s_rev_safety_storage[128]; /* sized generously; checked at runtime */
+/* Max-aligned backing storage for the opaque RevSafetyCtx. Size is set by
+ * REV_SAFETY_CTX_STORAGE_BYTES in rev_safety.h and re-checked at compile
+ * time inside rev_safety.c (_Static_assert against the true struct size). */
+static _Alignas(double) uint8_t s_rev_safety_storage[REV_SAFETY_CTX_STORAGE_BYTES];
 static RevSafetyCtx *s_rev_ctx = (RevSafetyCtx *)s_rev_safety_storage;
 static uint32_t s_last_tof_seq   = 0;
 static uint32_t s_last_event_seq = 0;
-
 /*============================================================================*/
 /*  PUBLIC API                                                                */
 /*============================================================================*/
@@ -107,10 +110,6 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   bleCtx.mode              = OPENOTTER_MODE_DRIVE;
   bleCtx.lastCommandTick   = HAL_GetTick();
 
-  /* Validate opaque context size at runtime (compile-time check needs driver). */
-  if (RevSafety_ContextSize() > sizeof(s_rev_safety_storage)) {
-    for (;;) { /* halt — storage too small, should never happen */ }
-  }
   RevSafetyConfig_t rscfg;
   RevSafety_GetDefaultConfig(&rscfg);
   RevSafety_Init(s_rev_ctx, &rscfg);
@@ -131,8 +130,21 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   return 0;
 }
 
+static void publish_safety_event(const RevSafetyEvent_t *ev) {
+  BLE_SafetyEventPayload_t p = {0};
+  p.seq                   = ev->seq;
+  p.timestamp_ms          = ev->trigger_timestamp_ms;
+  p.state                 = (uint8_t)ev->state;
+  p.cause                 = (uint8_t)ev->cause;
+  p.trigger_velocity_mm_s = (int16_t)(ev->trigger_velocity_mps * 1000.0f);
+  p.trigger_depth_mm      = (uint16_t)(ev->trigger_depth_m * 1000.0f);
+  p.critical_distance_mm  = (uint16_t)(ev->critical_distance_m * 1000.0f);
+  p.latched_speed_mm_s    = (uint16_t)(ev->latched_speed_mps * 1000.0f);
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                             0, sizeof(p), (uint8_t *)&p);
+}
+
 void BLE_App_Process(void) {
-  /* Run the scheduler (processes pending BLE events) */
   SCH_Run();
 
   uint32_t now = HAL_GetTick();
@@ -140,31 +152,28 @@ void BLE_App_Process(void) {
       bleCtx.isConnected &&
       (now - bleCtx.lastCommandTick) > BLE_SAFETY_TIMEOUT_MS;
 
-  /* 1. Run the reverse supervisor (Drive mode only). */
-  RevSafetyEvent_t ev;
-  memset(&ev, 0, sizeof(ev));
+  /* 1. Run the reverse supervisor (Drive mode only). In Debug mode the
+   *    supervisor is explicitly disarmed on the mode-edge in the event
+   *    handler, not every tick. */
+  RevSafetyEvent_t ev = {0};
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
     const TofL1_Frame_t *f = TofL1_GetLatestFrame();
     bool new_frame = (f && f->seq != s_last_tof_seq);
-    if (f) s_last_tof_seq = f->seq;
+    s_last_tof_seq = f ? f->seq : s_last_tof_seq;
 
-    RevSafetyInput_t in;
-    memset(&in, 0, sizeof(in));
+    RevSafetyInput_t in = {0};
     in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
     in.throttle_us  = bleCtx.desiredThrottleUs;
     in.frame_is_new = new_frame;
     if (f && f->num_zones >= 5) {
-      /* Center zone in 3x3: index 4 (top-to-bottom, left-to-right). */
+      /* Center zone in 3x3 is index 4 (top-to-bottom, left-to-right). */
       const TofL1_Zone_t *z = &f->zones[4];
-      in.zone_valid  = (z->status == 0);
+      in.zone_valid = (z->status == 0);
       in.raw_depth_m = (float)z->range_mm / 1000.0f;
     }
-    in.driver_dead = false; /* TofL1 driver surface TBD; wire in a follow-up */
+    in.driver_dead = TofL1_IsDriverDead() ? true : false;
     in.now_ms      = now;
     RevSafety_Tick(s_rev_ctx, &in, &ev);
-  } else {
-    /* Debug mode: supervisor is disarmed and transparent. */
-    RevSafety_Disarm(s_rev_ctx);
   }
 
   /* 2. Compute final throttle (arbitration per spec §3.5). */
@@ -187,40 +196,18 @@ void BLE_App_Process(void) {
 
   /* 3. Publish safety notifications. */
   if (ev.transition && ev.seq != s_last_event_seq) {
-    BLE_SafetyEventPayload_t p;
-    memset(&p, 0, sizeof(p));
-    p.seq                   = ev.seq;
-    p.timestamp_ms          = ev.trigger_timestamp_ms;
-    p.state                 = (uint8_t)ev.state;
-    p.cause                 = (uint8_t)ev.cause;
-    p.trigger_velocity_mm_s = (int16_t)(ev.trigger_velocity_mps * 1000.0f);
-    p.trigger_depth_mm      = (uint16_t)(ev.trigger_depth_m * 1000.0f);
-    p.critical_distance_mm  = (uint16_t)(ev.critical_distance_m * 1000.0f);
-    p.latched_speed_mm_s    = (uint16_t)(ev.latched_speed_mps * 1000.0f);
-    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
-                               0, sizeof(p), (uint8_t *)&p);
+    publish_safety_event(&ev);
     s_last_event_seq = ev.seq;
   } else if (ev.notify_refresh) {
-    BLE_SafetyEventPayload_t p;
-    memset(&p, 0, sizeof(p));
-    p.seq                   = ev.seq;
-    p.timestamp_ms          = ev.trigger_timestamp_ms;
-    p.state                 = (uint8_t)ev.state;
-    p.cause                 = (uint8_t)ev.cause;
-    p.trigger_velocity_mm_s = (int16_t)(ev.trigger_velocity_mps * 1000.0f);
-    p.trigger_depth_mm      = (uint16_t)(ev.trigger_depth_m * 1000.0f);
-    p.critical_distance_mm  = (uint16_t)(ev.critical_distance_m * 1000.0f);
-    p.latched_speed_mm_s    = (uint16_t)(ev.latched_speed_mps * 1000.0f);
-    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
-                               0, sizeof(p), (uint8_t *)&p);
+    publish_safety_event(&ev);
   }
 }
 
 uint32_t BLE_App_GetLastCommandTime(void) { return bleCtx.lastCommandTick; }
 
-int BLE_App_IsConnected(void) { return bleCtx.isConnected; }
-
 OpenOtterMode_t BLE_App_GetMode(void) { return bleCtx.mode; }
+
+int BLE_App_IsConnected(void) { return bleCtx.isConnected; }
 
 /*============================================================================*/
 /*  BLE STACK INITIALIZATION                                                  */
@@ -244,23 +231,20 @@ static void BLE_InitGATTService(void) {
 
   /*
    * Add Custom Control Service
-   * Max_Attribute_Records = 1 (service)
-   *   + 2 (cmd char) + 2 (status char) + 1 (CCCD for notify)
-   *   + 2 (safety char) + 1 (CCCD for notify)
-   *   + 2 (mode char)
-   * = 11, round up to 12 for BlueNRG-MS alignment
+   * Max_Attribute_Records = 1 (service) + 2 (cmd char) + 2 (status char)
+   *                       + 1 (CCCD for notify) + 2 (safety char) + 2 (mode char) = 10
    */
   uuid = OPENOTTER_CONTROL_SVC_UUID;
   ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
-                          12, &bleCtx.svcHandle);
+                          10, &bleCtx.svcHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     /* Service creation failed — halt */
     return;
   }
 
   /*
-   * Add Command Characteristic (Write Without Response + Write)
-   * Payload: 6 bytes = [int16_t steering_us, int16_t throttle_us, int16_t velocity_mm_per_s]
+   * Add Command Characteristic (Write Without Response)
+   * Payload: 4 bytes = [int16_t steering_us, int16_t throttle_us]
    */
   uuid = OPENOTTER_COMMAND_CHAR_UUID;
   ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
@@ -268,12 +252,13 @@ static void BLE_InitGATTService(void) {
                           sizeof(BLE_CommandPayload_t), /* 6 bytes */
                           CHAR_PROP_WRITE_WITHOUT_RESP | CHAR_PROP_WRITE,
                           ATTR_PERMISSION_NONE, GATT_NOTIFY_ATTRIBUTE_WRITE,
-                          10, /* encryKeySize */
-                          0,  /* isVariable: 0 (fixed length) */
+                          10,
+                          0,
                           &bleCtx.cmdCharHandle);
 
   /*
-   * Add Status Characteristic (Notify) — reserved for future heartbeat/telemetry.
+   * Add Status Characteristic (Notify)
+   * We can send status/heartbeat back to iOS
    */
   uuid = OPENOTTER_STATUS_CHAR_UUID;
   ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
@@ -283,8 +268,8 @@ static void BLE_InitGATTService(void) {
                           0, &bleCtx.statusCharHandle);
 
   /*
-   * Add Safety Characteristic (Notify + Read) — 20 B payload.
-   * See docs/.../2026-04-23-stm32-reverse-safety-and-protocol-design.md §3.6.
+   * Add Safety Characteristic (Notify + Read) — see
+   * docs/.../2026-04-23-stm32-reverse-safety-and-protocol-design.md §3.6.
    */
   uuid = OPENOTTER_SAFETY_CHAR_UUID;
   ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
@@ -297,34 +282,32 @@ static void BLE_InitGATTService(void) {
                           0,
                           &bleCtx.safetyCharHandle);
   (void)ret;
+
   /* Seed a SAFE payload so a post-connect read returns sane bytes. */
-  {
-    BLE_SafetyEventPayload_t init_safe;
-    memset(&init_safe, 0, sizeof(init_safe));
-    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
-                               0, sizeof(init_safe), (uint8_t *)&init_safe);
-  }
+  BLE_SafetyEventPayload_t init = {0};
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                             0, sizeof(init), (uint8_t *)&init);
 
   /*
    * Add Mode Characteristic (Write / Write-w/o-Resp / Read). 1-byte enum.
    */
   uuid = OPENOTTER_MODE_CHAR_UUID;
-  {
-    uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
-    ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
-                            (const uint8_t *)&uuid,
-                            1,
-                            CHAR_PROP_WRITE | CHAR_PROP_WRITE_WITHOUT_RESP |
-                                CHAR_PROP_READ,
-                            ATTR_PERMISSION_NONE,
-                            GATT_NOTIFY_ATTRIBUTE_WRITE,
-                            10,
-                            0,
-                            &bleCtx.modeCharHandle);
-    (void)ret;
-    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
-                               &drive);
-  }
+  uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
+  ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
+                          (const uint8_t *)&uuid,
+                          1,
+                          CHAR_PROP_WRITE | CHAR_PROP_WRITE_WITHOUT_RESP |
+                              CHAR_PROP_READ,
+                          ATTR_PERMISSION_NONE,
+                          GATT_NOTIFY_ATTRIBUTE_WRITE,
+                          10,
+                          0,
+                          &bleCtx.modeCharHandle);
+  (void)ret;
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
+                             &drive);
+
+  (void)ret; /* Suppress unused warning in release */
 }
 
 static void BLE_StartAdvertising(void) {
@@ -385,8 +368,6 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
         if (attr_mod->data_length >= (uint16_t)sizeof(BLE_CommandPayload_t)) {
           BLE_CommandPayload_t cmd;
           memcpy(&cmd, attr_mod->att_data, sizeof(cmd));
-
-          /* Stash desired values; PWM is applied in BLE_App_Process. */
           bleCtx.desiredSteeringUs      = cmd.steering_us;
           bleCtx.desiredThrottleUs      = cmd.throttle_us;
           bleCtx.reportedVelocityMmPerS = cmd.velocity_mm_per_s;
@@ -404,14 +385,15 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
             if (prev != bleCtx.mode && bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-              /* Debug→Drive: re-apply safety config and clear latch. */
-              extern void BLE_Tof_EnforceSafetyConfig(void);
+              /* Debug→Drive: re-apply safety config and clear any latch
+               * that persisted from the prior Drive session. */
               BLE_Tof_EnforceSafetyConfig();
               RevSafety_Disarm(s_rev_ctx);
+            } else if (prev != bleCtx.mode &&
+                       bleCtx.mode == OPENOTTER_MODE_DEBUG) {
+              /* Drive→Debug: disarm once on the edge, not every tick. */
+              RevSafety_Disarm(s_rev_ctx);
             }
-            uint8_t mode_byte = v;
-            aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle,
-                                       0, 1, &mode_byte);
           }
         }
       }
@@ -444,14 +426,11 @@ void SVCCTL_App_Notification(void *pckt) {
   case EVT_DISCONN_COMPLETE: {
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
-    /* Force Drive mode on disconnect — debug mode is for tethered bringup only. */
-    bleCtx.mode = OPENOTTER_MODE_DRIVE;
-    {
-      uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
-      aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
-                                 &drive);
-    }
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
+    bleCtx.mode = OPENOTTER_MODE_DRIVE;
+    uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
+    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
+                               &drive);
     /* Defer re-advertising to the scheduler — calling
      * aci_gap_set_discoverable from inside an HCI event
      * callback can fail because the command channel is busy. */

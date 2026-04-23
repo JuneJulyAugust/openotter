@@ -367,3 +367,5 @@ const TofL1_Frame_t *TofL1_GetLatestFrame(void)
 int TofL1_HasNewFrame(void) { return g_has_new_frame; }
 
 void TofL1_ClearNewFrame(void) { g_has_new_frame = 0; }
+
+int TofL1_IsDriverDead(void) { return (int)g_driver_dead; }

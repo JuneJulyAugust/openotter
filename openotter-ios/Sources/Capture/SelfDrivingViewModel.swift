@@ -132,11 +132,11 @@ final class SelfDrivingViewModel: ObservableObject {
         guard isStarted else { return }
 
         let motorSpeed: Double? = {
-            guard let tel = escManager.telemetry, tel.speedMps > 0.01 else { return nil }
+            guard let tel = escManager.telemetry, abs(tel.speedMps) > 0.01 else { return nil }
             return tel.speedMps
         }()
         let arkitSpeed: Double? = {
-            if let s = speed, s > 0.01 { return s }
+            if let s = speed, abs(s) > 0.01 { return s }
             return nil
         }()
 
@@ -157,11 +157,13 @@ final class SelfDrivingViewModel: ObservableObject {
             )
 
             let command = self.orchestrator.tick(context: context)
-            let signedSpeedMps: Double? = {
-                // Use signed velocity: throttle < 0 → reversing.
-                let raw = motorSpeed ?? arkitSpeed ?? 0.0
-                return raw * (context.currentThrottle < 0 ? -1.0 : 1.0)
-            }()
+            // Forward the ESC/ARKit-reported speed as-is. If the ESC emits a
+            // signed value, the firmware supervisor's velocity-sign gate will
+            // arm on coast-backward; if unsigned, it falls back to the
+            // commanded-throttle gate (spec §3.2 union). Do not overlay a
+            // sign from `currentThrottle` — that double-negates when ESC
+            // actually reports signed values.
+            let signedSpeedMps: Double? = motorSpeed ?? arkitSpeed
             self.sendActuatorCommands(steering: command.steering, throttle: command.throttle,
                                       velocity: signedSpeedMps)
             self.steering = command.steering
@@ -180,20 +182,22 @@ final class SelfDrivingViewModel: ObservableObject {
         telegramGateway.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
     }
 
-    private func sendActuatorCommands(steering: Float, throttle: Float,
-                                      velocity: Double? = nil) {
+    private func sendActuatorCommands(steering: Float, throttle: Float, velocity: Double? = nil) {
         let sPWM = toPulseWidth(steering)
         let tPWM = toPulseWidth(throttle)
-        let velocityMps = Float(velocity ?? 0.0)
-        stm32Manager.sendCommand(steeringMicros: sPWM, throttleMicros: tPWM,
-                                 velocityMps: velocityMps)
+        let speed = velocity ?? self.escManager.telemetry?.speedMps ?? self.poseModel.arkitSpeedMps
+        let v_mm_s = Int16(max(-32000.0, min(32000.0, speed * 1000.0)))
+        stm32Manager.sendCommand(steeringMicros: sPWM,
+                                 throttleMicros: tPWM,
+                                 velocityMmPerSec: v_mm_s)
     }
 
     private func resetActuators() {
         steering = 0
         throttle = 0
-        stm32Manager.sendCommand(steeringMicros: 1500, throttleMicros: 1500,
-                                 velocityMps: 0.0)
+        stm32Manager.sendCommand(steeringMicros: 1500,
+                                 throttleMicros: 1500,
+                                 velocityMmPerSec: 0)
     }
 
     /// Starts a repeating timer that re-sends the current steering/throttle
