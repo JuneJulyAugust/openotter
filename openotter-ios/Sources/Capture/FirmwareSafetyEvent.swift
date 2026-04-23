@@ -37,17 +37,9 @@ public struct FirmwareSafetyEvent: Equatable {
     public let timestampMs: UInt32
     public let state: FirmwareSafetyState
     public let cause: FirmwareSafetyCause
-    /// Velocity at BRAKE entry (m/s). Meaningful only when `state == .brake`.
     public let triggerVelocityMps: Float
-    /// Smoothed center-zone depth at BRAKE entry (m). Meaningful only when
-    /// `state == .brake`.
     public let triggerDepthM: Float
-    /// `criticalDistance(|v_latched|)` at BRAKE entry (m). Meaningful only
-    /// when `state == .brake`; in SAFE payloads the firmware reports the
-    /// bare rear margin (~0.17 m) because `latched_speed` is zero.
     public let criticalDistanceM: Float
-    /// `|v|` latched at BRAKE entry (m/s). Meaningful only when
-    /// `state == .brake`.
     public let latchedSpeedMps: Float
 
     /// Parse 20 bytes from the firmware's 0xFE43 characteristic.
