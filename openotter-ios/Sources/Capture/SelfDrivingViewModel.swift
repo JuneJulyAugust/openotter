@@ -177,13 +177,19 @@ final class SelfDrivingViewModel: ObservableObject {
     private func sendActuatorCommands(steering: Float, throttle: Float) {
         let sPWM = toPulseWidth(steering)
         let tPWM = toPulseWidth(throttle)
-        stm32Manager.sendCommand(steeringMicros: sPWM, throttleMicros: tPWM)
+        let speed = self.escManager.telemetry?.speedMps ?? self.poseModel.arkitSpeedMps
+        let v_mm_s = Int16(max(-32000.0, min(32000.0, speed * 1000.0)))
+        stm32Manager.sendCommand(steeringMicros: sPWM,
+                                 throttleMicros: tPWM,
+                                 velocityMmPerSec: v_mm_s)
     }
 
     private func resetActuators() {
         steering = 0
         throttle = 0
-        stm32Manager.sendCommand(steeringMicros: 1500, throttleMicros: 1500)
+        stm32Manager.sendCommand(steeringMicros: 1500,
+                                 throttleMicros: 1500,
+                                 velocityMmPerSec: 0)
     }
 
     /// Starts a repeating timer that re-sends the current steering/throttle

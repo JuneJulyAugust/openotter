@@ -177,7 +177,9 @@ class STM32ControlViewModel: ObservableObject {
             guard let self, self.status == .connected else { return }
             let steeringUs = Self.toPulseWidth(self.steering)
             let throttleUs = Self.toPulseWidth(self.throttle)
-            self.bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs)
+            self.bleManager.sendCommand(steeringMicros: steeringUs,
+                                        throttleMicros: throttleUs,
+                                        velocityMmPerSec: 0)
         }
     }
 

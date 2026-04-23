@@ -102,13 +102,6 @@ public class STM32BleManager: NSObject, ObservableObject {
         DispatchQueue.main.async { self.commandsSent += 1 }
     }
 
-    /// Transitional — delete once all callers pass velocity explicitly.
-    public func sendCommand(steeringMicros: Int16, throttleMicros: Int16) {
-        sendCommand(steeringMicros: steeringMicros,
-                    throttleMicros: throttleMicros,
-                    velocityMmPerSec: 0)
-    }
-
     // MARK: - Private
 
     private func cleanup() {
@@ -276,6 +269,28 @@ extension STM32BleManager: CBPeripheralDelegate {
                 STM32TofService.shared.handleStatusNotification(data)
             }
         case statusCharUUID:
+            // FE42 control-side status — no consumer yet.
+            break
+        case safetyCharUUID:
+            guard let data = characteristic.value else { return }
+            do {
+                let ev = try FirmwareSafetyEvent(data: data)
+                DispatchQueue.main.async { self.lastSafetyEvent = ev }
+            } catch {
+                // Ignore malformed payloads; firmware should never send them.
+            }
+        default:
+            break
+        }
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral,
+                           didReadRSSI RSSI: NSNumber,
+                           error: Error?) {
+        rssi = RSSI.intValue
+    }
+}
+
             // FE42 control-side status — no consumer yet.
             break
         default:
