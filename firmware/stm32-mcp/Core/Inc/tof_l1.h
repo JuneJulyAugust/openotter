@@ -108,11 +108,6 @@ const TofL1_Frame_t *TofL1_GetLatestFrame(void);
 int  TofL1_HasNewFrame(void);
 void TofL1_ClearNewFrame(void);
 
-/* 1 if the sensor is wedged and re-init failed (sticky TOF_L1_ERR_DRIVER_DEAD).
- * Cleared only by a reboot. The reverse safety supervisor treats this as a
- * permanent BRAKE condition. */
-int  TofL1_IsDriverDead(void);
-
 /* Zone rectangle in VL53L1 SPAD coordinates: X,Y in [0,15]; constraint
  * tly >= bry (sensor Y grows downward). Exposed as a plain POD so the ROI
  * builder can be unit-tested without pulling the bare driver headers. */
