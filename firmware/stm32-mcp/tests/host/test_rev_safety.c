@@ -182,6 +182,53 @@ static void test_forward_command_releases_latch(void) {
   expect_state("forward cmd SAFE", ev.state, REV_SAFETY_STATE_SAFE);
 }
 
+static void test_frame_gap_watchdog(void) {
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  /* Prime a valid frame at t=10, reversing. */
+  RevSafetyInput_t in = make_input(-0.5f, 1400, 2.0f, true, 10);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("primed SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+
+  /* Now simulate frame-gap: caller marks frame_is_new = false and keeps
+   * tickling the supervisor with the same inputs (raw_depth/zone_valid
+   * are effectively stale — supervisor must not consume them). */
+  in.frame_is_new = false;
+  in.now_ms       = 410; /* 400 ms gap, still under threshold */
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("400ms gap SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+
+  in.now_ms = 610;  /* 600 ms gap > 500 ms threshold */
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("600ms gap BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("frame gap cause", ev.cause, REV_SAFETY_CAUSE_FRAME_GAP);
+
+  /* New valid frame clears smoothed invalid counter but not instantly the
+   * state — release still needs debounce. Confirm recovery path: clear
+   * depth for 300 ms. */
+  in = make_input(-0.5f, 1400, 2.0f, true, 710);
+  RevSafety_Tick(ctx, &in, &ev);
+  in.now_ms = 1110;
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("post-gap SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+}
+
+static void test_driver_dead_brakes(void) {
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  RevSafetyInput_t in = make_input(-0.3f, 1400, 2.0f, true, 0);
+  in.driver_dead = true;
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("driver_dead BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("driver_dead cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
+}
+
 int main(void) {
   test_critical_distance_reverse_table();
   test_critical_distance_zero_speed();
@@ -190,6 +237,8 @@ int main(void) {
   test_obstacle_triggers_brake();
   test_release_requires_continuous_clearance();
   test_forward_command_releases_latch();
+  test_frame_gap_watchdog();
+  test_driver_dead_brakes();
   if (g_fails == 0) {
     printf("rev_safety tests: OK\n");
     return 0;

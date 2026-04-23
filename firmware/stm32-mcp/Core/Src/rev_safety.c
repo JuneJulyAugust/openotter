@@ -65,6 +65,7 @@ void RevSafety_Init(RevSafetyCtx *ctx, const RevSafetyConfig_t *config) {
   else        RevSafety_GetDefaultConfig(&ctx->config);
   ctx->state = REV_SAFETY_STATE_SAFE;
   ctx->cause = REV_SAFETY_CAUSE_NONE;
+  ctx->last_valid_frame_ms = 0; /* will be set on first tick call */
 }
 
 /* Exact integral: stopping(v) = v/k - (a0/k^2) * ln(1 + k*v/a0). Falls back
@@ -143,10 +144,11 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
     if (out) memset(out, 0, sizeof(*out));
     return;
   }
+  if (ctx->last_valid_frame_ms == 0) ctx->last_valid_frame_ms = in->now_ms;
   RevSafetyState_t prev = ctx->state;
 
   /* 1. Update smoothed depth and invalid counter */
-  if (in->zone_valid) {
+  if (in->frame_is_new && in->zone_valid) {
     if (!ctx->has_smoothed) {
       ctx->smoothed_depth_m = in->raw_depth_m;
       ctx->has_smoothed     = true;
@@ -157,30 +159,34 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
     }
     ctx->invalid_frame_count = 0;
     ctx->last_valid_frame_ms = in->now_ms;
-  } else if (ctx->invalid_frame_count < 0xFF) {
-    ctx->invalid_frame_count++;
+  } else if (in->frame_is_new && !in->zone_valid) {
+    if (ctx->invalid_frame_count < 0xFF) ctx->invalid_frame_count++;
+    ctx->last_valid_frame_ms = in->now_ms; /* frame arrived, just invalid */
   }
 
   int16_t neutral     = (int16_t)ctx->config.pwm_neutral_us;
   int16_t t_eps       = ctx->config.throttle_eps_us;
   bool    armed       = supervisor_armed(ctx, in);
   bool    forward_cmd = in->throttle_us > (neutral + t_eps);
+  bool    frame_stale = (in->now_ms - ctx->last_valid_frame_ms) >
+                     ctx->config.frame_gap_ms;
 
   /* 2. SAFE -> BRAKE transitions (invalid, driver_dead, obstacle) */
-  if (ctx->state == REV_SAFETY_STATE_SAFE) {
-    if (armed && in->driver_dead) {
+  if (ctx->state == REV_SAFETY_STATE_SAFE && armed) {
+    if (in->driver_dead) {
       enter_brake(ctx, in, REV_SAFETY_CAUSE_DRIVER_DEAD);
-    } else if (armed &&
-               ctx->invalid_frame_count >= ctx->config.tof_blind_frames) {
+    } else if (frame_stale) {
+      enter_brake(ctx, in, REV_SAFETY_CAUSE_FRAME_GAP);
+    } else if (ctx->invalid_frame_count >= ctx->config.tof_blind_frames) {
       enter_brake(ctx, in, REV_SAFETY_CAUSE_TOF_BLIND);
-    } else if (armed && ctx->has_smoothed) {
+    } else if (ctx->has_smoothed) {
       float critical = RevSafety_CriticalDistance(&ctx->config,
                                                   in->velocity_mps);
       if (ctx->smoothed_depth_m <= critical) {
         enter_brake(ctx, in, REV_SAFETY_CAUSE_OBSTACLE);
       }
     }
-  } else {
+  } else if (ctx->state != REV_SAFETY_STATE_SAFE) {
     /* BRAKE: evaluate release paths */
 
     /* (b) Operator forward command drops the latch immediately. */
