@@ -127,7 +127,7 @@ Semantically: S3 is a per-direction mask (affects reverse only); S2 is a full ov
 
 A new characteristic **0xFE43 "safety"** is added to the existing control service 0xFE40, alongside the command (0xFE41) and status (0xFE42) characteristics. 0xFE42 remains reserved for generic firmware heartbeat/telemetry (battery, uptime, build id) to be defined later; safety gets its own lifetime semantics.
 
-Characteristic properties: `NOTIFY | READ`, fixed 18 B payload.
+Characteristic properties: `NOTIFY | READ`, fixed 20 B payload.
 
 ```c
 typedef struct __attribute__((packed)) {
@@ -143,7 +143,7 @@ typedef struct __attribute__((packed)) {
   uint16_t latched_speed_mm_s;    // |velocity| latched at trigger; 0 while SAFE
 } BLE_SafetyEventPayload_t;
 
-_Static_assert(sizeof(BLE_SafetyEventPayload_t) == 18, "...");
+_Static_assert(sizeof(BLE_SafetyEventPayload_t) == 20, "...");
 ```
 
 Cause codes:
@@ -245,7 +245,7 @@ Service **0xFE40** (existing "OpenOtter Control"):
 |--------|-------------------------|-------|------------|----------------------------------------------------|
 | 0xFE41 | write, write-w/o-resp   | 6 B   | iOS → MCU  | steering_us, throttle_us, velocity_mm_per_s        |
 | 0xFE42 | notify, read            | TBD   | MCU → iOS  | reserved (future generic heartbeat/telemetry)      |
-| 0xFE43 | notify, read            | 18 B  | MCU → iOS  | safety state + trigger snapshot (see §3.6)         |
+| 0xFE43 | notify, read            | 20 B  | MCU → iOS  | safety state + trigger snapshot (see §3.6)         |
 | 0xFE44 | write, write-w/o-resp, read | 1 B | iOS → MCU | operating mode: 0 = Drive, 1 = Debug              |
 
 Service **0xFE60** (existing "OpenOtter ToF"):
