@@ -230,6 +230,61 @@ static void test_driver_dead_brakes(void) {
   expect_cause("driver_dead cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
 }
 
+static void test_safe_transition_zeroes_snapshot_fields(void) {
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  RevSafetyInput_t in = make_input(-0.5f, 1400, 0.20f, true, 0);
+  for (uint32_t t = 0; t <= 200; t += 50) {
+    in.now_ms = t;
+    RevSafety_Tick(ctx, &in, &ev);
+  }
+  expect_state("setup obstacle BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+
+  in = make_input(0.0f, 1600, 2.0f, true, 300);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("forward release SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+  expect_cause("forward release cause", ev.cause, REV_SAFETY_CAUSE_NONE);
+  expect_near("safe latched speed zero", ev.latched_speed_mps, 0.0f, 1e-6f);
+  expect_near("safe trigger velocity zero", ev.trigger_velocity_mps, 0.0f, 1e-6f);
+  expect_near("safe trigger depth zero", ev.trigger_depth_m, 0.0f, 1e-6f);
+  expect_near("safe critical distance zero", ev.critical_distance_m, 0.0f, 1e-6f);
+  if (ev.trigger_timestamp_ms != 0u) {
+    fprintf(stderr, "FAIL safe trigger timestamp zero: got %lu want 0\n",
+            (unsigned long)ev.trigger_timestamp_ms);
+    g_fails++;
+  }
+}
+
+static void test_driver_dead_latches_until_reboot(void) {
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  RevSafetyInput_t in = make_input(-0.3f, 1400, 2.0f, true, 0);
+  in.driver_dead = true;
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("driver_dead setup BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("driver_dead setup cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
+
+  /* Forward command must not clear a driver-dead latch. */
+  in = make_input(0.0f, 1600, 2.0f, true, 100);
+  in.driver_dead = true;
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("driver_dead forward still BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("driver_dead forward cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
+
+  /* Clearance debounce must also not release the driver-dead latch. */
+  in = make_input(0.0f, 1500, 2.0f, true, 500);
+  in.driver_dead = true;
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("driver_dead clear still BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("driver_dead clear cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
+}
+
 int main(void) {
   test_critical_distance_reverse_table();
   test_critical_distance_zero_speed();
@@ -240,6 +295,8 @@ int main(void) {
   test_forward_command_releases_latch();
   test_frame_gap_watchdog();
   test_driver_dead_brakes();
+  test_safe_transition_zeroes_snapshot_fields();
+  test_driver_dead_latches_until_reboot();
   if (g_fails == 0) {
     printf("rev_safety tests: OK\n");
     return 0;

@@ -112,8 +112,10 @@ static void emit_event(struct RevSafetyCtx *ctx,
   out->state               = ctx->state;
   out->cause               = ctx->cause;
   out->smoothed_depth_m    = ctx->smoothed_depth_m;
-  out->critical_distance_m =
-      RevSafety_CriticalDistance(&ctx->config, ctx->latched_speed_mps);
+  if (ctx->state == REV_SAFETY_STATE_BRAKE) {
+    out->critical_distance_m =
+        RevSafety_CriticalDistance(&ctx->config, ctx->latched_speed_mps);
+  }
   out->latched_speed_mps    = ctx->latched_speed_mps;
   out->trigger_velocity_mps = ctx->trigger_velocity_mps;
   out->trigger_depth_m      = ctx->trigger_depth_m;
@@ -129,6 +131,13 @@ static void emit_event(struct RevSafetyCtx *ctx,
     out->notify_refresh = true;
     ctx->last_notify_refresh_ms = now_ms;
   }
+}
+
+static void clear_snapshot(struct RevSafetyCtx *ctx) {
+  ctx->latched_speed_mps = 0.0f;
+  ctx->trigger_velocity_mps = 0.0f;
+  ctx->trigger_depth_m = 0.0f;
+  ctx->trigger_timestamp_ms = 0u;
 }
 
 static void enter_brake(struct RevSafetyCtx *ctx,
@@ -194,12 +203,18 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
     }
   } else if (ctx->state != REV_SAFETY_STATE_SAFE) {
     /* BRAKE: evaluate release paths */
+    if (in->driver_dead) {
+      ctx->cause = REV_SAFETY_CAUSE_DRIVER_DEAD;
+      ctx->release_timer_running = false;
+    }
 
     /* (b) Operator forward command drops the latch immediately. */
-    if (forward_cmd) {
+    if (ctx->cause == REV_SAFETY_CAUSE_DRIVER_DEAD) {
+      /* Driver-dead is latched until reboot. */
+    } else if (forward_cmd) {
       ctx->state = REV_SAFETY_STATE_SAFE;
       ctx->cause = REV_SAFETY_CAUSE_NONE;
-      ctx->latched_speed_mps    = 0.0f;
+      clear_snapshot(ctx);
       ctx->release_timer_running = false;
     } else {
       /* (a) Genuine clearance with debounce against latched-speed critical. */
@@ -218,7 +233,7 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
           if (held >= need_ms) {
             ctx->state = REV_SAFETY_STATE_SAFE;
             ctx->cause = REV_SAFETY_CAUSE_NONE;
-            ctx->latched_speed_mps    = 0.0f;
+            clear_snapshot(ctx);
             ctx->release_timer_running = false;
           }
         }
@@ -239,6 +254,6 @@ void RevSafety_Disarm(RevSafetyCtx *ctx) {
   if (!ctx) return;
   ctx->state = REV_SAFETY_STATE_SAFE;
   ctx->cause = REV_SAFETY_CAUSE_NONE;
-  ctx->latched_speed_mps = 0.0f;
+  clear_snapshot(ctx);
   ctx->release_timer_running = false;
 }

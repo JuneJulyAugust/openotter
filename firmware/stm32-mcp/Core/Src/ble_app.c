@@ -187,7 +187,6 @@ void BLE_App_Process(void) {
   }
 
   if (watchdog_trip) {
-    steering_us = (int16_t)PWM_NEUTRAL_US;
     throttle_us = (int16_t)PWM_NEUTRAL_US;
     bleCtx.safetyTriggered = 1;
   }
@@ -428,6 +427,8 @@ void SVCCTL_App_Notification(void *pckt) {
     bleCtx.connectionHandle = 0;
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
+    BLE_Tof_EnforceSafetyConfig();
+    RevSafety_Disarm(s_rev_ctx);
     uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
     aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
                                &drive);

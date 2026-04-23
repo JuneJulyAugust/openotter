@@ -149,6 +149,9 @@ int BLE_Tof_Init(void)
   s_tof.last_status_tick      = HAL_GetTick();
   s_tof.last_rate_window_tick = HAL_GetTick();
   publish_status();
+  if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
+    BLE_Tof_EnforceSafetyConfig();
+  }
   log_str("BLE_Tof ready\r\n");
   return 0;
 }
@@ -214,6 +217,13 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
   if (len < sizeof(BLE_TofConfigPayload_t)) {
     s_tof.last_error = TOF_L1_ERR_BAD_LAYOUT;
     s_tof.state      = 2;
+    publish_status();
+    return;
+  }
+
+  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) {
+    s_tof.last_error = TOF_L1_ERR_LOCKED_IN_DRIVE;
+    s_tof.state      = 1;
     publish_status();
     return;
   }
