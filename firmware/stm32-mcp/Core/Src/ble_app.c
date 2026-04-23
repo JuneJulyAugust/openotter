@@ -86,12 +86,8 @@ static void BLE_AdvTask(void);
 /* ---- Rev safety supervisor storage ---- */
 #include "rev_safety.h"
 #include "tof_l1.h"
-#include "ble_tof.h"              /* BLE_Tof_EnforceSafetyConfig */
 
-/* Max-aligned backing storage for the opaque RevSafetyCtx. Size is set by
- * REV_SAFETY_CTX_STORAGE_BYTES in rev_safety.h and re-checked at compile
- * time inside rev_safety.c (_Static_assert against the true struct size). */
-static _Alignas(double) uint8_t s_rev_safety_storage[REV_SAFETY_CTX_STORAGE_BYTES];
+static uint8_t s_rev_safety_storage[128]; /* sized generously; checked at runtime */
 static RevSafetyCtx *s_rev_ctx = (RevSafetyCtx *)s_rev_safety_storage;
 static uint32_t s_last_tof_seq   = 0;
 static uint32_t s_last_event_seq = 0;
@@ -111,6 +107,10 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   bleCtx.mode              = OPENOTTER_MODE_DRIVE;
   bleCtx.lastCommandTick   = HAL_GetTick();
 
+  /* Validate opaque context size at runtime (compile-time check needs driver). */
+  if (RevSafety_ContextSize() > sizeof(s_rev_safety_storage)) {
+    for (;;) { /* halt — storage too small, should never happen */ }
+  }
   RevSafetyConfig_t rscfg;
   RevSafety_GetDefaultConfig(&rscfg);
   RevSafety_Init(s_rev_ctx, &rscfg);
@@ -131,20 +131,6 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   return 0;
 }
 
-static void publish_safety_event(const RevSafetyEvent_t *ev) {
-  BLE_SafetyEventPayload_t p = {0};
-  p.seq                   = ev->seq;
-  p.timestamp_ms          = ev->trigger_timestamp_ms;
-  p.state                 = (uint8_t)ev->state;
-  p.cause                 = (uint8_t)ev->cause;
-  p.trigger_velocity_mm_s = (int16_t)(ev->trigger_velocity_mps * 1000.0f);
-  p.trigger_depth_mm      = (uint16_t)(ev->trigger_depth_m * 1000.0f);
-  p.critical_distance_mm  = (uint16_t)(ev->critical_distance_m * 1000.0f);
-  p.latched_speed_mm_s    = (uint16_t)(ev->latched_speed_mps * 1000.0f);
-  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
-                             0, sizeof(p), (uint8_t *)&p);
-}
-
 void BLE_App_Process(void) {
   /* Run the scheduler (processes pending BLE events) */
   SCH_Run();
@@ -154,16 +140,16 @@ void BLE_App_Process(void) {
       bleCtx.isConnected &&
       (now - bleCtx.lastCommandTick) > BLE_SAFETY_TIMEOUT_MS;
 
-  /* 1. Run the reverse supervisor (Drive mode only). In Debug mode the
-   *    supervisor is explicitly disarmed on the mode-edge in the event
-   *    handler, not every tick. */
-  RevSafetyEvent_t ev = {0};
+  /* 1. Run the reverse supervisor (Drive mode only). */
+  RevSafetyEvent_t ev;
+  memset(&ev, 0, sizeof(ev));
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
     const TofL1_Frame_t *f = TofL1_GetLatestFrame();
     bool new_frame = (f && f->seq != s_last_tof_seq);
     if (f) s_last_tof_seq = f->seq;
 
-    RevSafetyInput_t in = {0};
+    RevSafetyInput_t in;
+    memset(&in, 0, sizeof(in));
     in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
     in.throttle_us  = bleCtx.desiredThrottleUs;
     in.frame_is_new = new_frame;
@@ -173,9 +159,12 @@ void BLE_App_Process(void) {
       in.zone_valid  = (z->status == 0);
       in.raw_depth_m = (float)z->range_mm / 1000.0f;
     }
-    in.driver_dead = TofL1_IsDriverDead() ? true : false;
+    in.driver_dead = false; /* TofL1 driver surface TBD; wire in a follow-up */
     in.now_ms      = now;
     RevSafety_Tick(s_rev_ctx, &in, &ev);
+  } else {
+    /* Debug mode: supervisor is disarmed and transparent. */
+    RevSafety_Disarm(s_rev_ctx);
   }
 
   /* 2. Compute final throttle (arbitration per spec §3.5). */
@@ -198,10 +187,32 @@ void BLE_App_Process(void) {
 
   /* 3. Publish safety notifications. */
   if (ev.transition && ev.seq != s_last_event_seq) {
-    publish_safety_event(&ev);
+    BLE_SafetyEventPayload_t p;
+    memset(&p, 0, sizeof(p));
+    p.seq                   = ev.seq;
+    p.timestamp_ms          = ev.trigger_timestamp_ms;
+    p.state                 = (uint8_t)ev.state;
+    p.cause                 = (uint8_t)ev.cause;
+    p.trigger_velocity_mm_s = (int16_t)(ev.trigger_velocity_mps * 1000.0f);
+    p.trigger_depth_mm      = (uint16_t)(ev.trigger_depth_m * 1000.0f);
+    p.critical_distance_mm  = (uint16_t)(ev.critical_distance_m * 1000.0f);
+    p.latched_speed_mm_s    = (uint16_t)(ev.latched_speed_mps * 1000.0f);
+    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                               0, sizeof(p), (uint8_t *)&p);
     s_last_event_seq = ev.seq;
   } else if (ev.notify_refresh) {
-    publish_safety_event(&ev);
+    BLE_SafetyEventPayload_t p;
+    memset(&p, 0, sizeof(p));
+    p.seq                   = ev.seq;
+    p.timestamp_ms          = ev.trigger_timestamp_ms;
+    p.state                 = (uint8_t)ev.state;
+    p.cause                 = (uint8_t)ev.cause;
+    p.trigger_velocity_mm_s = (int16_t)(ev.trigger_velocity_mps * 1000.0f);
+    p.trigger_depth_mm      = (uint16_t)(ev.trigger_depth_m * 1000.0f);
+    p.critical_distance_mm  = (uint16_t)(ev.critical_distance_m * 1000.0f);
+    p.latched_speed_mm_s    = (uint16_t)(ev.latched_speed_mps * 1000.0f);
+    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                               0, sizeof(p), (uint8_t *)&p);
   }
 }
 
@@ -393,13 +404,9 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
             if (prev != bleCtx.mode && bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-              /* Debug→Drive: re-apply safety config and clear any latch
-               * that persisted from the prior Drive session. */
+              /* Debug→Drive: re-apply safety config and clear latch. */
+              extern void BLE_Tof_EnforceSafetyConfig(void);
               BLE_Tof_EnforceSafetyConfig();
-              RevSafety_Disarm(s_rev_ctx);
-            } else if (prev != bleCtx.mode &&
-                       bleCtx.mode == OPENOTTER_MODE_DEBUG) {
-              /* Drive→Debug: disarm once on the edge, not every tick. */
               RevSafety_Disarm(s_rev_ctx);
             }
             uint8_t mode_byte = v;

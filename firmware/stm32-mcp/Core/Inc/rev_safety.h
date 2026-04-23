@@ -83,15 +83,8 @@ void RevSafety_Disarm(RevSafetyCtx *ctx);
 float RevSafety_CriticalDistance(const RevSafetyConfig_t *config, float speed_mps);
 
 /* Opaque storage size so callers can reserve memory without seeing the
- * internals. Implementation lives in rev_safety.c. Prefer the compile-time
- * constant below for static allocation. */
+ * internals. Implementation lives in rev_safety.c. */
 uint32_t RevSafety_ContextSize(void);
-
-/* Upper bound on sizeof(struct RevSafetyCtx). Use this for static storage
- * (`_Alignas(double) uint8_t buf[REV_SAFETY_CTX_STORAGE_BYTES]`); rev_safety.c
- * contains a _Static_assert that the true struct fits. Bump it there if the
- * assert ever fires. */
-#define REV_SAFETY_CTX_STORAGE_BYTES 128
 
 #ifdef __cplusplus
 }
