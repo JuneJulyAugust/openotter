@@ -28,6 +28,9 @@ class STM32ControlViewModel: ObservableObject {
     /// Defaults match firmware Init: 1×1 / LONG / 33 ms.
     @Published var tofConfig = TofConfig(layout: 1, distMode: 3, budgetUs: 33_000)
 
+    /// Most recent firmware safety event from 0xFE43.
+    @Published var safetyEvent: FirmwareSafetyEvent?
+
     // MARK: - Private
 
     private let bleManager = STM32BleManager.shared
@@ -155,15 +158,23 @@ class STM32ControlViewModel: ObservableObject {
         }
     }
 
-    /// Transmits current steering + throttle once, then restarts the keepalive
-    /// so the firmware's safety timeout never fires.
+    /// Transmits current steering + throttle (with signed velocity) once,
+    /// then restarts the keepalive so the firmware's safety timeout never fires.
     private func sendNow() {
         debounceTimer?.invalidate()
         debounceTimer = nil
-        let steeringUs = Self.toPulseWidth(steering)
-        let throttleUs = Self.toPulseWidth(throttle)
-        bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs)
+        let steeringUs  = Self.toPulseWidth(steering)
+        let throttleUs  = Self.toPulseWidth(throttle)
+        let velocityMps = currentSignedVelocityMps()
+        bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs,
+                               velocityMps: velocityMps)
         restartKeepalive()
+    }
+
+    /// Signed ground speed from ESC telemetry; negative when throttle < 0.
+    private func currentSignedVelocityMps() -> Float {
+        let raw = Float(escTelemetry?.speedMps ?? 0.0)
+        return throttle < 0 ? -raw : raw
     }
 
     /// Schedules a repeating timer that re-sends current values every 500ms.
@@ -175,9 +186,11 @@ class STM32ControlViewModel: ObservableObject {
             repeats: true
         ) { [weak self] _ in
             guard let self, self.status == .connected else { return }
-            let steeringUs = Self.toPulseWidth(self.steering)
-            let throttleUs = Self.toPulseWidth(self.throttle)
-            self.bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs)
+            let steeringUs  = Self.toPulseWidth(self.steering)
+            let throttleUs  = Self.toPulseWidth(self.throttle)
+            let velocityMps = self.currentSignedVelocityMps()
+            self.bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs,
+                                        velocityMps: velocityMps)
         }
     }
 
@@ -227,6 +240,10 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$lastError
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofLastError)
+
+        bleManager.$safetyEvent
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$safetyEvent)
     }
 
     /// Maps a normalized [-1, +1] control value to a PWM pulse width [1000, 2000] µs.

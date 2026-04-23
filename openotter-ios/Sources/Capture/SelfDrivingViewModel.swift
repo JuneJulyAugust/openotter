@@ -157,7 +157,13 @@ final class SelfDrivingViewModel: ObservableObject {
             )
 
             let command = self.orchestrator.tick(context: context)
-            self.sendActuatorCommands(steering: command.steering, throttle: command.throttle)
+            let signedSpeedMps: Double? = {
+                // Use signed velocity: throttle < 0 → reversing.
+                let raw = motorSpeed ?? arkitSpeed ?? 0.0
+                return raw * (context.currentThrottle < 0 ? -1.0 : 1.0)
+            }()
+            self.sendActuatorCommands(steering: command.steering, throttle: command.throttle,
+                                      velocity: signedSpeedMps)
             self.steering = command.steering
             self.throttle = command.throttle
         }
@@ -174,16 +180,20 @@ final class SelfDrivingViewModel: ObservableObject {
         telegramGateway.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
     }
 
-    private func sendActuatorCommands(steering: Float, throttle: Float) {
+    private func sendActuatorCommands(steering: Float, throttle: Float,
+                                      velocity: Double? = nil) {
         let sPWM = toPulseWidth(steering)
         let tPWM = toPulseWidth(throttle)
-        stm32Manager.sendCommand(steeringMicros: sPWM, throttleMicros: tPWM)
+        let velocityMps = Float(velocity ?? 0.0)
+        stm32Manager.sendCommand(steeringMicros: sPWM, throttleMicros: tPWM,
+                                 velocityMps: velocityMps)
     }
 
     private func resetActuators() {
         steering = 0
         throttle = 0
-        stm32Manager.sendCommand(steeringMicros: 1500, throttleMicros: 1500)
+        stm32Manager.sendCommand(steeringMicros: 1500, throttleMicros: 1500,
+                                 velocityMps: 0.0)
     }
 
     /// Starts a repeating timer that re-sends the current steering/throttle
