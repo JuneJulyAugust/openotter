@@ -33,24 +33,27 @@
 
 /* Private types -------------------------------------------------------------*/
 
-/** Command payload from iOS: 4 bytes packed little-endian */
-typedef struct __attribute__((packed)) {
-  int16_t steering_us;
-  int16_t throttle_us;
-} BLE_CommandPayload_t;
-
 /** BLE Application context */
 typedef struct {
   TIM_HandleTypeDef *htim;
   uint16_t svcHandle;
   uint16_t cmdCharHandle;
   uint16_t statusCharHandle;
+  uint16_t safetyCharHandle;
+  uint16_t modeCharHandle;
   uint16_t connectionHandle;
   volatile uint32_t lastCommandTick;
-  volatile uint8_t isConnected;
-  volatile uint8_t safetyTriggered;
+  volatile uint8_t  isConnected;
+  volatile uint8_t  safetyTriggered;
   int16_t currentSteering;
   int16_t currentThrottle;
+
+  /* From the most recent 0xFE41 write. */
+  int16_t desiredSteeringUs;
+  int16_t desiredThrottleUs;
+  int16_t reportedVelocityMmPerS;
+
+  OpenOtterMode_t mode;
 } BLE_AppContext_t;
 
 /* Private variables ---------------------------------------------------------*/
@@ -90,6 +93,7 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   bleCtx.currentSteering = PWM_NEUTRAL_US;
   bleCtx.currentThrottle = PWM_NEUTRAL_US;
   bleCtx.lastCommandTick = HAL_GetTick();
+  bleCtx.mode = OPENOTTER_MODE_DRIVE;
 
   BLE_InitLPM();
   BLE_InitRTC();
@@ -124,6 +128,8 @@ void BLE_App_Process(void) {
 }
 
 uint32_t BLE_App_GetLastCommandTime(void) { return bleCtx.lastCommandTick; }
+
+OpenOtterMode_t BLE_App_GetMode(void) { return bleCtx.mode; }
 
 int BLE_App_IsConnected(void) { return bleCtx.isConnected; }
 
@@ -166,11 +172,12 @@ static void BLE_InitGATTService(void) {
    */
   uuid = OPENOTTER_COMMAND_CHAR_UUID;
   ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
-                          (const uint8_t *)&uuid, 4, /* max value length */
+                          (const uint8_t *)&uuid,
+                          sizeof(BLE_CommandPayload_t), /* 6 bytes */
                           CHAR_PROP_WRITE_WITHOUT_RESP | CHAR_PROP_WRITE,
                           ATTR_PERMISSION_NONE, GATT_NOTIFY_ATTRIBUTE_WRITE,
-                          10, /* encryKeySize */
-                          0,  /* isVariable: 0 (fixed 4 bytes) */
+                          10,
+                          0,
                           &bleCtx.cmdCharHandle);
 
   /*
@@ -242,14 +249,15 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
       if (attr_mod->attr_handle == (bleCtx.cmdCharHandle + 1)) {
         return_value = SVCCTL_EvtAck;
 
-        if (attr_mod->data_length >= 4) {
+        if (attr_mod->data_length >= (uint16_t)sizeof(BLE_CommandPayload_t)) {
           BLE_CommandPayload_t cmd;
           memcpy(&cmd, attr_mod->att_data, sizeof(cmd));
+          bleCtx.desiredSteeringUs      = cmd.steering_us;
+          bleCtx.desiredThrottleUs      = cmd.throttle_us;
+          bleCtx.reportedVelocityMmPerS = cmd.velocity_mm_per_s;
 
-          /* Apply PWM with clamping */
           BLE_ApplyPWM(cmd.steering_us, cmd.throttle_us);
 
-          /* Update context */
           bleCtx.lastCommandTick = HAL_GetTick();
           bleCtx.safetyTriggered = 0;
         }
