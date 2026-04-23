@@ -249,8 +249,9 @@ final class PlannerPipelineIntegrationTests: XCTestCase {
     /// Obstacle sits at a depth strictly greater than `criticalDistance(v)` under the
     /// chosen goal speed. The supervisor should never trigger BRAKE.
     ///
-    /// With defaults (tSysS=0.1, aMaxMPS2=2.0, dMarginM=0.1) and fallback speed 0.3 m/s,
-    /// criticalDistance = 0.1525 m. Depth 0.40 m is comfortably above. No triggers expected.
+    /// With defaults (tSysS=0.1, decelIntercept=0.66, decelSlope=0.87, dMarginM=0.2)
+    /// and fallback speed 0.3 m/s, criticalDistance ≈ 0.26 m. Depth 0.40 m is
+    /// comfortably above. No triggers expected.
     func testSupervisorDoesNotTriggerWhenAlwaysAboveCriticalDistance() {
         let planner = ConstantSpeedPlanner(config: .init(maxRampRatePerSecond: 0.3))
         let orchestrator = PlannerOrchestrator(planner: planner)

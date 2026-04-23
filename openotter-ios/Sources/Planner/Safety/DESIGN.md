@@ -10,7 +10,7 @@
 
 The `SafetySupervisor` sits between the planner output and the actuators. On every control tick it compares the forward obstacle distance against a speed-dependent **critical distance** derived purely from kinematics. If the obstacle is closer than that critical distance, the supervisor issues an emergency brake command. Otherwise it passes the planner's command through unchanged.
 
-This document is the single source of truth for the policy. Tuning knobs are `tSysS`, `aMaxMPS2`, and `dMarginM`, all live-configurable.
+This document is the single source of truth for the policy. Tuning knobs are `tSysS`, `decelIntercept`, `decelSlope`, and `dMarginM`, all live-configurable.
 
 ---
 
@@ -39,26 +39,48 @@ One `alpha` (default `0.5`). No asymmetry between approach and recede — the sp
 For current speed `v`:
 
 ```
-criticalDistance(v) = v · tSysS  +  v² / (2 · aMaxMPS2)  +  dMarginM
-                      └─reaction┘   └──stopping────────┘   └─margin─┘
+criticalDistance(v) = v · tSysS  +  stoppingDistance(v)  +  dMarginM
+                      └─reaction┘   └───stopping──────┘   └─margin─┘
 ```
+
+### Deceleration model
+
+Deceleration is speed-dependent (back-EMF ∝ speed, plus rolling friction):
+
+```
+a(v) = decelIntercept + decelSlope · v
+```
+
+Fitted from 8 brake tests (v = 0.74–3.16 m/s) using the exact spatial stopping distance integral:
+- `a(v) = 0.66 + 0.87·v`
+
+### Stopping distance (exact integral)
+
+With linear drag `a(v) = a₀ + k·v`, the ODE `v dv/dx = -(a₀ + k·v)` yields:
+
+```
+stoppingDistance(v₀) = v₀/k − (a₀/k²)·ln(1 + k·v₀/a₀)
+```
+
+Falls back to `v²/(2·a₀)` when `k ≈ 0` (constant deceleration).
 
 | Term | Physical meaning |
 |------|------------------|
 | `v · tSysS` | Distance traveled during system reaction latency (sense → decide → actuator effect). |
-| `v² / (2·aMaxMPS2)` | Kinematic stopping distance under constant deceleration `aMaxMPS2`. |
+| `stoppingDistance(v)` | Exact stopping distance under speed-dependent deceleration. |
 | `dMarginM` | Fixed post-stop standoff. Includes the sensor-to-bumper offset (~0.13 m — the phone LiDAR is mounted behind the car's front bumper) plus desired clearance (0.07 m). |
 
-With defaults `tSysS = 0.1 s`, `aMaxMPS2 = 1.0 m/s²`, `dMarginM = 0.20 m`:
+With defaults `tSysS = 0.1 s`, `decelIntercept = 0.66`, `decelSlope = 0.87`, `dMarginM = 0.20 m`:
 
-| Speed    | Reaction (v·0.1) | Stopping (v²/2) | Margin | **criticalDistance** |
-|----------|------------------|-----------------|--------|----------------------|
-| 0.3 m/s  | 0.030 m          | 0.045 m         | 0.20 m | **0.28 m**           |
-| 0.5 m/s  | 0.050 m          | 0.125 m         | 0.20 m | **0.38 m**           |
-| 0.76 m/s | 0.076 m          | 0.289 m         | 0.20 m | **0.57 m**           |
-| 1.0 m/s  | 0.100 m          | 0.500 m         | 0.20 m | **0.80 m**           |
-| 1.5 m/s  | 0.150 m          | 1.125 m         | 0.20 m | **1.48 m**           |
-| 2.0 m/s  | 0.200 m          | 2.000 m         | 0.20 m | **2.40 m**           |
+| Speed    | a(v)  | Reaction | Stopping | Margin | **criticalDistance** |
+|----------|-------|----------|----------|--------|----------------------|
+| 0.5 m/s  | 1.10  | 0.050 m  | 0.110 m  | 0.20 m | **0.36 m**           |
+| 1.0 m/s  | 1.53  | 0.100 m  | 0.363 m  | 0.20 m | **0.66 m**           |
+| 1.5 m/s  | 1.97  | 0.150 m  | 0.686 m  | 0.20 m | **1.04 m**           |
+| 2.0 m/s  | 2.40  | 0.200 m  | 1.054 m  | 0.20 m | **1.45 m**           |
+| 2.5 m/s  | 2.84  | 0.250 m  | 1.452 m  | 0.20 m | **1.90 m**           |
+| 3.0 m/s  | 3.27  | 0.300 m  | 1.872 m  | 0.20 m | **2.37 m**           |
+| 3.16 m/s | 3.41  | 0.316 m  | 2.012 m  | 0.20 m | **2.53 m**           |
 
 ---
 
@@ -96,7 +118,7 @@ The brake command sets `throttle = 0` (neutral), not a negative (reverse) value.
 - **Reverse torque while moving forward invites slip.** If ground grip is low, driven wheels spinning backward relative to chassis motion break traction and skid — exactly the scenario a safety system must not create.
 - **Overshoot into backward motion is a new hazard.** Any reverse torque that does not stop exactly at v=0 pushes the robot backward, which the forward-only depth sensor cannot see. Coasting to stop keeps all motion monotonic forward until standstill.
 
-The empirical `actualDecelMPS2` (§7) measures how well neutral alone decelerates the platform. If the measured deceleration is consistently too low for the configured `aMaxMPS2`, the fix is to raise `dMarginM` (larger standoff) rather than introduce reverse torque in the supervisor.
+The empirical `actualDecelMPS2` (§7) measures how well neutral alone decelerates the platform. If the measured deceleration is consistently below `estimatedDeceleration(at: triggerSpeed)`, the model parameters need adjusting. This is the feedback loop that makes the design tunable from field testing.
 
 ### 5.2 Hold (BRAKE)
 
@@ -181,7 +203,7 @@ actualDecelMPS2   = trigger.speed / stoppingTimeS               (mean decelerati
 brakingDistanceM  = trigger.depth - stop.depth                  (how much closer we got)
 ```
 
-`actualDecelMPS2` is the empirical counterpart of the configured `aMaxMPS2`. If `actualDecelMPS2 < aMaxMPS2` consistently, the `aMaxMPS2` config is optimistic — raise `dMarginM` or lower `aMaxMPS2`. This is the feedback loop that makes the design tunable from field testing.
+`actualDecelMPS2` is the empirical counterpart of the deceleration model `a(v) = decelIntercept + decelSlope * v`. If `actualDecelMPS2 < estimatedDeceleration(at: triggerSpeed)` consistently, the model is optimistic — increase the safety factor or adjust `decelIntercept`/`decelSlope`. This is the feedback loop that makes the design tunable from field testing.
 
 Both snapshots are exposed to the view model and rendered in the emergency overlay and HUD so the operator sees, in one glance: "decided to stop at X m traveling Y m/s — actually stopped Z m later with actual deceleration W m/s²".
 
@@ -192,8 +214,13 @@ Both snapshots are exposed to the view model and rendered in the emergency overl
 ```swift
 struct SafetySupervisorConfig {
     var tSysS: Float = 0.1              // reaction latency (seconds)
-    var aMaxMPS2: Float = 1.0           // assumed max deceleration (m/s²)
-                                        // empirical: 1.19 m/s² at 0.76 m/s
+
+    // Speed-dependent deceleration: a(v) = decelIntercept + decelSlope * v
+    // Fitted from 8 brake tests using the exact spatial integral to minimize
+    // prediction error. No artificial safety reduction is applied here.
+    var decelIntercept: Float = 0.66    // rolling friction (m/s²)
+    var decelSlope: Float = 0.87        // back-EMF coefficient (1/s)
+
     var dMarginM: Float = 0.20          // post-stop standoff (meters)
                                         // ~0.13 m sensor-to-bumper offset + 0.07 m clearance
 
@@ -204,7 +231,7 @@ struct SafetySupervisorConfig {
 }
 ```
 
-All three policy parameters (`tSysS`, `aMaxMPS2`, `dMarginM`) are scalar, physical, and independent. Change one and the effect is predictable from the formula in §4.
+The deceleration model parameters (`decelIntercept`, `decelSlope`) are physical—they map directly to rolling friction and motor back-EMF drag. The feedback loop is: run brake tests, compare `actualDecelMPS2` vs `estimatedDeceleration(at: triggerSpeed)`, adjust parameters.
 
 ---
 

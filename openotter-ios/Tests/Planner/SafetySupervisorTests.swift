@@ -8,8 +8,8 @@ import XCTest
 // behavior gets its own dedicated block at the bottom.
 //
 // Default policy values (see DESIGN.md §4):
-//   tSysS = 0.1, aMaxMPS2 = 2.0, dMarginM = 0.1
-// criticalDistance(v) = v·0.1 + v²/4 + 0.1
+//   tSysS = 0.1, decelIntercept = 2.0, decelSlope = 0.0, dMarginM = 0.1
+// criticalDistance(v) = v·0.1 + v²/4 + 0.1  (decelSlope=0 → constant a=2.0)
 //
 // Worked values:
 //   v = 0.3 → 0.03 + 0.0225 + 0.1 = 0.1525
@@ -23,7 +23,8 @@ final class SafetySupervisorTests: XCTestCase {
     private var defaultConfig: SafetySupervisorConfig {
         var c = SafetySupervisorConfig()
         c.tSysS = 0.1
-        c.aMaxMPS2 = 2.0
+        c.decelIntercept = 2.0
+        c.decelSlope = 0.0
         c.dMarginM = 0.1
         c.alphaSmoothing = 1.0          // disable temporal smoothing by default
         c.releaseHoldS = 0.3

@@ -5,22 +5,28 @@ import AudioToolbox
 
 /// Tunable parameters for the time-to-brake safety policy.
 ///
-/// See `DESIGN.md` for the full derivation. The three policy parameters
-/// (`tSysS`, `aMaxMPS2`, `dMarginM`) are physical and independent — change one
-/// and the effect on `criticalDistance` is predictable from the formula below:
+/// See `DESIGN.md` for the full derivation. Deceleration is modelled as
+/// speed-dependent: `a(v) = decelIntercept + decelSlope * v` (rolling
+/// friction + back-EMF). The critical distance uses the exact stopping
+/// distance integral for this linear-drag model:
 ///
-///     criticalDistance(v) = v * tSysS + v² / (2 * aMaxMPS2) + dMarginM
+///     criticalDistance(v) = v * tSysS + stoppingDistance(v) + dMarginM
 struct SafetySupervisorConfig {
     // MARK: Policy parameters (tune these from field testing)
 
     /// System reaction latency (seconds): sense → decide → actuator effect.
     var tSysS: Float = 0.1
 
-    /// Maximum achievable deceleration under emergency brake (m/s²).
-    /// Empirical: measured 1.19 m/s² at 0.76 m/s with neutral throttle
-    /// (no friction brakes — back-EMF and rolling resistance only).
-    /// Set to 1.0 with ~20% safety factor; re-measure at multiple speeds.
-    var aMaxMPS2: Float = 1.0
+    /// Speed-dependent deceleration model: a(v) = decelIntercept + decelSlope * v
+    ///
+    /// Fitted from 8 brake tests (v = 0.74–3.16 m/s) using the exact spatial stopping
+    /// distance integral to minimize prediction error. No artificial safety reduction
+    /// is applied here; the spatial `dMarginM` provides the true safety buffer.
+    ///
+    /// - decelIntercept: rolling friction component (m/s²)
+    /// - decelSlope: back-EMF drag coefficient (1/s), decel gained per m/s of speed
+    var decelIntercept: Float = 0.66
+    var decelSlope: Float = 0.87
 
     /// Fixed post-stop safety standoff (meters).
     /// Includes ~0.13 m sensor-to-bumper offset (phone is mounted behind
@@ -62,9 +68,10 @@ enum SafetySupervisorState: Equatable {
 
 /// Enforces the time-to-brake collision-avoidance policy on planner output.
 ///
-/// ## Policy (one equation)
+/// ## Policy
 ///
-///     criticalDistance(v) = v * tSysS + v² / (2 * aMaxMPS2) + dMarginM
+///     criticalDistance(v) = v * tSysS + stoppingDistance(v) + dMarginM
+///     where stoppingDistance uses a(v) = decelIntercept + decelSlope * v
 ///
 /// ## Rule
 ///
@@ -332,13 +339,30 @@ final class SafetySupervisor {
 
     // MARK: - Math
 
+    /// Estimated deceleration at a given speed: `a(v) = decelIntercept + decelSlope * v`.
+    func estimatedDeceleration(at speed: Float) -> Float {
+        config.decelIntercept + config.decelSlope * speed
+    }
+
+    /// Exact stopping distance under the linear drag model `a(v) = a₀ + k·v`.
+    ///
+    /// Derived from `v dv/dx = -(a₀ + k·v)` → `d = v₀/k − (a₀/k²)·ln(1 + k·v₀/a₀)`.
+    /// Falls back to the constant-deceleration formula `v²/(2·a₀)` when `k ≈ 0`.
+    func stoppingDistance(from speed: Float) -> Float {
+        let a0 = max(config.decelIntercept, 1e-3)
+        let k = config.decelSlope
+        guard k > 1e-6 else {
+            return (speed * speed) / (2.0 * a0)
+        }
+        return speed / k - (a0 / (k * k)) * log(1.0 + k * speed / a0)
+    }
+
     /// See `DESIGN.md §4`.
     ///
-    /// `criticalDistance(v) = v * tSysS + v² / (2 * aMaxMPS2) + dMarginM`
+    /// `criticalDistance(v) = v * tSysS + stoppingDistance(v) + dMarginM`
     func criticalDistance(speed v: Float) -> Float {
         let reaction = v * config.tSysS
-        let stopping = (v * v) / (2.0 * max(config.aMaxMPS2, 1e-3))
-        return reaction + stopping + config.dMarginM
+        return reaction + stoppingDistance(from: v) + config.dMarginM
     }
 
     // MARK: - Helpers
