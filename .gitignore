@@ -56,3 +56,6 @@ firmware/learning-motor-ctrl/tools/arduino_data/*
 firmware/learning-motor-ctrl/drivers/CH341SER/
 202509210116516147.apk
 apk_out/
+
+# Python
+.venv/
