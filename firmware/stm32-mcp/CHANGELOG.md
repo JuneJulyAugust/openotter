@@ -3,7 +3,19 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [0.3.1] - 2026-04-22
+
+### Added
+- **VL53L1CB Multi-Zone ToF**: Implemented native driver and scan engine for the VL53L1CB Time-of-Flight sensor.
+- **ToF BLE GATT Service**: Added new 0xFE60 service to stream 8x8 multi-zone depth data over BLE to the host.
+- **ATT MTU Chunking**: Implemented frame chunking for the 0xFE62 characteristic to support BlueNRG-MS's 23-byte ATT_MTU limit.
+- **Robustness**: Added configuration validation and driver failure survival modes for the ToF sensor.
+
+### Changed
+- **Testing**: Added pure C host unit tests for the ROI builder (`TofL1_BuildRoi`).
+
 ## [0.3.0] - 2026-04-16
+
 
 ### Changed
 - **Project Rename**: Updated BLE GAP name and advertising data to reflect OpenOtter branding.

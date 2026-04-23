@@ -4,6 +4,30 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
+## 2026-04-22 - Safety Calibration & ToF Sensor Support Release
+
+### Summary
+Replaced the conservative constant deceleration safety model with a physical linear drag model calibrated directly from field data. Integrated native VL53L1CB ToF sensor support into the STM32 firmware and streamed it over BLE. Advanced the Telegram agent with stateful speed controls and dynamic help.
+
+### Achievements
+1. **Safety Calibration:** Modeled motor back-EMF and rolling friction using a spatial integral `a(v) = 0.66 + 0.87*v`. This drastically improved the accuracy of the braking distance predictions and fixed the massive overshoot bumper gaps.
+2. **STM32 ToF Integration:** Implemented a native driver for the VL53L1CB, handling 8x8 multi-zone data, and streamed it via a new 0xFE60 BLE GATT service with ATT_MTU chunking.
+3. **Agent Speed Controls:** Added Telegram bot keyboard presets (Slow, Normal, Fast), stateful throttle tracking, and a dynamic `/help` command that suppresses TTS output.
+4. **Version Synchronization:** Bumped versions across subsystems:
+   - iOS App: `v0.11.0`
+   - STM32 MCP: `v0.3.1`
+5. **Git Tags Created:** Applied corresponding git tags (`ios-v0.11.0`, `stm32-mcp-v0.3.1`) to the main branch.
+
+### Current State
+- **Safety Policy:** Linear drag model fully deployed and active.
+- **STM32 Firmware:** `v0.3.1` deployed with robust ToF capabilities.
+- **Next Step:** Validate the Agent commands in physical test runs, and proceed with Phase C of the Agent MVP plan.
+
+### Prompt Context for Next Session
+"In the last session, we released iOS v0.11.0 and STM32 v0.3.1, replacing the constant safety model with an exact physical linear drag model and adding native ToF sensor support via BLE. The Agent Runtime was also upgraded with speed controls. The next priority is to validate the Telegram Agent physically and proceed with Phase C of the MVP."
+
+---
+
 ## 2026-04-16 - Project Rename & v0.10.0 Rebrand Release
 
 ### Summary

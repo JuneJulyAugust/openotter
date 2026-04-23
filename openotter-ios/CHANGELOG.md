@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-04-22
+
+### Added
+- **VL53L1CB Multi-Zone ToF Rendering**: Implemented a 2D depth grid in `STM32ControlView` to visualize 1x1, 3x3, and 4x4 ToF depth maps streamed over BLE.
+- **Speed-Dependent Decel Model**: Replaced constant deceleration with a physical linear drag model `a(v) = a0 + k*v` fitting motor back-EMF and rolling friction. Calibrated directly from field data for exact stopping distances.
+- **Agent Speed Controls**: Added Telegram bot keyboard presets (Slow, Normal, Fast) and stateful `.setSpeed` actions.
+- **Agent Help Command**: Added `/help` handler that returns dynamic usage instructions while suppressing Text-To-Speech output (`speakable: false`).
+- **Safety Prototype**: Added `fit_decel.py` to `prototypes/decel_fit/` for calibrating deceleration parameters via spatial integration error minimization.
+
+### Changed
+- **Safety Policy Tune**: Replaced v0.4 tri-zone FSM with a unified time-to-brake policy using empirical tuning.
+- **HUD Diagnostics**: Renamed `overshootM` to `brakingDistanceM`, added HUD display of exact `actualDecelMPS2`, and embedded trigger speeds inside emergency overlay views.
+- **BLE Management**: Implemented frame reassembly for chunked 0xFE62 ATT_MTU packets to support the BlueNRG-MS module limit. Disabled ToF BLE notifications to prioritize high-frequency motor actuation, maintaining self-driving keepalive signals.
+
+
 ## [0.10.0] - 2026-04-16
 
 ### Changed

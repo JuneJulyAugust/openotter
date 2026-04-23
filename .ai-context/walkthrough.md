@@ -32,6 +32,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-04-22 - Safety Calibration & ToF Sensor Support (v0.11.0 / v0.3.1)
+
+- **Context:** Resolving massive bumper gaps during emergency stops, integrating the new VL53L1CB ToF sensor into the STM32 direct-control path, and rendering it on iOS.
+- **What we built/tested:** Replaced the conservative constant deceleration safety model with a physical linear drag model (`a(v) = 0.66 + 0.87*v`) calibrated directly from empirical spatial stopping data. Integrated native VL53L1CB ToF sensor support into the STM32 firmware, added an 8x8 multi-zone data stream via a new 0xFE60 BLE GATT service, and implemented ATT_MTU chunking for compatibility. On iOS, built a 2D depth grid in `STM32ControlView` to visualize the chunked 1x1, 3x3, and 4x4 ToF depth maps. Added Telegram bot speed controls (presets and stateful tracking) to the Agent Runtime. Organized hardware reference PDFs and PNGs into `mcu` and `sensors` folders.
+- **Issue observed:** The previous `SafetySupervisor` overestimated stopping distances at high speeds due to fitting a time-averaged deceleration to a spatial integral and doubling up on safety margins, causing the car to stop ~1.7m early. STM32 firmware lacked ToF obstacle detection, and iOS had no visualization for it.
+- **Root cause:** Mathematical mismatch in parameter fitting and lack of hardware integration.
+- **Resolution:** Re-fit the physics model directly minimizing the spatial stopping distance MSE. Dropped the arbitrary 20% safety factor (relying solely on the explicit `dMarginM` standoff). Built STM32 C drivers for the ToF, implemented BLE frame chunking, and built the iOS reassembly and rendering logic. Updated iOS and STM32 versions to `0.11.0` and `0.3.1` respectively.
+- **Validation:** Tested empirical parameters against field data, predicting stopping distances to within a few centimeters of reality. Verified ToF configuration combos and survival modes against driver failures.
+- **Follow-up:** Validate the Agent speed controls and ToF hardware physically.
+
 ### 2026-04-16 - Project Rename to OpenOtter & v0.10.0 Release
 
 - **Context:** Formalizing the project identity and synchronizing versions across all components.
