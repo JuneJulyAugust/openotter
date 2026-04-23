@@ -24,3 +24,9 @@ ninja_log
 
 # OS-specific
 .DS_Store
+
+# Host tests
+tests/host/test_*
+!tests/host/test_*.c
+!tests/host/test_*.h
+tests/host/*.dSYM/
