@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-04-23
+
+### Added
+- **Firmware Safety Subscriber**: `STM32BleManager` now discovers and subscribes to 0xFE43 (Safety) and writes Drive mode to 0xFE44 on every connect, ensuring the firmware's reverse supervisor is always armed when the app is connected.
+- **`FirmwareSafetyEvent` Model**: New value type parses the 20-byte 0xFE43 characteristic payload (state, cause, trigger snapshot) with full XCTest coverage.
+- **`FirmwareMode` Enum**: Typed wrapper for the 0xFE44 operating-mode byte; `STM32BleManager.writeMode(_:)` public API.
+
+### Changed
+- **`sendCommand` extended to 6 bytes**: Added `velocityMps` parameter (default `0.0`) that is packed as a signed `Int16` mm/s in bytes 4-5 and passed to the firmware's reverse safety supervisor. Old 4-byte callers are not broken (default argument).
+- **Velocity threaded through callers**: `SelfDrivingViewModel` and `STM32ControlViewModel` now propagate signed ground speed (ESC telemetry or ARKit, with sign derived from throttle direction) on every command write and keepalive tick.
+
 ## [0.11.0] - 2026-04-22
 
 ### Added
