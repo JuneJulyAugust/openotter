@@ -85,12 +85,90 @@ float RevSafety_CriticalDistance(const RevSafetyConfig_t *config, float v) {
        + config->d_margin_rear_m;
 }
 
-/* Stubs filled in by later tasks. */
-void RevSafety_Tick(RevSafetyCtx *ctx,
+static bool supervisor_armed(const struct RevSafetyCtx *ctx,
+                             const RevSafetyInput_t *in) {
+  float v_eps       = ctx->config.v_eps_mps;
+  int16_t t_eps     = ctx->config.throttle_eps_us;
+  int16_t neutral   = (int16_t)ctx->config.pwm_neutral_us;
+  bool moving_back  = in->velocity_mps < -v_eps;
+  bool cmd_reverse  = in->throttle_us < (neutral - t_eps);
+  return moving_back || cmd_reverse;
+}
+
+static void emit_event(struct RevSafetyCtx *ctx,
+                       RevSafetyEvent_t *out,
+                       bool transition,
+                       uint32_t now_ms) {
+  if (!out) return;
+  memset(out, 0, sizeof(*out));
+  out->transition          = transition;
+  out->state               = ctx->state;
+  out->cause               = ctx->cause;
+  out->smoothed_depth_m    = ctx->smoothed_depth_m;
+  out->critical_distance_m =
+      RevSafety_CriticalDistance(&ctx->config, ctx->latched_speed_mps);
+  out->latched_speed_mps    = ctx->latched_speed_mps;
+  out->trigger_velocity_mps = ctx->trigger_velocity_mps;
+  out->trigger_depth_m      = ctx->trigger_depth_m;
+  out->trigger_timestamp_ms = ctx->trigger_timestamp_ms;
+  out->seq                  = ctx->seq;
+
+  if (transition) {
+    ctx->seq++;
+    out->seq = ctx->seq;
+    ctx->last_notify_refresh_ms = now_ms;
+  } else if (ctx->state == REV_SAFETY_STATE_BRAKE &&
+             (now_ms - ctx->last_notify_refresh_ms) >= 1000u) {
+    out->notify_refresh = true;
+    ctx->last_notify_refresh_ms = now_ms;
+  }
+}
+
+static void enter_brake(struct RevSafetyCtx *ctx,
+                        const RevSafetyInput_t *in,
+                        RevSafetyCause_t cause) {
+  ctx->state = REV_SAFETY_STATE_BRAKE;
+  ctx->cause = cause;
+  ctx->latched_speed_mps    = fabsf(in->velocity_mps);
+  ctx->trigger_velocity_mps = in->velocity_mps;
+  ctx->trigger_depth_m      = ctx->smoothed_depth_m;
+  ctx->trigger_timestamp_ms = in->now_ms;
+  ctx->release_timer_running = false;
+}
+
+void RevSafety_Tick(struct RevSafetyCtx *ctx,
                     const RevSafetyInput_t *in,
                     RevSafetyEvent_t *out) {
-  (void)ctx; (void)in;
-  if (out) memset(out, 0, sizeof(*out));
+  if (!ctx || !in) {
+    if (out) memset(out, 0, sizeof(*out));
+    return;
+  }
+  RevSafetyState_t prev = ctx->state;
+
+  /* 1. Smoothed depth update (invalid-frame handling) */
+  if (in->zone_valid) {
+    if (!ctx->has_smoothed) {
+      ctx->smoothed_depth_m = in->raw_depth_m;
+      ctx->has_smoothed     = true;
+    } else {
+      float a = ctx->config.alpha_smoothing;
+      ctx->smoothed_depth_m =
+          a * in->raw_depth_m + (1.0f - a) * ctx->smoothed_depth_m;
+    }
+    ctx->invalid_frame_count = 0;
+    ctx->last_valid_frame_ms = in->now_ms;
+  } else {
+    if (ctx->invalid_frame_count < 0xFF) ctx->invalid_frame_count++;
+  }
+
+  /* 2. Invalid-frame policy while armed */
+  if (supervisor_armed(ctx, in) &&
+      ctx->invalid_frame_count >= ctx->config.tof_blind_frames &&
+      ctx->state != REV_SAFETY_STATE_BRAKE) {
+    enter_brake(ctx, in, REV_SAFETY_CAUSE_TOF_BLIND);
+  }
+
+  emit_event(ctx, out, prev != ctx->state, in->now_ms);
 }
 
 bool RevSafety_IsBraking(const RevSafetyCtx *ctx) {
