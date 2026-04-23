@@ -157,11 +157,13 @@ final class SelfDrivingViewModel: ObservableObject {
             )
 
             let command = self.orchestrator.tick(context: context)
-            let signedSpeedMps: Double? = {
-                // Use signed velocity: throttle < 0 → reversing.
-                let raw = motorSpeed ?? arkitSpeed ?? 0.0
-                return raw * (context.currentThrottle < 0 ? -1.0 : 1.0)
-            }()
+            // Forward the ESC/ARKit-reported speed as-is. If the ESC emits a
+            // signed value, the firmware supervisor's velocity-sign gate will
+            // arm on coast-backward; if unsigned, it falls back to the
+            // commanded-throttle gate (spec §3.2 union). Do not overlay a
+            // sign from `currentThrottle` — that double-negates when ESC
+            // actually reports signed values.
+            let signedSpeedMps: Double? = motorSpeed ?? arkitSpeed
             self.sendActuatorCommands(steering: command.steering, throttle: command.throttle,
                                       velocity: signedSpeedMps)
             self.steering = command.steering

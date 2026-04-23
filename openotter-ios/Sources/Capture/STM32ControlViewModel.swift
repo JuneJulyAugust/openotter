@@ -171,10 +171,17 @@ class STM32ControlViewModel: ObservableObject {
         restartKeepalive()
     }
 
-    /// Signed ground speed from ESC telemetry; negative when throttle < 0.
+    /// Ground speed reported by the ESC, forwarded to the firmware reverse
+    /// safety supervisor.
+    ///
+    /// The ESC decodes eRPM via `signed32BE`, so `speedMps` preserves sign
+    /// when the firmware actually reports direction. In practice some ESC
+    /// firmwares emit unsigned magnitude; in that case the firmware
+    /// supervisor's velocity-sign gate will not fire for pure coast-backward
+    /// (throttle=0 rolling downhill) and falls back to the commanded-throttle
+    /// gate (spec §3.2 union). Either way we never send a wrong-signed value.
     private func currentSignedVelocityMps() -> Float {
-        let raw = Float(escTelemetry?.speedMps ?? 0.0)
-        return throttle < 0 ? -raw : raw
+        return Float(escTelemetry?.speedMps ?? 0.0)
     }
 
     /// Schedules a repeating timer that re-sends current values every 500ms.
