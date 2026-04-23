@@ -166,11 +166,9 @@ int main(void) {
   while (1) {
     BLE_App_Process();
     TofL1_Process();
-    /* BLE_Tof_Process() disabled — ToF BLE notifications saturated the
-     * BlueNRG-MS TX buffers and starved FE41 command writes.  The sensor
-     * keeps scanning via TofL1_Process(); re-enable when a bandwidth
-     * budget or throttling strategy is in place. */
-    /* BLE_Tof_Process(); */
+    /* BLE_Tof_Process is mode-gated: in Drive mode (default) frame
+     * notifications are suppressed; in Debug mode they stream normally. */
+    BLE_Tof_Process();
 
     /* Toggle LD1 (PA5) every 500ms to show the board is alive */
     static uint32_t last_toggle = 0;

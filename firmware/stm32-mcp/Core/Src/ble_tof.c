@@ -155,13 +155,11 @@ int BLE_Tof_Init(void)
 
 void BLE_Tof_Process(void)
 {
-  /* ToF BLE notifications are disabled to avoid saturating the BlueNRG-MS
-   * TX buffers, which starves the control service (FE41 command writes).
-   * The ToF sensor keeps scanning via TofL1_Process(); only the BLE push
-   * is suppressed.  Re-enable by removing this early return. */
-  return;
-
   if (!BLE_App_IsConnected()) return;
+  /* Frame notifications are only streamed in Debug mode. In Drive mode the
+   * ToF sensor continues scanning (for the rev safety supervisor) but BLE
+   * notifications are suppressed to avoid saturating the TX buffers. */
+  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) return;
 
   uint32_t now = HAL_GetTick();
 
@@ -216,6 +214,15 @@ void BLE_Tof_Process(void)
 
 static void apply_config_write(const uint8_t *data, uint16_t len)
 {
+  /* Drive mode locks the safety config. Reject all writes and surface the
+   * error so iOS knows the config was not applied. */
+  if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
+    s_tof.last_error = TOF_L1_ERR_LOCKED_IN_DRIVE;
+    s_tof.state      = 1;
+    publish_status();
+    return;
+  }
+
   if (len < sizeof(BLE_TofConfigPayload_t)) {
     s_tof.last_error = TOF_L1_ERR_BAD_LAYOUT;
     s_tof.state      = 2;
@@ -233,15 +240,9 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
   /* RECOVERED = combo was accepted by validation, driver rejected it, and
    * we rolled back to the last-known-good config. Sensor is still streaming;
    * surface the rc so the UI can show a transient warning. */
-  if (rc == TOF_L1_OK) {
-    s_tof.last_error            = 0;
-    s_tof.state                 = 1;
-    s_tof.last_published_seq    = 0;
-    s_tof.last_rate_window_seq  = 0;
-    s_tof.last_rate_window_tick = HAL_GetTick();
-    s_tof.pending_chunk         = 0;
-  } else if (rc == TOF_L1_ERR_RECOVERED) {
-    s_tof.last_error            = (uint8_t)rc;
+  if (rc == TOF_L1_OK || rc == TOF_L1_ERR_RECOVERED) {
+    s_tof.last_error            = (rc == TOF_L1_ERR_RECOVERED)
+                                      ? (uint8_t)rc : 0;
     s_tof.state                 = 1;
     s_tof.last_published_seq    = 0;
     s_tof.last_rate_window_seq  = 0;
@@ -255,6 +256,20 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
     s_tof.last_error = (uint8_t)rc;
     s_tof.state      = 1;
   }
+  publish_status();
+}
+
+void BLE_Tof_EnforceSafetyConfig(void)
+{
+  /* Re-apply the safety-critical ToF config: 3x3 LONG 30 ms per scan period.
+   * Called on Debug→Drive mode transition and at boot (via TofL1_Init). */
+  int rc = TofL1_Configure(TOF_LAYOUT_3x3, TOF_DIST_LONG, 30000u);
+  s_tof.last_error            = (rc == TOF_L1_OK) ? 0 : (uint8_t)rc;
+  s_tof.state                 = (rc == TOF_L1_ERR_DRIVER_DEAD) ? 2 : 1;
+  s_tof.last_published_seq    = 0;
+  s_tof.last_rate_window_seq  = 0;
+  s_tof.last_rate_window_tick = HAL_GetTick();
+  s_tof.pending_chunk         = 0;
   publish_status();
 }
 
