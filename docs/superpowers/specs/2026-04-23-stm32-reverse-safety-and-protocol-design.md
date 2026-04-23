@@ -222,7 +222,7 @@ On-target / HIL tests (STM32 flashed, BlueNRG-MS active):
 
 **Feedback loop:** MCU emits the trigger snapshot over 0xFE43. iOS correlates with its own pose history to compute actual reverse stopping distance, same shape as the forward loop in iOS DESIGN.md §7. If measured reverse stopping distance is consistently greater than `criticalDistance(|v_latched|) − dMarginRear`, increase `tSysFW` (or adjust `decelIntercept` / `decelSlope` if the deviation is speed-dependent).
 
-**Reverse speed cap.** The iOS throttle mapping limits commanded reverse velocity to `|v| ≤ 1.5 m/s`. At this cap, `criticalDistance(1.5) ≈ 0.34·1.5 + stopping(1.5) + 0.17 = 0.51 + 0.686 + 0.17 ≈ 1.37 m`, comfortably inside the 2.3 m valid ToF range. Higher reverse speeds are refused upstream so the supervisor never sees a velocity whose critical distance exceeds sensor range.
+**Reverse speed cap.** Not enforced. Commanded throttle is set by the Telegram agent, not a joystick. The current drive stack already uses an asymmetric throttle map (forward PWM default 0.4, reverse slower), so real-world reverse velocities stay well below the ToF valid range. An explicit velocity cap can be added later once brake-test data accumulates via the feedback loop.
 
 Tabulated critical distances for reverse with `tSysFW = 0.34 s`, `dMarginRear = 0.17 m`:
 
@@ -232,6 +232,8 @@ Tabulated critical distances for reverse with `tSysFW = 0.34 s`, `dMarginRear = 
 | 0.5 m/s  | 1.10   | 0.170 m   | 0.110 m   | 0.17 m  | **0.45 m**           |
 | 1.0 m/s  | 1.53   | 0.340 m   | 0.363 m   | 0.17 m  | **0.87 m**           |
 | 1.5 m/s  | 1.97   | 0.510 m   | 0.686 m   | 0.17 m  | **1.37 m**           |
+
+If measured reverse velocity ever produces a `criticalDistance` beyond the 2.3 m ToF valid range, the supervisor fails conservatively — a ranged obstacle still outside critical reads as "clear," but any out-of-range center-zone status already collapses to the invalid-frame path (§3.4 A) and brakes after two consecutive invalid samples.
 
 ---
 
