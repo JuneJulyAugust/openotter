@@ -1,609 +1,437 @@
 import XCTest
 @testable import openotter
 
-// MARK: - SafetySupervisorTests
+// MARK: - SafetySupervisorTests (v1.0 — time-to-brake policy)
+//
+// Deterministic config throughout: alphaSmoothing = 1.0 so rawDepth passes straight
+// to smoothedDepth (no exponential moving average mixing). The temporal-smoothing
+// behavior gets its own dedicated block at the bottom.
+//
+// Default policy values (see DESIGN.md §4):
+//   tSysS = 0.1, aMaxMPS2 = 2.0, dMarginM = 0.1
+// criticalDistance(v) = v·0.1 + v²/4 + 0.1
+//
+// Worked values:
+//   v = 0.3 → 0.03 + 0.0225 + 0.1 = 0.1525
+//   v = 0.5 → 0.05 + 0.0625 + 0.1 = 0.2125
+//   v = 1.0 → 0.10 + 0.2500 + 0.1 = 0.4500
+//   v = 1.5 → 0.15 + 0.5625 + 0.1 = 0.8125
+//   v = 2.0 → 0.20 + 1.0000 + 0.1 = 1.3000
 
 final class SafetySupervisorTests: XCTestCase {
 
-    /// Config with well-known values for deterministic testing.
-    /// At speed 1.0 m/s with these settings:
-    ///   brakeDistance = max(0.15, 1.0*0.8, 1.0²/(2*1.5)) = max(0.15, 0.80, 0.333) = 0.80 m
-    ///   clearDistance = max(0.25, 1.0*1.5, 1.0²/(2*1.5)) = max(0.25, 1.50, 0.333) = 1.50 m
-    private var config: SafetySupervisorConfig {
+    private var defaultConfig: SafetySupervisorConfig {
         var c = SafetySupervisorConfig()
-        c.ttcBrakeS = 0.8
-        c.ttcCautionS = 1.5
-        c.minBrakeDistanceM = 0.15
-        c.minCautionDistanceM = 0.25
-        c.maxDecelerationMPS2 = 1.5
+        c.tSysS = 0.1
+        c.aMaxMPS2 = 2.0
+        c.dMarginM = 0.1
+        c.alphaSmoothing = 1.0          // disable temporal smoothing by default
+        c.releaseHoldS = 0.3
         c.fallbackSpeedMPS = 0.3
-        c.minBrakeDurationS = 0.5
-        c.minCautionDurationS = 0.3
-        // Use alpha=1.0 to disable EMA filtering in most tests (raw depth passes through).
-        c.depthEmaAlphaApproaching = 1.0
-        c.depthEmaAlphaReceding = 1.0
+        c.stopSpeedEpsilonMPS = 0.05
         c.minSpeedEpsilonMPS = 0.01
         return c
     }
 
     private func makeSupervisor(config: SafetySupervisorConfig? = nil) -> SafetySupervisor {
-        SafetySupervisor(config: config ?? self.config)
+        SafetySupervisor(config: config ?? defaultConfig)
     }
 
-    // MARK: - Passthrough Cases
+    private func forwardCmd(_ throttle: Float = 0.5) -> ControlCommand {
+        PlannerTestFactory.forwardCommand(throttle: throttle)
+    }
 
-    func testPassesThroughOwnCommands() {
+    // MARK: - Math
+
+    func testCriticalDistanceMatchesFormula() {
+        let sv = makeSupervisor()
+        XCTAssertEqual(sv.criticalDistance(speed: 0.0), 0.1,   accuracy: 1e-6)
+        XCTAssertEqual(sv.criticalDistance(speed: 0.3), 0.1525, accuracy: 1e-5)
+        XCTAssertEqual(sv.criticalDistance(speed: 1.0), 0.45,  accuracy: 1e-5)
+        XCTAssertEqual(sv.criticalDistance(speed: 2.0), 1.30,  accuracy: 1e-5)
+    }
+
+    // MARK: - Passthrough
+
+    func testPassesThroughOwnBrakeCommands() {
         let sv = makeSupervisor()
         let brakeCmd = ControlCommand.brake(reason: "test")
         let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 1.0)
-
-        let result = sv.supervise(command: brakeCmd, context: ctx)
-        XCTAssertEqual(result, brakeCmd, "Should not re-process safetySupervisor commands")
+        XCTAssertEqual(sv.supervise(command: brakeCmd, context: ctx), brakeCmd)
     }
 
-    func testPassesThroughNegativeThrottle() {
+    func testPassesThroughReverseCommand() {
         let sv = makeSupervisor()
         let reverseCmd = ControlCommand(steering: 0, throttle: -0.5, source: .planner("Test"))
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 1.0)
-
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.01, arkitSpeedMps: 1.0)
         let result = sv.supervise(command: reverseCmd, context: ctx)
-        XCTAssertEqual(result.throttle, -0.5, accuracy: 1e-5, "Reverse throttle should pass through")
+        XCTAssertEqual(result.throttle, -0.5, accuracy: 1e-6, "Reverse always passes through")
     }
 
     func testPassesThroughZeroThrottle() {
         let sv = makeSupervisor()
-        let neutralCmd = ControlCommand(steering: 0, throttle: 0, source: .planner("Test"))
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 1.0)
-
-        let result = sv.supervise(command: neutralCmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0, "Zero throttle should pass through")
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.01, arkitSpeedMps: 1.0)
+        let result = sv.supervise(
+            command: ControlCommand(steering: 0, throttle: 0, source: .planner("Test")),
+            context: ctx
+        )
+        XCTAssertEqual(result.throttle, 0)
     }
 
-    func testPassesThroughWhenNoDepthData() {
+    func testPassesThroughWhenDepthMissing() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
         let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: nil, arkitSpeedMps: 1.0)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-5, "No depth → pass through")
+        let result = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-6)
     }
 
     func testPassesThroughWhenDepthIsNaN() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: Float.nan, arkitSpeedMps: 1.0)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-5, "NaN depth → pass through")
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: .nan, arkitSpeedMps: 1.0)
+        let result = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-6)
     }
 
-    func testPassesThroughWhenDepthIsZero() {
+    func testPassesThroughWhenDepthIsZeroOrNegative() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
         let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.0, arkitSpeedMps: 1.0)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-5, "Zero depth → invalid → pass through")
+        XCTAssertEqual(sv.supervise(command: forwardCmd(), context: ctx).throttle, 0.5, accuracy: 1e-6)
     }
 
-    // MARK: - Tri-Zone Classification
+    // MARK: - Binary SAFE / BRAKE classification
 
-    func testClearWhenDepthFarAboveClearDistance() {
+    func testSafeWhenDepthFarAboveCritical() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        // At fallback speed 0.3: clearDist = max(0.25, 0.3*1.5, 0.3²/(2*1.5)) = max(0.25, 0.45, 0.03) = 0.45
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 5.0)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-5, "Far depth should be CLEAR")
-        XCTAssertEqual(sv.state, .clear)
+        // v = 1.0 → criticalDistance = 0.45. Depth 5.0 m is far above.
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 5.0, arkitSpeedMps: 1.0)
+        let result = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(result.throttle, 0.5, accuracy: 1e-6)
+        XCTAssertEqual(sv.state, .safe)
     }
 
-    func testBrakeWhenDepthBelowBrakeDistance() {
+    func testBrakeWhenDepthAtOrBelowCritical() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        // At fallback speed 0.3: brakeDist = max(0.15, 0.3*0.8, 0.3²/(2*1.5)) = max(0.15, 0.24, 0.03) = 0.24
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0, accuracy: 1e-5, "Depth below brake dist → full stop")
+        // v = 1.0 → criticalDistance = 0.45. Depth 0.44 m is just under.
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.44, arkitSpeedMps: 1.0)
+        let result = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(result.throttle, 0, accuracy: 1e-6)
         XCTAssertEqual(result.source, .safetySupervisor)
         if case .brake = sv.state {} else {
-            XCTFail("Expected BRAKE state, got \(sv.state)")
+            XCTFail("Expected BRAKE, got \(sv.state)")
         }
     }
 
-    func testCautionWhenDepthBetweenBrakeAndClear() {
+    func testBrakeTriggersWhenDepthEqualsCritical() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        // At fallback speed 0.3: brakeDist=0.24, clearDist=0.45
-        // Depth 0.35 is between them → CAUTION
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.35)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertLessThan(result.throttle, 0.5, "CAUTION should scale throttle down")
-        XCTAssertGreaterThan(result.throttle, 0, "CAUTION should not fully stop")
-        XCTAssertEqual(result.source, .safetySupervisor)
-        if case .caution = sv.state {} else {
-            XCTFail("Expected CAUTION state, got \(sv.state)")
-        }
+        // Boundary: depth == criticalDistance → BRAKE (uses ≤).
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.45, arkitSpeedMps: 1.0)
+        let result = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(result.throttle, 0)
+        if case .brake = sv.state {} else { XCTFail("Boundary depth → BRAKE") }
     }
 
-    func testCautionThrottleScalesLinearly() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 1.0)
-        // At fallback speed 0.3: brakeDist=0.24, clearDist=0.45
-        // At exact midpoint 0.345: scale = (0.345-0.24)/(0.45-0.24) = 0.105/0.21 = 0.50
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.345)
+    // MARK: - Latched-speed invariant (anti-oscillation)
 
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0.5, accuracy: 0.05, "Midpoint of caution zone → ~50% throttle")
+    func testLatchedSpeedKeepsBrakeDespiteSlowdown() {
+        let sv = makeSupervisor()
+
+        // Tick 1: moving at 1.0 m/s, depth 0.40 m < 0.45 → BRAKE, latch = 1.0.
+        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.40, arkitSpeedMps: 1.0)
+        XCTAssertEqual(sv.supervise(command: forwardCmd(), context: ctx1).throttle, 0)
+
+        // Tick 2: robot has slowed to 0.1 m/s (brake worked). Same depth.
+        // WITHOUT latch: criticalDistance(0.1) = 0.11 → 0.40 > 0.11 → release. BUG.
+        // WITH latch: criticalDistance(1.0) = 0.45 → 0.40 < 0.45 → stay in BRAKE.
+        let ctx2 = PlannerTestFactory.context(timestamp: 0.05, forwardDepth: 0.40, arkitSpeedMps: 0.1)
+        XCTAssertEqual(sv.supervise(command: forwardCmd(), context: ctx2).throttle, 0)
     }
 
-    // MARK: - Latched Speed (Anti-Oscillation Invariant)
-
-    func testLatchedSpeedPreventsThresholdShrinkage() {
+    func testLatchedSpeedPersistsUntilRelease() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
 
-        // Tick 1: Moving at 1.0 m/s, depth 0.5m → below brakeDist (0.80m at 1.0 m/s) → BRAKE
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.5, arkitSpeedMps: 1.0)
-        let r1 = sv.supervise(command: cmd, context: ctx1)
-        XCTAssertEqual(r1.throttle, 0, accuracy: 1e-5, "Should brake at 0.5m with 1.0 m/s")
+        // Engage at 1.5 m/s, depth 0.70 m < 0.8125 → BRAKE, latch = 1.5.
+        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.70, arkitSpeedMps: 1.5)
+        _ = sv.supervise(command: forwardCmd(), context: ctx1)
 
-        // Tick 2: Speed has dropped to 0.1 m/s (because we braked), same depth.
-        // Without latched speed, brakeDist would be max(0.15, 0.1*0.8, 0.01/3.0) = 0.15
-        // → 0.5m > 0.15m → would release brake! That's the oscillation bug.
-        // With latched speed (1.0), brakeDist stays at 0.80m → 0.5m < 0.80m → stays in BRAKE.
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.5, arkitSpeedMps: 0.1)
-        let r2 = sv.supervise(command: cmd, context: ctx2)
-        XCTAssertEqual(r2.throttle, 0, accuracy: 1e-5,
-                       "Latched speed must prevent threshold shrinkage — stay in BRAKE")
+        // Depth of 0.75 m — still below criticalDistance(1.5) = 0.8125. Stay BRAKE.
+        let ctx2 = PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.75, arkitSpeedMps: 0.0)
+        XCTAssertEqual(sv.supervise(command: forwardCmd(), context: ctx2).throttle, 0)
     }
 
-    func testLatchedSpeedClearsOnReturnToClear() {
+    // MARK: - Release via genuine clearance
+
+    func testReleaseRequiresContinuousClearanceHold() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
 
-        // Enter BRAKE at speed 1.0
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 1.0)
-        _ = sv.supervise(command: cmd, context: ctx1)
+        // Engage at 1.0 m/s.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
 
-        // Wait out cooldown, obstacle moves far away
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.6, forwardDepth: 10.0, arkitSpeedMps: 1.0)
-        _ = sv.supervise(command: cmd, context: ctx2)  // BRAKE → CAUTION
+        // Depth jumps above criticalDistance(1.0) = 0.45 but hold time < releaseHoldS.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 1.0, arkitSpeedMps: 0.5)
+        )
+        if case .brake = sv.state {} else { XCTFail("Should still be BRAKE during hold window") }
 
-        let ctx3 = PlannerTestFactory.context(timestamp: 1.0, forwardDepth: 10.0, arkitSpeedMps: 1.0)
-        _ = sv.supervise(command: cmd, context: ctx3)  // CAUTION → CLEAR
-
-        XCTAssertEqual(sv.state, .clear, "Should return to CLEAR with far depth and elapsed cooldowns")
+        // Now exceed releaseHoldS (0.3 s since clearance started).
+        let released = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.5, forwardDepth: 1.0, arkitSpeedMps: 0.5)
+        )
+        XCTAssertEqual(sv.state, .safe)
+        XCTAssertEqual(released.throttle, 0.5, accuracy: 1e-6)
     }
 
-    // MARK: - Cooldown Timers
-
-    func testBrakeCooldownPreventsImmediateRelease() {
+    func testReleaseTimerResetsOnDepthDip() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
 
-        // Enter BRAKE
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx1)
-        XCTAssert(sv.state == .brake(since: 0))
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
 
-        // Obstacle instantly removed (depth = 10m), but within cooldown (0.3s < 0.5s)
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.3, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx2)
+        // Depth above threshold briefly.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 1.0, arkitSpeedMps: 0.3)
+        )
+        // Depth dips back below → timer must reset.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.15, forwardDepth: 0.30, arkitSpeedMps: 0.0)
+        )
+        // Back above, but only 0.15 s elapsed since new clearance → still BRAKE.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.30, forwardDepth: 1.0, arkitSpeedMps: 0.0)
+        )
         if case .brake = sv.state {} else {
-            XCTFail("Should remain in BRAKE during cooldown, got \(sv.state)")
+            XCTFail("Timer must reset on dip; supervisor must still be BRAKE")
         }
     }
 
-    func testBrakeTransitionsThroughCautionNeverDirectlyToClear() {
+    // MARK: - Release via operator intervention
+
+    func testOperatorReverseReleasesLatchImmediately() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
 
-        // Enter BRAKE
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx1)
-
-        // Wait past brake cooldown (0.5s), depth far away → should transition to CAUTION, not CLEAR
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.6, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx2)
-        if case .caution = sv.state {} else {
-            XCTFail("BRAKE should transition to CAUTION (not CLEAR), got \(sv.state)")
-        }
-    }
-
-    func testCautionCooldownPreventsImmediateClear() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // Enter CAUTION directly
-        // At fallback speed 0.3: brakeDist=0.24, clearDist=0.45
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.35)
-        _ = sv.supervise(command: cmd, context: ctx1)
-        if case .caution = sv.state {} else {
-            XCTFail("Expected CAUTION state")
-        }
-
-        // Depth clears immediately (0.1s < 0.3s cooldown)
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0)
-        _ = sv.supervise(command: cmd, context: ctx2)
-        if case .caution = sv.state {} else {
-            XCTFail("Should remain in CAUTION during cooldown, got \(sv.state)")
-        }
-    }
-
-    func testFullRecoverySequence_BrakeToCautionToClear() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // t=0: BRAKE
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx1)
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
         if case .brake = sv.state {} else { XCTFail("Expected BRAKE") }
 
-        // t=0.3: Still BRAKE (cooldown not met)
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.3, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx2)
-        if case .brake = sv.state {} else { XCTFail("Expected BRAKE (cooldown)") }
-
-        // t=0.6: BRAKE → CAUTION (brake cooldown met)
-        let ctx3 = PlannerTestFactory.context(timestamp: 0.6, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx3)
-        if case .caution = sv.state {} else { XCTFail("Expected CAUTION, got \(sv.state)") }
-
-        // t=0.7: Still CAUTION (caution cooldown not met)
-        let ctx4 = PlannerTestFactory.context(timestamp: 0.7, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx4)
-        if case .caution = sv.state {} else { XCTFail("Expected CAUTION (cooldown), got \(sv.state)") }
-
-        // t=1.0: CAUTION → CLEAR (caution cooldown met)
-        let ctx5 = PlannerTestFactory.context(timestamp: 1.0, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx5)
-        XCTAssertEqual(sv.state, .clear, "Should reach CLEAR after both cooldowns")
+        // Operator commands reverse — even with obstacle still close.
+        let reverseCmd = ControlCommand(steering: 0, throttle: -0.4, source: .planner("Op"))
+        let out = sv.supervise(command: reverseCmd, context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: 0.30, arkitSpeedMps: 0.0)
+        )
+        XCTAssertEqual(out.throttle, -0.4, accuracy: 1e-6)
+        XCTAssertEqual(sv.state, .safe)
     }
 
-    // MARK: - Re-engagement
+    // MARK: - Trigger & stop snapshots
 
-    func testCautionEscalatesToBrakeIfDepthDrops() {
+    func testTriggerSnapshotCapturesFieldsAtEngagement() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // Enter CAUTION (at fallback 0.3: brakeDist=0.24, clearDist=0.45, depth 0.35 is in CAUTION)
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.35)
-        _ = sv.supervise(command: cmd, context: ctx1)
-        if case .caution = sv.state {} else { XCTFail("Expected CAUTION") }
-
-        // Depth drops below brake distance → escalate to BRAKE
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.1)
-        let result = sv.supervise(command: cmd, context: ctx2)
-        XCTAssertEqual(result.throttle, 0, accuracy: 1e-5, "Should escalate to BRAKE")
-        if case .brake = sv.state {} else { XCTFail("Expected BRAKE, got \(sv.state)") }
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(
+                timestamp: 1.5, forwardDepth: 0.35,
+                motorSpeedMps: 0.9, arkitSpeedMps: 1.0
+            )
+        )
+        guard let record = sv.currentBrake else {
+            XCTFail("BrakeRecord should exist")
+            return
+        }
+        XCTAssertEqual(record.trigger.timestamp, 1.5, accuracy: 1e-6)
+        XCTAssertEqual(record.trigger.depth, 0.35, accuracy: 1e-5)
+        XCTAssertEqual(record.trigger.speed, 0.9, accuracy: 1e-5, "Motor speed preferred")
+        XCTAssertEqual(record.trigger.criticalDistance, 0.9 * 0.1 + 0.81 / 4 + 0.1, accuracy: 1e-4)
+        XCTAssertEqual(record.trigger.motorSpeed, 0.9, accuracy: 1e-5)
+        XCTAssertEqual(record.trigger.arkitSpeed, 1.0, accuracy: 1e-5)
+        XCTAssertNil(record.stop)
     }
 
-    // MARK: - Non-Forward Clears State
-
-    func testNonForwardCommandClearsStateImmediately() {
+    func testStopSnapshotCapturedOnFirstZeroSpeedFrame() {
         let sv = makeSupervisor()
-        let fwd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        let rev = ControlCommand(steering: 0, throttle: -0.5, source: .planner("Test"))
+        // Trigger at 1.0 m/s, pose at (0,0).
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        // Slow but not stopped.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.25, arkitSpeedMps: 0.2)
+        )
+        XCTAssertNil(sv.currentBrake?.stop, "Not stopped yet")
 
-        // Enter BRAKE
-        let ctx1 = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: fwd, context: ctx1)
-        if case .brake = sv.state {} else { XCTFail("Expected BRAKE") }
+        // Robot is now at rest, pose shifted forward by 0.05 m.
+        let stopPose = PoseEntry(timestamp: 0.3, x: 0.05, y: 0, z: 0, yaw: 0, confidence: 1.0)
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(
+                timestamp: 0.3, forwardDepth: 0.20, arkitSpeedMps: 0.0, pose: stopPose
+            )
+        )
+        guard let stop = sv.currentBrake?.stop else {
+            XCTFail("Stop snapshot should be captured")
+            return
+        }
+        XCTAssertEqual(stop.timestamp, 0.3, accuracy: 1e-6)
+        XCTAssertEqual(stop.depth, 0.20, accuracy: 1e-5)
+        XCTAssertEqual(sv.currentBrake?.stoppingDistanceM ?? -1, 0.05, accuracy: 1e-5)
+        XCTAssertEqual(sv.currentBrake?.stoppingTimeS ?? -1, 0.3, accuracy: 1e-6)
+        // actualDecel = latchedSpeed / stoppingTime = 1.0 / 0.3 ≈ 3.33
+        XCTAssertEqual(sv.currentBrake?.actualDecelMPS2 ?? -1, 1.0 / 0.3, accuracy: 1e-4)
+        XCTAssertEqual(sv.currentBrake?.brakingDistanceM ?? -1, 0.30 - 0.20, accuracy: 1e-5)
+    }
 
-        // Send reverse command → should clear immediately (no cooldown)
-        let ctx2 = PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-        let result = sv.supervise(command: rev, context: ctx2)
-        XCTAssertEqual(result.throttle, -0.5, accuracy: 1e-5)
-        XCTAssertEqual(sv.state, .clear, "Non-forward command should clear state immediately")
+    func testStopSnapshotOnlyCapturedOnce() {
+        let sv = makeSupervisor()
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        // Two ticks with speed below epsilon — second one must not overwrite.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.25, arkitSpeedMps: 0.0)
+        )
+        let firstStopT = sv.currentBrake?.stop?.timestamp
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.2, forwardDepth: 0.20, arkitSpeedMps: 0.0)
+        )
+        XCTAssertEqual(sv.currentBrake?.stop?.timestamp, firstStopT)
+    }
+
+    func testBrakeRecordClearsOnRelease() {
+        let sv = makeSupervisor()
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        XCTAssertNotNil(sv.currentBrake)
+
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 2.0, arkitSpeedMps: 0.3)
+        )
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.5, forwardDepth: 2.0, arkitSpeedMps: 0.3)
+        )
+        XCTAssertEqual(sv.state, .safe)
+        XCTAssertNil(sv.currentBrake)
+    }
+
+    // MARK: - Event diagnostics
+
+    func testLastEventReportsCurrentCriticalDistance() {
+        let sv = makeSupervisor()
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 2.0, arkitSpeedMps: 1.0)
+        _ = sv.supervise(command: forwardCmd(), context: ctx)
+        guard let e = sv.lastEvent else { XCTFail("lastEvent missing"); return }
+        XCTAssertFalse(e.isBraking)
+        XCTAssertEqual(e.speed, 1.0, accuracy: 1e-5)
+        XCTAssertEqual(e.criticalDistance, 0.45, accuracy: 1e-5)
+        XCTAssertEqual(e.smoothedDepth, 2.0, accuracy: 1e-5)
+    }
+
+    func testLastEventDuringBrakeReportsLatchedSpeed() {
+        let sv = makeSupervisor()
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: 0.30, arkitSpeedMps: 0.1)
+        )
+        guard let e = sv.lastEvent else { XCTFail("lastEvent missing"); return }
+        XCTAssertTrue(e.isBraking)
+        XCTAssertEqual(e.speed, 1.0, accuracy: 1e-5, "Latched speed reported, not current 0.1")
+        XCTAssertEqual(e.criticalDistance, 0.45, accuracy: 1e-5)
     }
 
     // MARK: - Reset
 
-    func testResetClearsAllState() {
+    func testResetReturnsToSafeAndClearsState() {
         let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // Enter BRAKE
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-        _ = sv.supervise(command: cmd, context: ctx)
-
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        XCTAssertNotNil(sv.currentBrake)
         sv.reset()
-        XCTAssertEqual(sv.state, .clear)
+        XCTAssertEqual(sv.state, .safe)
+        XCTAssertNil(sv.currentBrake)
         XCTAssertNil(sv.lastEvent)
     }
 
-    // MARK: - Event Reporting
+    // MARK: - Exponential Moving Average smoothing
 
-    func testEventReportsClearAction() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        let ctx = PlannerTestFactory.context(timestamp: 1.0, forwardDepth: 10.0)
-
-        _ = sv.supervise(command: cmd, context: ctx)
-        let event = sv.lastEvent
-        XCTAssertNotNil(event)
-        XCTAssertEqual(event?.action, .clear)
-        XCTAssertEqual(event!.timestamp, 1.0, accuracy: 1e-5)
-        XCTAssertEqual(event!.forwardDepth, 10.0, accuracy: 1e-5)
-    }
-
-    func testEventReportsBrakeAction() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        let ctx = PlannerTestFactory.context(timestamp: 1.0, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-
-        _ = sv.supervise(command: cmd, context: ctx)
-        let event = sv.lastEvent
-        XCTAssertNotNil(event)
-        if case .brakeApplied = event?.action {} else {
-            XCTFail("Expected brakeApplied action, got \(String(describing: event?.action))")
-        }
-    }
-
-    func testEventReportsCautionWithThrottleScale() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 1.0)
-        // At fallback speed 0.3: brakeDist=0.24, clearDist=0.45, midpoint=0.345 → scale≈0.5
-        let ctx = PlannerTestFactory.context(timestamp: 1.0, forwardDepth: 0.345)
-
-        _ = sv.supervise(command: cmd, context: ctx)
-        let event = sv.lastEvent
-        XCTAssertNotNil(event)
-        if case .caution(let scale, _) = event?.action {
-            XCTAssertEqual(scale, 0.5, accuracy: 0.1, "Should report throttle scale ≈ 0.5")
-        } else {
-            XCTFail("Expected caution action, got \(String(describing: event?.action))")
-        }
-    }
-
-    // MARK: - Speed Resolution
-
-    func testUsesMotorSpeedOverARKitSpeed() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        // Motor speed 2.0 → brakeDist = max(0.15, 2.0*0.8, 4.0/3.0) = max(0.15, 1.6, 1.333) = 1.6
-        // Depth 1.0m < 1.6m → BRAKE
-        let ctx = PlannerTestFactory.context(
-            timestamp: 0, forwardDepth: 1.0,
-            motorSpeedMps: 2.0, arkitSpeedMps: 0.5
+    func testExponentialMovingAverageInitializesOnFirstReading() {
+        var cfg = defaultConfig
+        cfg.alphaSmoothing = 0.5
+        let sv = makeSupervisor(config: cfg)
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 2.0, arkitSpeedMps: 1.0)
         )
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0, accuracy: 1e-5,
-                       "Should use motor speed (2.0) for thresholds, causing brake at 1.0m")
+        XCTAssertEqual(sv.lastEvent?.smoothedDepth ?? -1, 2.0, accuracy: 1e-5)
     }
 
-    func testFallsBackToFallbackSpeed() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        // No speed sensors → uses fallbackSpeedMPS (0.3)
-        // brakeDist = max(0.15, 0.3*0.8, 0.09/3.0) = max(0.15, 0.24, 0.03) = 0.24
-        // Depth 0.2m < 0.24m → BRAKE
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.2)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.throttle, 0, accuracy: 1e-5, "Should use fallback speed for thresholds")
+    func testExponentialMovingAverageConvergesGeometrically() {
+        var cfg = defaultConfig
+        cfg.alphaSmoothing = 0.5
+        let sv = makeSupervisor(config: cfg)
+        // Prime with 2.0.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 2.0, arkitSpeedMps: 1.0)
+        )
+        // New reading 0.50 → smoothed = 0.5·0.50 + 0.5·2.0 = 1.25.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: 0.50, arkitSpeedMps: 1.0)
+        )
+        XCTAssertEqual(sv.lastEvent?.smoothedDepth ?? -1, 1.25, accuracy: 1e-5)
+        // Again 0.50 → 0.875.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.50, arkitSpeedMps: 1.0)
+        )
+        XCTAssertEqual(sv.lastEvent?.smoothedDepth ?? -1, 0.875, accuracy: 1e-5)
     }
 
-    // MARK: - Steering Passthrough
-
-    func testSteeringIsPreservedInCaution() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5, steering: 0.7)
-        // At fallback 0.3: CAUTION zone 0.24..0.45, depth=0.35
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.35)
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.steering, 0.7, accuracy: 1e-5,
-                       "CAUTION should preserve planner's steering output")
-    }
-
-    func testSteeringIsZeroInBrake() {
-        let sv = makeSupervisor()
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5, steering: 0.7)
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.1) // BRAKE zone
-
-        let result = sv.supervise(command: cmd, context: ctx)
-        XCTAssertEqual(result.steering, 0, accuracy: 1e-5,
-                       "BRAKE should zero out steering (ControlCommand.brake)")
-    }
-}
-
-// MARK: - EMA Depth Filter Tests
-
-final class SafetySupervisorEMATests: XCTestCase {
-
-    /// Config with real EMA alphas (not 1.0).
-    private var emaConfig: SafetySupervisorConfig {
-        var c = SafetySupervisorConfig()
-        c.depthEmaAlphaApproaching = 0.5
-        c.depthEmaAlphaReceding = 0.3
-        // Use very wide zones so we stay in CLEAR and can observe filtered depth.
-        c.ttcBrakeS = 0.01
-        c.ttcCautionS = 0.02
-        c.minBrakeDistanceM = 0.01
-        c.minCautionDistanceM = 0.02
-        c.fallbackSpeedMPS = 0.3
-        return c
-    }
-
-    func testFirstReadingPassesThroughUnfiltered() {
-        let sv = SafetySupervisor(config: emaConfig)
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 2.0)
-
-        _ = sv.supervise(command: cmd, context: ctx)
-        XCTAssertNotNil(sv.lastEvent)
-        XCTAssertEqual(sv.lastEvent!.filteredDepth, 2.0, accuracy: 1e-5,
-                       "First depth reading should pass through unfiltered")
-    }
-
-    func testApproachingObstacleUsesHigherAlpha() {
-        let sv = SafetySupervisor(config: emaConfig)
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // First reading: 2.0m
-        _ = sv.supervise(command: cmd, context: PlannerTestFactory.context(timestamp: 0, forwardDepth: 2.0))
-
-        // Second reading: 1.0m (approaching) → alpha=0.5
-        // filtered = 0.5 * 1.0 + 0.5 * 2.0 = 1.5
-        _ = sv.supervise(command: cmd, context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 1.0))
-        XCTAssertEqual(sv.lastEvent?.filteredDepth ?? 0, 1.5, accuracy: 1e-4,
-                       "Approaching should use alpha=0.5: 0.5*1.0 + 0.5*2.0 = 1.5")
-    }
-
-    func testRecedingObstacleUsesLowerAlpha() {
-        let sv = SafetySupervisor(config: emaConfig)
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // First reading: 1.0m
-        _ = sv.supervise(command: cmd, context: PlannerTestFactory.context(timestamp: 0, forwardDepth: 1.0))
-
-        // Second reading: 2.0m (receding) → alpha=0.3
-        // filtered = 0.3 * 2.0 + 0.7 * 1.0 = 0.6 + 0.7 = 1.3
-        _ = sv.supervise(command: cmd, context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 2.0))
-        XCTAssertEqual(sv.lastEvent?.filteredDepth ?? 0, 1.3, accuracy: 1e-4,
-                       "Receding should use alpha=0.3: 0.3*2.0 + 0.7*1.0 = 1.3")
-    }
-
-    func testNoiseSpikeSuppressedByEMA() {
-        let sv = SafetySupervisor(config: emaConfig)
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // Establish steady state at 3.0m (several readings)
-        for i in 0..<10 {
-            _ = sv.supervise(command: cmd, context: PlannerTestFactory.context(
-                timestamp: Double(i) * 0.1, forwardDepth: 3.0
-            ))
-        }
-
-        // Single spike down to 0.5m (noisy frame)
-        _ = sv.supervise(command: cmd, context: PlannerTestFactory.context(
-            timestamp: 1.0, forwardDepth: 0.5
-        ))
-        let filteredAfterSpike = sv.lastEvent?.filteredDepth ?? 0
-
-        // With alpha=0.5 (approaching), filtered = 0.5*0.5 + 0.5*3.0 = 1.75
-        // This is much higher than the raw 0.5, proving the filter suppresses the spike.
-        XCTAssertGreaterThan(filteredAfterSpike, 1.0,
-                             "EMA should suppress single noise spike from 3.0→0.5")
-    }
-}
-
-// MARK: - Anti-Oscillation Integration Tests
-
-final class SafetySupervisorOscillationTests: XCTestCase {
-
-    /// Simulates the exact scenario that caused stop-go oscillation in the old design.
-    /// The robot approaches a wall, brakes, speed drops, and we verify no oscillation.
-    func testNoOscillationOnWallApproach() {
-        var config = SafetySupervisorConfig()
-        config.depthEmaAlphaApproaching = 1.0  // Disable EMA for clarity
-        config.depthEmaAlphaReceding = 1.0
-        config.ttcBrakeS = 1.5
-        config.ttcCautionS = 2.5
-        config.minBrakeDistanceM = 0.3
-        config.minCautionDistanceM = 0.5
-        config.maxDecelerationMPS2 = 0.5
-        config.fallbackSpeedMPS = 0.3
-        config.minBrakeDurationS = 0.5
-        config.minCautionDurationS = 0.3
-        let sv = SafetySupervisor(config: config)
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
-
-        // Wall at 0.2m, robot at 1.0 m/s
-        // brakeDist = max(0.3, 1.5, 1.0) = 1.5m
-        // 0.2m < 1.5m → BRAKE immediately
-
-        var speed = 1.0
-        let wallDepth: Float = 0.2
-        var stateChanges = 0
-        var lastWasBraking = false
-
-        for i in 0..<100 {
-            let t = Double(i) * 0.016  // ~60Hz
-            let ctx = PlannerTestFactory.context(
-                timestamp: t,
-                forwardDepth: wallDepth,
-                arkitSpeedMps: speed
-            )
-            let result = sv.supervise(command: cmd, context: ctx)
-
-            let isBraking: Bool
-            if case .brake = sv.state {
-                isBraking = true
-            } else {
-                isBraking = false
-            }
-
-            if isBraking != lastWasBraking { stateChanges += 1 }
-            lastWasBraking = isBraking
-
-            // Simulate speed decay when braking
-            if result.throttle == 0 {
-                speed = max(0.01, speed * 0.9)
-            } else {
-                speed = min(1.0, speed + 0.05)
-            }
-        }
-
-        // Should enter BRAKE once and never leave.
-        // The old design would oscillate (stateChanges >> 1).
-        XCTAssertEqual(stateChanges, 1,
-                       "Should transition to BRAKE once and stay (had \(stateChanges) state changes)")
+    func testSmoothingDelaysBrakeUntilAverageCrossesThreshold() {
+        var cfg = defaultConfig
+        cfg.alphaSmoothing = 0.5
+        let sv = makeSupervisor(config: cfg)
+        // Prime far away.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 2.0, arkitSpeedMps: 1.0)
+        )
+        // Sudden close reading — smoothed only drops to 1.25, above criticalDistance(1.0) = 0.45 → SAFE.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.03, forwardDepth: 0.20, arkitSpeedMps: 1.0)
+        )
+        XCTAssertEqual(sv.state, .safe, "Single noisy dip must not trigger brake under smoothing")
+        // Sustained close readings — by third frame smoothed ≈ 0.40 < 0.45 → BRAKE.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.06, forwardDepth: 0.20, arkitSpeedMps: 1.0)
+        )
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.09, forwardDepth: 0.20, arkitSpeedMps: 1.0)
+        )
         if case .brake = sv.state {} else {
-            XCTFail("Should remain in BRAKE state with wall at 0.2m, got \(sv.state)")
+            XCTFail("Sustained close readings should eventually trigger BRAKE")
         }
     }
 
-    /// Verify that after obstacle removal, recovery follows the correct sequence
-    /// with no intermediate oscillation.
-    func testSmoothRecoveryAfterObstacleRemoval() {
-        var config = SafetySupervisorConfig()
-        config.depthEmaAlphaApproaching = 1.0
-        config.depthEmaAlphaReceding = 1.0
-        config.minBrakeDurationS = 0.5
-        config.minCautionDurationS = 0.3
-        let sv = SafetySupervisor(config: config)
-        let cmd = PlannerTestFactory.forwardCommand(throttle: 0.5)
+    // MARK: - Fallback speed
 
-        // Phase 1: Approach and brake (t=0..0.3)
-        for i in 0..<20 {
-            let t = Double(i) * 0.016
-            let ctx = PlannerTestFactory.context(timestamp: t, forwardDepth: 0.1, arkitSpeedMps: 0.3)
-            _ = sv.supervise(command: cmd, context: ctx)
-        }
-        if case .brake = sv.state {} else { XCTFail("Should be in BRAKE") }
+    func testUsesFallbackSpeedWhenNoSensorSpeedAvailable() {
+        let sv = makeSupervisor()
+        // No motor, no ARKit speed → fallbackSpeedMPS = 0.3 → criticalDistance ≈ 0.1525.
+        // Depth 0.14 m < 0.1525 → BRAKE.
+        let ctx = PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.14)
+        let result = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(result.throttle, 0)
+    }
 
-        // Phase 2: Obstacle removed at t=0.5 (depth jumps to 10m)
-        // Track all state transitions
-        var stateSequence: [String] = []
-        var lastStateName = "brake"
-
-        for i in 0..<100 {
-            let t = 0.5 + Double(i) * 0.016
-            let ctx = PlannerTestFactory.context(timestamp: t, forwardDepth: 10.0, arkitSpeedMps: 0.3)
-            _ = sv.supervise(command: cmd, context: ctx)
-
-            let currentStateName: String
-            switch sv.state {
-            case .clear: currentStateName = "clear"
-            case .caution: currentStateName = "caution"
-            case .brake: currentStateName = "brake"
-            }
-
-            if currentStateName != lastStateName {
-                stateSequence.append(currentStateName)
-                lastStateName = currentStateName
-            }
-        }
-
-        // Expected: brake → caution → clear (exactly two transitions, no bouncing)
-        XCTAssertEqual(stateSequence, ["caution", "clear"],
-                       "Recovery should follow brake→caution→clear, got: \(stateSequence)")
+    func testPrefersMotorSpeedOverArkitSpeed() {
+        let sv = makeSupervisor()
+        // Motor 0.3 (criticalDistance 0.1525), ARKit 2.0 (criticalDistance 1.3).
+        // Depth 0.6: under motor-only config SAFE, under ARKit-only config BRAKE.
+        // Expect SAFE, proving motor wins.
+        let ctx = PlannerTestFactory.context(
+            timestamp: 0, forwardDepth: 0.6,
+            motorSpeedMps: 0.3, arkitSpeedMps: 2.0
+        )
+        _ = sv.supervise(command: forwardCmd(), context: ctx)
+        XCTAssertEqual(sv.state, .safe)
     }
 }

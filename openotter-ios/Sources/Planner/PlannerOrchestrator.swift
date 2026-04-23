@@ -15,17 +15,15 @@ final class PlannerOrchestrator: ObservableObject {
     @Published private(set) var lastCommand: ControlCommand = .neutral
     @Published private(set) var lastSupervisorEvent: SafetySupervisorEvent?
 
-    /// True when the supervisor is in full-stop BRAKE state (triggers alarm + overlay in UI).
+    /// True while the supervisor is actively braking (drives alarm + overlay in UI).
     @Published private(set) var isOverridden: Bool = false
 
-    /// Current safety supervisor state for richer UI feedback.
-    @Published private(set) var supervisorState: SafetySupervisorState = .clear
+    /// Current safety supervisor state for UI feedback.
+    @Published private(set) var supervisorState: SafetySupervisorState = .safe
 
-    /// Depth and speed at the frame CAUTION was first triggered this threat event.
-    @Published private(set) var cautionSnapshot: SafetyTriggerSnapshot?
-
-    /// Depth and speed at the frame BRAKE was first triggered this threat event.
-    @Published private(set) var brakeSnapshot: SafetyTriggerSnapshot?
+    /// Trigger + (optional) stop snapshot for the current BRAKE episode.
+    /// Nil while SAFE.
+    @Published private(set) var brakeRecord: SafetyBrakeRecord?
 
     // MARK: - Init
 
@@ -50,11 +48,8 @@ final class PlannerOrchestrator: ObservableObject {
         lastCommand = safeCommand
         lastSupervisorEvent = supervisor.lastEvent
         supervisorState = supervisor.state
-        cautionSnapshot = supervisor.cautionSnapshot
-        brakeSnapshot = supervisor.brakeSnapshot
+        brakeRecord = supervisor.currentBrake
 
-        // isOverridden = true only for full-stop BRAKE, not CAUTION throttle scaling.
-        // This preserves existing UI alarm behavior.
         if case .brake = supervisor.state {
             isOverridden = true
         } else {
@@ -76,8 +71,7 @@ final class PlannerOrchestrator: ObservableObject {
         lastCommand = .neutral
         lastSupervisorEvent = nil
         isOverridden = false
-        supervisorState = .clear
-        cautionSnapshot = nil
-        brakeSnapshot = nil
+        supervisorState = .safe
+        brakeRecord = nil
     }
 }

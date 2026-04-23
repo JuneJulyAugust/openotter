@@ -29,7 +29,7 @@ public struct MotorSpeedConverter {
     // Average gear ratio (wheel_rpm / motor_rpm) ≈ 0.030475
     // Wheel diameter = 88mm = 0.088m
 
-    private static let gearRatio: Double = 0.030475
+    private static let gearRatio: Double = 0.029
     private static let wheelDiameterM: Double = 0.088
     private static let pi: Double = 3.14159265358979
 

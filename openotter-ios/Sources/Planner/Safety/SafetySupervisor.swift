@@ -3,123 +3,101 @@ import AudioToolbox
 
 // MARK: - Config
 
+/// Tunable parameters for the time-to-brake safety policy.
+///
+/// See `DESIGN.md` for the full derivation. The three policy parameters
+/// (`tSysS`, `aMaxMPS2`, `dMarginM`) are physical and independent — change one
+/// and the effect on `criticalDistance` is predictable from the formula below:
+///
+///     criticalDistance(v) = v * tSysS + v² / (2 * aMaxMPS2) + dMarginM
 struct SafetySupervisorConfig {
-    /// Conservative speed estimate when no sensor data available.
-    var fallbackSpeedMPS: Float = 0.3
+    // MARK: Policy parameters (tune these from field testing)
 
-    // MARK: Zone Thresholds
+    /// System reaction latency (seconds): sense → decide → actuator effect.
+    var tSysS: Float = 0.1
 
-    /// TTC threshold for BRAKE zone (seconds). Obstacle within this TTC → full stop.
-    var ttcBrakeS: Float = 0.3
+    /// Maximum achievable deceleration under emergency brake (m/s²).
+    /// Empirical: measured 1.19 m/s² at 0.76 m/s with neutral throttle
+    /// (no friction brakes — back-EMF and rolling resistance only).
+    /// Set to 1.0 with ~20% safety factor; re-measure at multiple speeds.
+    var aMaxMPS2: Float = 1.0
 
-    /// TTC threshold for CAUTION zone (seconds). Obstacle within this TTC → throttle ramp.
-    var ttcCautionS: Float = 0.8
+    /// Fixed post-stop safety standoff (meters).
+    /// Includes ~0.13 m sensor-to-bumper offset (phone is mounted behind
+    /// the front bumper, not at the leading edge) plus 0.07 m desired
+    /// clearance. When depth reads 0.13 m, the bumper is already at the wall.
+    var dMarginM: Float = 0.2
 
-    /// Absolute minimum BRAKE distance (meters). Overrides TTC at low speeds.
-    var minBrakeDistanceM: Float = 0.30
+    // MARK: Filtering / debouncing
 
-    /// Absolute minimum CAUTION distance (meters). Overrides TTC at low speeds.
-    var minCautionDistanceM: Float = 0.50
+    /// Exponential moving average weight for forward depth (0..1).
+    /// Higher = reacts faster to new readings, less smoothing.
+    var alphaSmoothing: Float = 0.5
 
-    /// Maximum deceleration (m/s²). Used to compute kinematic braking distance.
-    var maxDecelerationMPS2: Float = 2.5
-
-    // MARK: Temporal Guards
-
-    /// Minimum time (seconds) the supervisor stays in BRAKE before allowing CLEAR transition.
-    var minBrakeDurationS: TimeInterval = 0.5
-
-    /// Minimum time (seconds) the supervisor stays in CAUTION before allowing CLEAR transition.
-    var minCautionDurationS: TimeInterval = 0.3
-
-    // MARK: Depth Filtering
-
-    /// EMA smoothing factor for depth readings when obstacle is approaching (lower = smoother).
-    /// Approaching uses a higher alpha to react faster.
-    var depthEmaAlphaApproaching: Float = 0.5
-
-    /// EMA smoothing factor when obstacle is receding (lower = smoother).
-    /// Slower release prevents premature brake release from noise.
-    var depthEmaAlphaReceding: Float = 0.3
+    /// Continuous clearance duration required before releasing BRAKE (seconds).
+    /// Debounces single-frame depth spikes; does NOT enforce a minimum brake duration.
+    var releaseHoldS: TimeInterval = 0.3
 
     // MARK: Misc
 
-    /// Avoid division by zero at standstill.
+    /// Conservative speed used when neither motor nor ARKit speed is available (m/s).
+    var fallbackSpeedMPS: Float = 0.3
+
+    /// Speed below which the robot is considered "stopped" — used to capture the stop snapshot (m/s).
+    var stopSpeedEpsilonMPS: Float = 0.05
+
+    /// Avoid divide-by-zero when reporting diagnostics.
     var minSpeedEpsilonMPS: Float = 0.01
 }
 
-// MARK: - Trigger Snapshot
+// MARK: - State
 
-/// Depth and speeds captured at the exact frame a state transition was triggered.
-struct SafetyTriggerSnapshot {
-    let depth: Float        // EMA-filtered depth at trigger moment (m)
-    let motorSpeed: Float   // motor-derived speed at trigger moment (m/s), NaN if unavailable
-    let arkitSpeed: Float   // ARKit-derived speed at trigger moment (m/s), NaN if unavailable
-}
-
-// MARK: - Internal State
-
-/// The three-zone safety state machine.
-///
-/// Invariant: Once in CAUTION or BRAKE, the supervisor does not return to CLEAR
-/// until the obstacle depth exceeds the `clearDistance` computed from the **latched speed**
-/// AND the minimum hold duration has elapsed.
+/// Two-state safety machine. See `DESIGN.md §5`.
 enum SafetySupervisorState: Equatable {
-    case clear
-    case caution(since: TimeInterval)
+    case safe
     case brake(since: TimeInterval)
 }
 
 // MARK: - SafetySupervisor
 
-/// Monitors forward depth and overrides planner commands when collision is imminent.
+/// Enforces the time-to-brake collision-avoidance policy on planner output.
 ///
-/// ## Safety Policy — Tri-Zone State Machine
+/// ## Policy (one equation)
 ///
-/// Instead of a binary brake/pass decision, the supervisor operates in three zones:
+///     criticalDistance(v) = v * tSysS + v² / (2 * aMaxMPS2) + dMarginM
 ///
-/// | Zone      | Condition                              | Action                       |
-/// |-----------|----------------------------------------|------------------------------|
-/// | **CLEAR** | `filteredDepth > clearDistance`         | Pass command unchanged       |
-/// | **CAUTION** | `brakeDistance ≤ filteredDepth ≤ clearDistance` | Scale throttle linearly  |
-/// | **BRAKE** | `filteredDepth < brakeDistance`         | Full stop                    |
+/// ## Rule
 ///
-/// ## Key Design Decisions
+/// - `smoothedDepth > criticalDistance` → pass planner command through.
+/// - `smoothedDepth <= criticalDistance` → emit `ControlCommand.brake`, latch the trigger speed.
 ///
-/// 1. **Latched Speed:** When entering CAUTION/BRAKE, the current speed is latched and used
-///    for all threshold calculations until CLEAR is re-entered. This prevents the "brake shrinks
-///    the threshold" feedback loop.
+/// ## Anti-oscillation invariant
 ///
-/// 2. **EMA-Filtered Depth:** Raw depth readings are smoothed with an asymmetric EMA filter
-///    (faster when approaching, slower when receding) to reject frame-to-frame noise.
+/// While in BRAKE, `criticalDistance` is computed with the **latched** speed (the
+/// speed at trigger), never the current speed. This prevents the feedback loop
+/// "brake → speed drops → criticalDistance shrinks → release → accelerate → trigger".
 ///
-/// 3. **Cooldown Timers:** State transitions back to CLEAR require both sufficient depth AND
-///    a minimum hold duration, preventing rapid oscillation.
+/// Release requires either:
+/// 1. `smoothedDepth > criticalDistance(latchedSpeed)` continuously for `releaseHoldS`, or
+/// 2. operator commands `throttle <= 0` (stop, neutral, or reverse).
 final class SafetySupervisor {
 
     let config: SafetySupervisorConfig
+    private(set) var state: SafetySupervisorState = .safe
     private(set) var lastEvent: SafetySupervisorEvent?
+    private(set) var currentBrake: SafetyBrakeRecord?
 
-    // MARK: - State Machine
+    // MARK: - Internal state
 
-    private(set) var state: SafetySupervisorState = .clear
+    /// Smoothed depth (exponential moving average). Nil until first valid raw reading.
+    private var smoothedDepth: Float?
 
-    /// Speed latched at the moment the supervisor first detected a threat (entered CAUTION/BRAKE from CLEAR).
-    /// Used for all threshold calculations while the threat persists.
+    /// Speed captured at BRAKE trigger. Frozen until release.
     private var latchedSpeed: Float = 0
 
-    /// EMA-filtered depth. Nil until the first valid reading.
-    private var filteredDepth: Float?
-
-    // MARK: - Trigger Snapshots
-
-    /// Depth and speed at the frame CAUTION was first triggered (CLEAR → CAUTION).
-    /// Cleared when returning to CLEAR.
-    private(set) var cautionSnapshot: SafetyTriggerSnapshot?
-
-    /// Depth and speed at the frame BRAKE was first triggered (any → BRAKE).
-    /// Cleared when returning to CLEAR.
-    private(set) var brakeSnapshot: SafetyTriggerSnapshot?
+    /// Monotonic timestamp of the first frame with continuous clearance.
+    /// Used to enforce `releaseHoldS`. Nil means "no clearance streak in progress".
+    private var clearanceStartedAt: TimeInterval?
 
     init(config: SafetySupervisorConfig = .init()) {
         self.config = config
@@ -128,275 +106,223 @@ final class SafetySupervisor {
     // MARK: - Public
 
     func supervise(command: ControlCommand, context: PlannerContext) -> ControlCommand {
-        // Never re-process our own commands.
+        // Never re-process our own brake commands.
         guard command.source != .safetySupervisor else { return command }
 
-        // Only intervene on forward motion (positive throttle).
+        // Non-forward command (stop, neutral, reverse) — operator override.
+        // Drop latch, pass through.
         guard command.throttle > 0 else {
             return handleNonForwardCommand(command, context: context)
         }
 
         guard let rawDepth = validDepth(from: context) else {
-            // No depth data — cannot evaluate safety. Pass through (conservative: could also brake).
+            // No depth data → cannot evaluate safety. Pass through, clear any stale event.
+            lastEvent = nil
             return command
         }
 
-        // Update EMA-filtered depth.
-        let smoothedDepth = updateFilteredDepth(rawDepth: rawDepth)
-        let speed = resolveSpeed(context: context)
-
-        // Compute zone boundaries using the appropriate speed.
-        let effectiveSpeed = effectiveSpeedForThresholds(currentSpeed: speed)
-        let brakeDistance = computeBrakeDistance(speed: effectiveSpeed)
-        let clearDistance = computeClearDistance(speed: effectiveSpeed)
-
-        // Evaluate state transition.
+        let smoothed = updateSmoothedDepth(raw: rawDepth)
+        let vNow = resolveSpeed(context: context)
         let now = context.timestamp
-        let newState = evaluateTransition(
-            filteredDepth: smoothedDepth,
-            brakeDistance: brakeDistance,
-            clearDistance: clearDistance,
-            timestamp: now
-        )
 
-        // Latch speed on threat onset (CLEAR → non-CLEAR).
-        if case .clear = state, newState != .clear {
-            latchedSpeed = speed
-            playAlertBeepAsync()
-        }
-
-        // Capture trigger snapshots at the exact transition frame.
-        let enteredCaution: Bool
-        let enteredBrake: Bool
-        let returning: Bool
-
-        switch (state, newState) {
-        case (.clear, .caution):    enteredCaution = true;  enteredBrake = false; returning = false
-        case (.clear, .brake):      enteredCaution = false; enteredBrake = true;  returning = false
-        case (.caution, .brake):    enteredCaution = false; enteredBrake = true;  returning = false
-        case (.caution, .clear):    enteredCaution = false; enteredBrake = false; returning = true
-        case (.brake, .clear):      enteredCaution = false; enteredBrake = false; returning = true
-        default:                    enteredCaution = false; enteredBrake = false; returning = false
-        }
-
-        let makeSnapshot = {
-            SafetyTriggerSnapshot(
-                depth: smoothedDepth,
-                motorSpeed: Float(context.motorSpeedMps ?? Double.nan),
-                arkitSpeed: Float(context.arkitSpeedMps ?? Double.nan)
-            )
-        }
-        if enteredCaution { cautionSnapshot = makeSnapshot() }
-        if enteredBrake   { brakeSnapshot = makeSnapshot() }
-        if returning      { cautionSnapshot = nil; brakeSnapshot = nil }
-
-        state = newState
-
-        // Compute TTC for diagnostics.
-        let ttc = speed > config.minSpeedEpsilonMPS ? smoothedDepth / speed : Float.infinity
-
-        // Build output command.
-        let outputCommand: ControlCommand
-        let action: SafetySupervisorEvent.Action
-
+        // Speed used for critical-distance calculation: latched while braking, current otherwise.
+        let vForThreshold: Float
         switch state {
-        case .clear:
-            outputCommand = command
-            action = .clear
+        case .safe:         vForThreshold = vNow
+        case .brake:        vForThreshold = latchedSpeed
+        }
+        let dCrit = criticalDistance(speed: vForThreshold)
 
-        case .caution:
-            let scale = cautionThrottleScale(
-                depth: smoothedDepth,
-                brakeDistance: brakeDistance,
-                clearDistance: clearDistance
+        let output: ControlCommand
+        switch state {
+        case .safe:
+            output = evaluateSafeState(
+                command: command,
+                context: context,
+                rawDepth: rawDepth,
+                smoothed: smoothed,
+                speed: vNow,
+                criticalDistance: dCrit,
+                now: now
             )
-            let reason = String(format: "Depth %.2fm in caution zone [%.2f, %.2f] (v=%.2fm/s)",
-                                smoothedDepth, brakeDistance, clearDistance, effectiveSpeed)
-            outputCommand = ControlCommand(
-                steering: command.steering,
-                throttle: command.throttle * scale,
-                source: .safetySupervisor,
-                reason: reason
-            )
-            action = .caution(throttleScale: scale, reason: reason)
 
         case .brake:
-            let reason = String(format: "Obstacle %.2fm < brake %.2fm (v=%.2fm/s)",
-                                smoothedDepth, brakeDistance, effectiveSpeed)
-            outputCommand = .brake(reason: reason)
-            action = .brakeApplied(reason)
+            output = evaluateBrakeState(
+                command: command,
+                context: context,
+                rawDepth: rawDepth,
+                smoothed: smoothed,
+                speedNow: vNow,
+                criticalDistance: dCrit,
+                now: now
+            )
         }
 
-        lastEvent = SafetySupervisorEvent(
-            timestamp: now,
-            ttc: ttc,
-            forwardDepth: rawDepth,
-            filteredDepth: smoothedDepth,
-            action: action
-        )
-
-        return outputCommand
+        return output
     }
 
     func reset() {
+        state = .safe
         lastEvent = nil
-        state = .clear
+        currentBrake = nil
+        smoothedDepth = nil
         latchedSpeed = 0
-        filteredDepth = nil
-        cautionSnapshot = nil
-        brakeSnapshot = nil
+        clearanceStartedAt = nil
     }
 
-    // MARK: - Zone Boundaries
+    // MARK: - State handlers
 
-    /// Compute the BRAKE zone boundary: depth below this → full stop.
-    ///
-    /// Three components (take the max):
-    /// 1. `minBrakeDistanceM` — hard minimum for sensor blind spots.
-    /// 2. `speed × ttcBrakeS` — TTC-based threshold.
-    /// 3. `speed² / (2 × maxDeceleration)` — kinematic braking distance.
-    private func computeBrakeDistance(speed: Float) -> Float {
-        let ttcDist = speed * config.ttcBrakeS
-        let kinematicDist = (speed * speed) / (2.0 * config.maxDecelerationMPS2)
-        return max(config.minBrakeDistanceM, max(ttcDist, kinematicDist))
+    private func evaluateSafeState(
+        command: ControlCommand,
+        context: PlannerContext,
+        rawDepth: Float,
+        smoothed: Float,
+        speed: Float,
+        criticalDistance: Float,
+        now: TimeInterval
+    ) -> ControlCommand {
+
+        if smoothed <= criticalDistance {
+            // TRIGGER: SAFE → BRAKE.
+            latchedSpeed = speed
+            let trigger = SafetyBrakeTrigger(
+                timestamp: now,
+                pose: context.pose,
+                speed: speed,
+                depth: smoothed,
+                criticalDistance: criticalDistance,
+                motorSpeed: Float(context.motorSpeedMps ?? Double.nan),
+                arkitSpeed: Float(context.arkitSpeedMps ?? Double.nan)
+            )
+            currentBrake = SafetyBrakeRecord(trigger: trigger, stop: nil)
+            clearanceStartedAt = nil
+            state = .brake(since: now)
+            playAlertBeepAsync()
+
+            let reason = String(
+                format: "Obstacle %.2fm <= criticalDistance %.2fm (v=%.2fm/s)",
+                smoothed, criticalDistance, speed
+            )
+            lastEvent = SafetySupervisorEvent(
+                timestamp: now,
+                rawDepth: rawDepth,
+                smoothedDepth: smoothed,
+                speed: speed,
+                criticalDistance: criticalDistance,
+                isBraking: true,
+                reason: reason
+            )
+            return .brake(reason: reason)
+        }
+
+        // Stay SAFE.
+        lastEvent = SafetySupervisorEvent(
+            timestamp: now,
+            rawDepth: rawDepth,
+            smoothedDepth: smoothed,
+            speed: speed,
+            criticalDistance: criticalDistance,
+            isBraking: false,
+            reason: nil
+        )
+        return command
     }
 
-    /// Compute the CLEAR zone boundary: depth above this → safe to pass through.
-    ///
-    /// Uses `ttcCautionS` (the larger TTC) as the basis for the clear threshold.
-    private func computeClearDistance(speed: Float) -> Float {
-        let ttcDist = speed * config.ttcCautionS
-        let kinematicDist = (speed * speed) / (2.0 * config.maxDecelerationMPS2)
-        return max(config.minCautionDistanceM, max(ttcDist, kinematicDist))
-    }
+    private func evaluateBrakeState(
+        command: ControlCommand,
+        context: PlannerContext,
+        rawDepth: Float,
+        smoothed: Float,
+        speedNow: Float,
+        criticalDistance: Float,
+        now: TimeInterval
+    ) -> ControlCommand {
 
-    // MARK: - State Transitions
+        // Capture stop snapshot on first frame where motion has ceased.
+        //
+        // `speedNow` passed in is the thresholding speed (may include a conservative
+        // fallback when sensors report no motion). Stop detection needs the *raw*
+        // sensor reading: if motor or ARKit explicitly report speeds below the stop
+        // epsilon, the robot is stopped. Lack of sensor data is treated as "unknown",
+        // not "stopped".
+        if var record = currentBrake, record.stop == nil, isStopped(context: context) {
+            record.stop = SafetyBrakeStop(
+                timestamp: now,
+                pose: context.pose,
+                depth: smoothed
+            )
+            currentBrake = record
+        }
 
-    private func evaluateTransition(
-        filteredDepth: Float,
-        brakeDistance: Float,
-        clearDistance: Float,
-        timestamp: TimeInterval
-    ) -> SafetySupervisorState {
-
-        // Always enter BRAKE if depth is critically low, regardless of current state.
-        if filteredDepth < brakeDistance {
-            switch state {
-            case .brake:
-                return state  // Stay in BRAKE, preserve the original timestamp.
-            default:
-                return .brake(since: timestamp)
+        // Track clearance streak.
+        if smoothed > criticalDistance {
+            if clearanceStartedAt == nil {
+                clearanceStartedAt = now
             }
+        } else {
+            clearanceStartedAt = nil
         }
 
-        // Depth is above brake distance but may be in caution or clear range.
-        if filteredDepth < clearDistance {
-            // In the caution band.
-            switch state {
-            case .caution:
-                return state  // Stay in CAUTION, preserve timestamp.
-            case .brake(let since):
-                // Transition BRAKE → CAUTION only after cooldown.
-                if timestamp - since >= config.minBrakeDurationS {
-                    return .caution(since: timestamp)
-                }
-                return state  // Hold BRAKE until cooldown expires.
-            default:
-                return .caution(since: timestamp)
-            }
-        }
-
-        // Depth is above clear distance — check cooldown before releasing.
-        switch state {
-        case .clear:
-            return .clear
-
-        case .caution(let since):
-            if timestamp - since >= config.minCautionDurationS {
-                return .clear
-            }
-            return state  // Hold CAUTION until cooldown expires.
-
-        case .brake(let since):
-            if timestamp - since >= config.minBrakeDurationS {
-                // Transition through CAUTION, don't jump to CLEAR.
-                return .caution(since: timestamp)
-            }
-            return state
-        }
-    }
-
-    // MARK: - Throttle Scaling in CAUTION Zone
-
-    /// Linear interpolation: throttle = 0 at brakeDistance, throttle = 1.0 at clearDistance.
-    private func cautionThrottleScale(depth: Float, brakeDistance: Float, clearDistance: Float) -> Float {
-        let range = clearDistance - brakeDistance
-        guard range > 0.001 else { return 0 }
-        let fraction = (depth - brakeDistance) / range
-        return max(0, min(1, fraction))
-    }
-
-    // MARK: - Speed Resolution
-
-    /// Use the latched speed while in a threat state, current speed otherwise.
-    private func effectiveSpeedForThresholds(currentSpeed: Float) -> Float {
-        switch state {
-        case .clear:
-            return currentSpeed
-        case .caution, .brake:
-            // Use the greater of latched speed and current speed.
-            // This ensures thresholds never shrink below what triggered the threat,
-            // but can grow if the robot somehow accelerates despite the override.
-            return max(latchedSpeed, currentSpeed)
-        }
-    }
-
-    /// Motor RPM speed preferred, then ARKit, then conservative fallback.
-    private func resolveSpeed(context: PlannerContext) -> Float {
-        if let best = context.bestSpeedMps, best > Double(config.minSpeedEpsilonMPS) {
-            return Float(best)
-        }
-        return max(config.fallbackSpeedMPS, config.minSpeedEpsilonMPS)
-    }
-
-    // MARK: - Depth Filtering
-
-    /// Asymmetric EMA: faster alpha when obstacle is approaching, slower when receding.
-    private func updateFilteredDepth(rawDepth: Float) -> Float {
-        guard let prev = filteredDepth else {
-            filteredDepth = rawDepth
-            return rawDepth
-        }
-
-        let alpha = rawDepth < prev
-            ? config.depthEmaAlphaApproaching
-            : config.depthEmaAlphaReceding
-        let smoothed = alpha * rawDepth + (1 - alpha) * prev
-        filteredDepth = smoothed
-        return smoothed
-    }
-
-    // MARK: - Helpers
-
-    private func handleNonForwardCommand(_ command: ControlCommand, context: PlannerContext) -> ControlCommand {
-        // Not moving forward — safe. Transition to CLEAR immediately (no cooldown needed).
-        if state != .clear {
-            state = .clear
+        // Release if clearance held long enough.
+        if let start = clearanceStartedAt, now - start >= config.releaseHoldS {
+            state = .safe
+            currentBrake = nil
             latchedSpeed = 0
-            cautionSnapshot = nil
-            brakeSnapshot = nil
+            clearanceStartedAt = nil
+
+            lastEvent = SafetySupervisorEvent(
+                timestamp: now,
+                rawDepth: rawDepth,
+                smoothedDepth: smoothed,
+                speed: speedNow,
+                criticalDistance: self.criticalDistance(speed: speedNow),
+                isBraking: false,
+                reason: "Released: cleared criticalDistance for \(config.releaseHoldS)s"
+            )
+            return command
         }
-        // Still update depth filter for continuity.
+
+        // Hold BRAKE.
+        let reason = String(
+            format: "BRAKE held: depth %.2fm vs criticalDistance %.2fm (latched v=%.2fm/s)",
+            smoothed, criticalDistance, latchedSpeed
+        )
+        lastEvent = SafetySupervisorEvent(
+            timestamp: now,
+            rawDepth: rawDepth,
+            smoothedDepth: smoothed,
+            speed: latchedSpeed,
+            criticalDistance: criticalDistance,
+            isBraking: true,
+            reason: reason
+        )
+        return .brake(reason: reason)
+    }
+
+    private func handleNonForwardCommand(
+        _ command: ControlCommand,
+        context: PlannerContext
+    ) -> ControlCommand {
+        // Operator override: drop latch, return to SAFE.
+        if case .brake = state {
+            state = .safe
+            currentBrake = nil
+            latchedSpeed = 0
+            clearanceStartedAt = nil
+        }
+
+        // Keep the smoothing filter alive so re-entry to forward motion is continuous.
         if let raw = validDepth(from: context) {
-            _ = updateFilteredDepth(rawDepth: raw)
+            let smoothed = updateSmoothedDepth(raw: raw)
             let speed = resolveSpeed(context: context)
-            let ttc = speed > config.minSpeedEpsilonMPS ? (filteredDepth ?? raw) / speed : Float.infinity
             lastEvent = SafetySupervisorEvent(
                 timestamp: context.timestamp,
-                ttc: ttc,
-                forwardDepth: raw,
-                filteredDepth: filteredDepth ?? raw,
-                action: .clear
+                rawDepth: raw,
+                smoothedDepth: smoothed,
+                speed: speed,
+                criticalDistance: criticalDistance(speed: speed),
+                isBraking: false,
+                reason: nil
             )
         } else {
             lastEvent = nil
@@ -404,17 +330,55 @@ final class SafetySupervisor {
         return command
     }
 
+    // MARK: - Math
+
+    /// See `DESIGN.md §4`.
+    ///
+    /// `criticalDistance(v) = v * tSysS + v² / (2 * aMaxMPS2) + dMarginM`
+    func criticalDistance(speed v: Float) -> Float {
+        let reaction = v * config.tSysS
+        let stopping = (v * v) / (2.0 * max(config.aMaxMPS2, 1e-3))
+        return reaction + stopping + config.dMarginM
+    }
+
+    // MARK: - Helpers
+
+    private func updateSmoothedDepth(raw: Float) -> Float {
+        guard let prev = smoothedDepth else {
+            smoothedDepth = raw
+            return raw
+        }
+        let alpha = config.alphaSmoothing
+        let next = alpha * raw + (1 - alpha) * prev
+        smoothedDepth = next
+        return next
+    }
+
+    private func resolveSpeed(context: PlannerContext) -> Float {
+        if let best = context.bestSpeedMps, best > Double(config.minSpeedEpsilonMPS) {
+            return Float(best)
+        }
+        return max(config.fallbackSpeedMPS, config.minSpeedEpsilonMPS)
+    }
+
+    /// True when *any* raw speed source confirms the robot is moving slower than
+    /// `stopSpeedEpsilonMPS`. Absent sensor data alone does not count — we refuse
+    /// to infer "stopped" from silence.
+    private func isStopped(context: PlannerContext) -> Bool {
+        let epsilon = Double(config.stopSpeedEpsilonMPS)
+        if let motor = context.motorSpeedMps, abs(motor) < epsilon { return true }
+        if let arkit = context.arkitSpeedMps, abs(arkit) < epsilon { return true }
+        return false
+    }
+
     private func validDepth(from context: PlannerContext) -> Float? {
         guard let d = context.forwardDepth, d > 0, d.isFinite else { return nil }
         return d
     }
 
-    // MARK: - Alert Sound
-
-    /// Plays a short system beep on a background queue so it never blocks the safety loop.
     private func playAlertBeepAsync() {
         DispatchQueue.global(qos: .utility).async {
-            AudioServicesPlaySystemSound(1052)  // Short alert beep
+            AudioServicesPlaySystemSound(1052)
         }
     }
 }

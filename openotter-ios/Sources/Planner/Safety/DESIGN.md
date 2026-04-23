@@ -1,218 +1,270 @@
-# Safety Supervisor — Design v0.4
+# Safety Supervisor — Design v1.0 (Time-to-Brake)
 
 **Status:** Implemented
-**Date:** 2026-04-04
+**Date:** 2026-04-22
+**Supersedes:** v0.4 (tri-zone state machine with latched speed)
 
 ---
 
 ## 1. Purpose
 
-The `SafetySupervisor` sits between the planner output and the actuators. If the forward path is threatened, it either scales back throttle (CAUTION) or fully stops the robot (BRAKE). The planner and UI are notified of the current safety state.
+The `SafetySupervisor` sits between the planner output and the actuators. On every control tick it compares the forward obstacle distance against a speed-dependent **critical distance** derived purely from kinematics. If the obstacle is closer than that critical distance, the supervisor issues an emergency brake command. Otherwise it passes the planner's command through unchanged.
+
+This document is the single source of truth for the policy. Tuning knobs are `tSysS`, `aMaxMPS2`, and `dMarginM`, all live-configurable.
 
 ---
 
-## 2. Root-Cause Analysis (from v0.2)
+## 2. Why Replace v0.4
 
-The v0.2 binary PASS/BRAKE design caused stop-go oscillation due to three interacting failure modes:
+v0.4 accumulated complexity to fight oscillation: three zones (`CLEAR` / `CAUTION` / `BRAKE`), two time-to-collision thresholds, two absolute-distance floors, a kinematic term, asymmetric exponential-moving-average alphas, two cooldown timers, and a latched speed. Eight tunable parameters interacted in non-obvious ways. Each added to silence a specific test symptom; none derived from first principles.
 
-1. **Binary Brake Policy:** The system oscillated at the threshold boundary because there were only two output states — full throttle or zero throttle.
-2. **Speed-Dependent Threshold + Instant Brake:** When the supervisor braked, speed dropped, which shrank the threshold, which released the brake, which raised speed, which expanded the threshold, which triggered the brake — a positive feedback loop. The hysteresis couldn't fix this because the threshold itself was moving.
-3. **Unfiltered Depth:** Frame-to-frame LiDAR noise triggered the full brake/release cycle even without real obstacle motion.
+The new policy derives a single critical distance from the physics of stopping and uses one latch rule to prevent oscillation. Three physically meaningful parameters replace eight ad-hoc ones.
 
 ---
 
-## 3. Configuration (Actual Values)
+## 3. Perception Input
 
-| Parameter | Value | Meaning |
-|-----------|-------|---------|
-| `ttcBrakeS` | `0.3 s` | TTC threshold for BRAKE zone |
-| `ttcCautionS` | `0.8 s` | TTC threshold for CAUTION zone |
-| `minBrakeDistanceM` | `0.30 m` | Hard floor on BRAKE distance — ensures overshoot stays below threshold at low speed |
-| `minCautionDistanceM` | `0.50 m` | Hard floor on CAUTION distance (must exceed minBrakeDistanceM) |
-| `maxDecelerationMPS2` | `2.5 m/s²` | Max assumed braking decel for kinematic formula |
-| `minBrakeDurationS` | `0.5 s` | Min time in BRAKE before transitioning to CAUTION |
-| `minCautionDurationS` | `0.3 s` | Min time in CAUTION before transitioning to CLEAR |
-| `depthEmaAlphaApproaching` | `0.5` | EMA alpha when obstacle closing (react fast) |
-| `depthEmaAlphaReceding` | `0.3` | EMA alpha when obstacle opening (slow release) |
-| `fallbackSpeedMPS` | `0.3 m/s` | Conservative speed when sensors unavailable |
+The supervisor consumes a single scalar per tick: `forwardDepth` from `PlannerContext`. Upstream (`ARKitPoseViewModel.extractCenterDepth`) samples a 3×3 patch around the center pixel of the ARKit scene depth map and returns the **spatial median** (robust against sparse dropouts). The supervisor itself applies one stage of **temporal smoothing** — a symmetric exponential moving average:
+
+```
+smoothedDepth_t = alpha · rawDepth_t + (1 - alpha) · smoothedDepth_{t-1}
+```
+
+One `alpha` (default `0.5`). No asymmetry between approach and recede — the spatial median already rejects single-frame spikes, and the latched-speed rule (§5) handles the "brief dropout releases brake" concern.
 
 ---
 
-## 4. Zone Boundary Formulas
+## 4. Critical Distance
 
-Each boundary is the **maximum** of three components:
+For current speed `v`:
 
 ```
-brakeDistance = max( d_brake_min,       v × TTC_brake,      v² / (2 × a_max) )
-              = max( 0.30 m,            v × 0.3 s,          v² / (2 × 2.5 m/s²) )
-
-clearDistance = max( d_caution_min,     v × TTC_caution,    v² / (2 × a_max) )
-              = max( 0.50 m,            v × 0.8 s,          v² / (2 × 2.5 m/s²) )
+criticalDistance(v) = v · tSysS  +  v² / (2 · aMaxMPS2)  +  dMarginM
+                      └─reaction┘   └──stopping────────┘   └─margin─┘
 ```
 
-The three components serve different regimes:
-- **Hard floor** (`minBrakeDistanceM`, `minCautionDistanceM`): Dominates below **1.0 m/s for brake** and **0.625 m/s for clear**. Sized so the robot's kinematic overshoot lands well inside the BRAKE zone even at low speed, preventing the BRAKE→CAUTION slip.
-- **TTC term** (`v × ttcS`): Dominates at typical indoor speeds (1.0–1.5 m/s). Gives 0.3 s and 0.8 s of reaction time.
-- **Kinematic term** (`v² / 2a`): Overtakes TTC above **1.5 m/s for brake** (crossover: `v × 0.3 = v²/5` → `v = 1.5 m/s`). Above that, braking distance grows quadratically.
+| Term | Physical meaning |
+|------|------------------|
+| `v · tSysS` | Distance traveled during system reaction latency (sense → decide → actuator effect). |
+| `v² / (2·aMaxMPS2)` | Kinematic stopping distance under constant deceleration `aMaxMPS2`. |
+| `dMarginM` | Fixed post-stop standoff. Includes the sensor-to-bumper offset (~0.13 m — the phone LiDAR is mounted behind the car's front bumper) plus desired clearance (0.07 m). |
 
-### Worked Examples
+With defaults `tSysS = 0.1 s`, `aMaxMPS2 = 1.0 m/s²`, `dMarginM = 0.20 m`:
 
-| Speed | v × 0.3 s | v² / 5.0 | **brakeDistance** | v × 0.8 s | **clearDistance** | CAUTION band | Dominant (brake) |
-|-------|-----------|----------|-------------------|-----------|-------------------|--------------|------------------|
-| **0.1 m/s** | 0.03 m | 0.002 m | **0.30 m** | 0.08 m | **0.50 m** | 0.20 m | hard floor |
-| **0.2 m/s** | 0.06 m | 0.008 m | **0.30 m** | 0.16 m | **0.50 m** | 0.20 m | hard floor |
-| **0.3 m/s** | 0.09 m | 0.018 m | **0.30 m** | 0.24 m | **0.50 m** | 0.20 m | hard floor |
-| **0.5 m/s** | 0.15 m | 0.050 m | **0.30 m** | 0.40 m | **0.50 m** | 0.20 m | hard floor |
-| **1.0 m/s** | 0.30 m | 0.200 m | **0.30 m** | 0.80 m | **0.80 m** | 0.50 m | floor = TTC (tie) |
-| **1.5 m/s** | 0.45 m | 0.450 m | **0.45 m** | 1.20 m | **1.20 m** | 0.75 m | TTC = kinematic (tie) |
-| **2.0 m/s** | 0.60 m | 0.800 m | **0.80 m** | 1.60 m | **1.60 m** | 0.80 m | kinematic |
-
-**Low-speed overshoot vs brake floor (why the slip is now fixed):**
-
-| Speed | Kinematic overshoot (a=2.5) | Robot stops at | Margin below brakeDistance |
-|-------|----------------------------|----------------|---------------------------|
-| 0.2 m/s | 0.008 m | **0.29 m** | 1 cm — marginal under old 0.15 m floor |
-| 0.2 m/s | 0.008 m | **0.29 m** | **1 cm below new 0.30 m floor** — EMA drift possible → **fixed by wider band** |
-| 0.5 m/s | 0.050 m | **0.25 m** | **5 cm below 0.30 m floor** — CAUTION scale at 0.25 m = 0% ✓ |
-| 1.0 m/s | 0.200 m | **0.10 m** | **20 cm below 0.30 m floor** — safely locked in BRAKE ✓ |
-
-**At 0.5 m/s:** BRAKE at 0.30 m, CLEAR above 0.50 m — 20 cm CAUTION ramp.
-**At 1.0 m/s:** BRAKE at 0.30 m, CLEAR above 0.80 m — 50 cm CAUTION ramp.
-**At 2.0 m/s:** BRAKE at 0.80 m (kinematic dominates), CLEAR above 1.60 m — 80 cm CAUTION ramp.
+| Speed    | Reaction (v·0.1) | Stopping (v²/2) | Margin | **criticalDistance** |
+|----------|------------------|-----------------|--------|----------------------|
+| 0.3 m/s  | 0.030 m          | 0.045 m         | 0.20 m | **0.28 m**           |
+| 0.5 m/s  | 0.050 m          | 0.125 m         | 0.20 m | **0.38 m**           |
+| 0.76 m/s | 0.076 m          | 0.289 m         | 0.20 m | **0.57 m**           |
+| 1.0 m/s  | 0.100 m          | 0.500 m         | 0.20 m | **0.80 m**           |
+| 1.5 m/s  | 0.150 m          | 1.125 m         | 0.20 m | **1.48 m**           |
+| 2.0 m/s  | 0.200 m          | 2.000 m         | 0.20 m | **2.40 m**           |
 
 ---
 
-## 5. Safety Policy: Tri-Zone State Machine
+## 5. State Machine
 
-| Zone        | Condition                                  | Action                          |
-|-------------|--------------------------------------------|---------------------------------|
-| **CLEAR**   | `filteredDepth > 0.50 m` (at 0.5 m/s)      | Pass command unchanged          |
-| **CAUTION** | `0.30 m ≤ filteredDepth ≤ 0.50 m`          | Scale throttle linearly to 0    |
-| **BRAKE**   | `filteredDepth < 0.30 m`                   | Full stop                       |
-
-### Latched Speed
-
-When the supervisor detects a threat (CLEAR → CAUTION or BRAKE), it **latches the current speed**. All subsequent threshold calculations use `max(latchedSpeed, currentSpeed)` until the state returns to CLEAR.
-
-**Why this matters:** Without latching, braking reduces speed, which shrinks `brakeDistance`, which releases the brake, which re-accelerates — a positive feedback loop. With latching, the thresholds stay at the values that triggered the alert, so the robot must actually drive away from the obstacle (depth genuinely increases) before receiving any forward motion.
-
-*Example:* Robot is at 1.0 m/s and sees an obstacle at 0.28 m → BRAKE. Speed falls to 0 m/s. Without latching: brakeDistance drops to 0.30 m (floor), which would immediately release brake at 0.28 m. With latching: brakeDistance stays at 0.30 m and clearDistance stays at 0.80 m, so the robot remains braked until depth genuinely exceeds 0.80 m.
-
-### Cooldown Timers
-
-- BRAKE persists for at least **0.5 s** before transitioning to CAUTION.
-- CAUTION persists for at least **0.3 s** before transitioning to CLEAR.
-- BRAKE always goes through CAUTION — never directly to CLEAR.
-
-**Why mandatory CAUTION exit:** Even after depth crosses 0.75 m, the robot eases back in at reduced throttle for 0.3 s rather than snapping to full speed.
-
-### State Transition Diagram
+Two states. One latch.
 
 ```
-                     depth ≥ 0.80m AND cooldown ≥ 0.3s
-               ┌──────────────────────────────────────────┐
-               │                                          │
-    ┌──────────▼──────────┐    depth < 0.80m        ┌─────▼───────────┐
-    │       CLEAR         │───────────────────────-▶│    CAUTION      │
-    │  (pass unchanged)   │                         │ (scale throttle)│
-    └─────────────────────┘                         └───────┬─────────┘
-                                                            │
-                                                    depth < 0.30m
-                                                            │
-                                                   ┌────────▼────────┐
-                                                   │     BRAKE       │
-                                                   │  (full stop)    │
-                                                   └─────────────────┘
-                                                    exit: hold ≥ 0.5s
-                                                    → CAUTION (0.3s)
-                                                    → CLEAR
+                    smoothedDepth > criticalDistance(latchedSpeed)
+                            held for releaseHoldS
+                                      OR
+                         plannerThrottle <= 0
+          ┌─────────────────────────────────────────────────────────┐
+          │                                                         │
+ ┌────────▼─────────┐                                     ┌─────────┴────────┐
+ │       SAFE       │   smoothedDepth <= criticalDistance │      BRAKE       │
+ │  passthrough     │────────────────────────────────────▶│  neutral throttle│
+ │  planner command │   latch: speed, depth, pose, time   │  (throttle = 0)  │
+ └──────────────────┘                                     └──────────────────┘
 ```
 
-*(Distances shown at 1.0 m/s. They scale with speed as per Section 4.)*
+### 5.1 Trigger (SAFE → BRAKE)
+
+When `smoothedDepth ≤ criticalDistance(v_now)`:
+
+1. Record `trigger = { t, pose, speed: v_now, depth: smoothedDepth, criticalDistance }`.
+2. **Latch** `latchedSpeed = v_now`. This value is frozen until we leave BRAKE.
+3. Emit `ControlCommand(steering: 0, throttle: 0, source: .safetySupervisor)`.
+
+### 5.1.1 Why neutral throttle, not reverse
+
+The brake command sets `throttle = 0` (neutral), not a negative (reverse) value. Reasoning:
+
+- **A car's brake pedal is not reverse gear.** Friction brakes dissipate kinetic energy into heat at the pad/rotor interface; the engine is decoupled. Our analogous primitive is "stop commanding torque" — neutral throttle. The motor's own back-EMF and drivetrain friction decelerate the wheels.
+- **Reverse torque while moving forward invites slip.** If ground grip is low, driven wheels spinning backward relative to chassis motion break traction and skid — exactly the scenario a safety system must not create.
+- **Overshoot into backward motion is a new hazard.** Any reverse torque that does not stop exactly at v=0 pushes the robot backward, which the forward-only depth sensor cannot see. Coasting to stop keeps all motion monotonic forward until standstill.
+
+The empirical `actualDecelMPS2` (§7) measures how well neutral alone decelerates the platform. If the measured deceleration is consistently too low for the configured `aMaxMPS2`, the fix is to raise `dMarginM` (larger standoff) rather than introduce reverse torque in the supervisor.
+
+### 5.2 Hold (BRAKE)
+
+While in BRAKE, `criticalDistance` is computed with `latchedSpeed`, **not the current speed**. This is the invariant that prevents the "brake → v drops → criticalDistance shrinks → release" feedback loop.
+
+Each tick while in BRAKE:
+- Keep emitting the brake command.
+- If `|v_now| < stopSpeedEpsilonMPS` and no stop snapshot yet, capture `stop = { t, pose, depth: smoothedDepth }`. Used to compute actual deceleration (§7).
+
+### 5.3 Release (BRAKE → SAFE)
+
+Two independent release paths:
+
+**(a) Genuine clearance.** `smoothedDepth > criticalDistance(latchedSpeed)` must hold continuously for `releaseHoldS` (default 0.3 s). The debounce only guards against single-frame depth noise; it does **not** force a minimum brake duration. Physical interpretation: obstacle (or robot) must have actually moved away by the full safety margin computed at trigger speed.
+
+**(b) Operator intervention.** Planner issues `throttle ≤ 0` (stop, neutral, or reverse). Supervisor drops latch and passes the command through. This is the escape hatch: a human operator can always override by commanding reverse.
+
+On release: clear `latchedSpeed`, clear stop snapshot (kept on the event record one more tick for the UI), transition to SAFE.
+
+### 5.4 Why the latch cannot deadlock
+
+If the robot is stopped at 0.3 m from a stationary wall with `latchedSpeed = 1.0 m/s`:
+- `criticalDistance(1.0) = 0.45 m > 0.30 m` → BRAKE holds.
+- Operator sees stuck state, commands reverse → latch drops → robot backs away → SAFE.
+
+The system never silently self-releases into a hazard. Either depth grows (real clearance) or operator acts.
 
 ---
 
-## 6. Depth Filtering (Asymmetric EMA)
+## 6. Worked Examples
 
-Raw LiDAR depth is smoothed with an Exponential Moving Average:
+### Example 1 — nominal brake-and-release
 
-```
-filteredDepth = α × rawDepth + (1 - α) × filteredDepth_prev
-```
+Defaults. Operator commands throttle = 0.5 continuously. Wall at 0.30 m, robot at 1.0 m/s approaches.
 
-**Asymmetric alphas:**
-- **Approaching** (`rawDepth < filtered`): `α = 0.5` — 50% weight on new reading.
-- **Receding** (`rawDepth > filtered`): `α = 0.3` — 30% weight on new reading.
+| t (s) | v_now | smoothedDepth | latchedSpeed | criticalDistance | state | output throttle |
+|-------|-------|---------------|--------------|------------------|-------|-----------------|
+| 0.00  | 1.00  | 0.60          | —            | 0.45 (@v_now)    | SAFE  | 0.50            |
+| 0.05  | 1.00  | 0.40          | —            | 0.45 (@v_now)    | BRAKE | 0.00 (trigger, latch=1.0) |
+| 0.10  | 0.70  | 0.35          | 1.00         | 0.45 (@latched)  | BRAKE | 0.00            |
+| 0.30  | 0.00  | 0.32          | 1.00         | 0.45 (@latched)  | BRAKE | 0.00 (stop captured) |
+| 1.00  | 0.00  | 0.32          | 1.00         | 0.45 (@latched)  | BRAKE | 0.00 (stuck, waiting) |
 
-### Settling Time in Practice (at 30 fps LiDAR)
+Operator commands reverse:
 
-| Direction | α | Frames to reach 90% of step | Wall-clock time |
-|-----------|---|------------------------------|-----------------|
-| Approaching (obstacle appears) | 0.5 | ~3 frames | ~100 ms |
-| Receding (obstacle clears) | 0.3 | ~6 frames | ~200 ms |
+| t (s) | v_now | plannerThrottle | latchedSpeed | state | output throttle |
+|-------|-------|-----------------|--------------|-------|-----------------|
+| 1.10  | 0.00  | -0.30           | —            | SAFE  | -0.30 (passthrough, latch dropped) |
 
-*Example:* A wall appears 0.50 m away while filtered depth is 2.0 m. After 1 frame: `0.5×0.50 + 0.5×2.0 = 1.25 m`. After 2 frames: `0.875 m`. After 3 frames: `0.69 m` — now inside the CAUTION zone at 0.5 m/s.
+### Example 2 — obstacle steps out of the way
 
-The asymmetry is intentional: the system snaps toward danger quickly (3 frames / ~100 ms) but releases slowly (6 frames / ~200 ms). A brief LiDAR dropout or single corrupt reading will not release a brake — the receding filter smooths it out.
+Defaults. Robot at 1.0 m/s, pedestrian at 0.40 m, then pedestrian steps aside so depth jumps to 2.0 m.
 
----
+| t (s) | v_now | smoothedDepth | latchedSpeed | criticalDistance | state | notes |
+|-------|-------|---------------|--------------|------------------|-------|-------|
+| 0.00  | 1.00  | 0.40          | —            | 0.45             | BRAKE | trigger |
+| 0.05  | 0.80  | 1.20          | 1.00         | 0.45             | BRAKE | depth above, start release timer |
+| 0.35  | 0.60  | 2.00          | 1.00         | 0.45             | SAFE  | held 0.3 s above threshold → release |
 
-## 7. CAUTION Zone Throttle Scaling
+### Example 3 — depth noise spike does not release
 
-In the CAUTION zone, throttle is linearly interpolated:
+Defaults. Robot stopped at wall 0.32 m away, `latchedSpeed = 1.0 m/s` (`criticalDistance = 0.45`). One frame of noise reports 0.60 m then back to 0.32 m.
 
-```
-scale = (filteredDepth - brakeDistance) / (clearDistance - brakeDistance)
-outputThrottle = plannerThrottle × clamp(scale, 0, 1)
-```
+| t (s) | smoothedDepth | release timer | state |
+|-------|---------------|---------------|-------|
+| 0.00  | 0.32          | —             | BRAKE |
+| 0.03  | 0.46          | started       | BRAKE |
+| 0.06  | 0.32          | reset         | BRAKE |
 
-**At 0.5 m/s, with brakeDistance=0.30 m and clearDistance=0.50 m (range=0.20 m):**
-
-| filteredDepth | scale = (d − 0.30) / 0.20 | outputThrottle (if planner=100%) |
-|---------------|---------------------------|----------------------------------|
-| 0.50 m | 1.00 | 100% |
-| 0.45 m | 0.75 | 75% |
-| 0.40 m | 0.50 | 50% |
-| 0.35 m | 0.25 | 25% |
-| 0.30 m | 0.00 | 0% → enters BRAKE |
-
-**At 1.0 m/s, with brakeDistance=0.30 m and clearDistance=0.80 m (range=0.50 m):**
-
-| filteredDepth | scale = (d − 0.30) / 0.50 | outputThrottle (if planner=100%) |
-|---------------|---------------------------|----------------------------------|
-| 0.80 m | 1.00 | 100% |
-| 0.675 m | 0.75 | 75% |
-| 0.55 m | 0.50 | 50% |
-| 0.425 m | 0.25 | 25% |
-| 0.30 m | 0.00 | 0% → enters BRAKE |
+Timer resets the moment `smoothedDepth` drops back under threshold. No oscillation.
 
 ---
 
-## 8. `SafetySupervisorEvent`
+## 7. Stop Measurement and Actual Deceleration
+
+At BRAKE trigger the supervisor captures `trigger`. It then watches for the first frame with `|v_now| < stopSpeedEpsilonMPS` and captures `stop`. From the pair it derives:
+
+```
+stoppingTimeS     = stop.t - trigger.t
+stoppingDistanceM = ||stop.pose.xy - trigger.pose.xy||          (planar distance)
+actualDecelMPS2   = trigger.speed / stoppingTimeS               (mean deceleration)
+brakingDistanceM  = trigger.depth - stop.depth                  (how much closer we got)
+```
+
+`actualDecelMPS2` is the empirical counterpart of the configured `aMaxMPS2`. If `actualDecelMPS2 < aMaxMPS2` consistently, the `aMaxMPS2` config is optimistic — raise `dMarginM` or lower `aMaxMPS2`. This is the feedback loop that makes the design tunable from field testing.
+
+Both snapshots are exposed to the view model and rendered in the emergency overlay and HUD so the operator sees, in one glance: "decided to stop at X m traveling Y m/s — actually stopped Z m later with actual deceleration W m/s²".
+
+---
+
+## 8. Configuration
 
 ```swift
-struct SafetySupervisorEvent: Equatable {
-    let timestamp: TimeInterval
-    let ttc: Float
-    let forwardDepth: Float     // raw depth
-    let filteredDepth: Float    // EMA-smoothed depth
+struct SafetySupervisorConfig {
+    var tSysS: Float = 0.1              // reaction latency (seconds)
+    var aMaxMPS2: Float = 1.0           // assumed max deceleration (m/s²)
+                                        // empirical: 1.19 m/s² at 0.76 m/s
+    var dMarginM: Float = 0.20          // post-stop standoff (meters)
+                                        // ~0.13 m sensor-to-bumper offset + 0.07 m clearance
 
-    enum Action: Equatable {
-        case clear
-        case caution(throttleScale: Float, reason: String)
-        case brakeApplied(String)
-    }
-
-    let action: Action
+    var alphaSmoothing: Float = 0.5     // exponential moving average weight (0..1, higher = faster)
+    var releaseHoldS: TimeInterval = 0.3  // continuous-clearance debounce before release
+    var fallbackSpeedMPS: Float = 0.3   // used when neither motor nor ARKit report speed
+    var stopSpeedEpsilonMPS: Float = 0.05  // below this the robot is "stopped"
 }
 ```
 
+All three policy parameters (`tSysS`, `aMaxMPS2`, `dMarginM`) are scalar, physical, and independent. Change one and the effect is predictable from the formula in §4.
+
 ---
 
-## 9. Extensibility
+## 9. API Surface
 
-Future versions can:
-- Sample a forward cone instead of one pixel
-- Add lateral obstacle detection for steering constraints
-- Add speed-adaptive EMA alpha (faster filtering at higher speeds)
-- Log full state machine trace for offline analysis
+```swift
+final class SafetySupervisor {
+    init(config: SafetySupervisorConfig)
+
+    func supervise(command: ControlCommand, context: PlannerContext) -> ControlCommand
+    func reset()
+
+    var state: SafetySupervisorState { get }          // .safe | .brake
+    var lastEvent: SafetySupervisorEvent? { get }     // per-tick diagnostic
+    var currentBrake: SafetyBrakeRecord? { get }      // trigger + optional stop while BRAKE
+}
+
+enum SafetySupervisorState: Equatable {
+    case safe
+    case brake(since: TimeInterval)
+}
+
+struct SafetySupervisorEvent: Equatable {
+    let timestamp: TimeInterval
+    let rawDepth: Float
+    let smoothedDepth: Float
+    let speed: Float
+    let criticalDistance: Float
+    let isBraking: Bool
+    let reason: String?
+}
+
+struct SafetyBrakeRecord: Equatable {
+    let trigger: SafetyBrakeTrigger
+    let stop: SafetyBrakeStop?           // nil until robot actually stops
+    let actualDecelMPS2: Float?          // derived once stop is captured
+    let stoppingTimeS: TimeInterval?
+    let stoppingDistanceM: Float?
+    let brakingDistanceM: Float?
+}
+```
+
+Exact field lists live in `SafetySupervisor.swift` and `SafetySupervisorEvent.swift`.
+
+---
+
+## 10. What Went Away From v0.4
+
+| Removed                                  | Why                                                    |
+|------------------------------------------|--------------------------------------------------------|
+| CAUTION state and throttle scaling       | Binary SAFE/BRAKE is enough; ramping adds state with no safety benefit. |
+| `ttcBrakeS`, `ttcCautionS`               | Subsumed by the reaction-latency term of `criticalDistance`. |
+| `minBrakeDistanceM`, `minCautionDistanceM` | Subsumed by `dMarginM`; no artificial floor needed once the latch prevents oscillation. |
+| Asymmetric approach/recede alphas        | Spatial median already rejects spikes; one alpha is enough. |
+| `minBrakeDurationS`                      | Latched-speed invariant makes early release impossible without genuine depth growth. |
+| `minCautionDurationS`                    | Replaced by `releaseHoldS` on the single SAFE transition. |
+| `cautionSnapshot`                        | No CAUTION state exists. |
+
+---
+
+## 11. Extensibility
+
+The current scalar depth input can be replaced by a forward-cone summary without changing the policy: as long as the upstream produces one "minimum obstacle distance along the forward path," the supervisor is unchanged. Steering-aware safety (widen the cone when turning) belongs upstream, in the perception layer, not here.
