@@ -155,6 +155,12 @@ int BLE_Tof_Init(void)
 
 void BLE_Tof_Process(void)
 {
+  /* ToF BLE notifications are disabled to avoid saturating the BlueNRG-MS
+   * TX buffers, which starves the control service (FE41 command writes).
+   * The ToF sensor keeps scanning via TofL1_Process(); only the BLE push
+   * is suppressed.  Re-enable by removing this early return. */
+  return;
+
   if (!BLE_App_IsConnected()) return;
 
   uint32_t now = HAL_GetTick();

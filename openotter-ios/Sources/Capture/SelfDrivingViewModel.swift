@@ -46,6 +46,13 @@ final class SelfDrivingViewModel: ObservableObject {
     private var controlLoopSub: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
 
+    /// Keepalive timer: re-sends the last steering/throttle pair every 500ms
+    /// so the firmware's 1500ms safety timeout never forces neutral while
+    /// the planner is idle (e.g. waiting for a Telegram goal).
+    private var keepaliveTimer: Timer?
+    /// Must be well under the firmware's BLE_SAFETY_TIMEOUT_MS (1500ms).
+    private static let keepaliveInterval: TimeInterval = 0.5
+
     init() {
         let orch = PlannerOrchestrator(planner: ConstantSpeedPlanner())
         let speechOutput = SpeechOutput()
@@ -95,6 +102,7 @@ final class SelfDrivingViewModel: ObservableObject {
         telegramGateway.startPolling()
 
         isStarted = true
+        startKeepalive()
 
         poseModel.onFrameUpdate = { [weak self] pose, depth, speed in
             self?.runControlLoop(pose: pose, depth: depth, speed: speed)
@@ -106,6 +114,7 @@ final class SelfDrivingViewModel: ObservableObject {
 
         orchestrator.reset()
         poseModel.onFrameUpdate = nil
+        stopKeepalive()
 
         poseModel.stop()
         telegramGateway.stopPolling()
@@ -173,6 +182,26 @@ final class SelfDrivingViewModel: ObservableObject {
         steering = 0
         throttle = 0
         stm32Manager.sendCommand(steeringMicros: 1500, throttleMicros: 1500)
+    }
+
+    /// Starts a repeating timer that re-sends the current steering/throttle
+    /// at 500ms intervals. This prevents the firmware's 1500ms safety timeout
+    /// from reverting to neutral while the planner is idle between pose updates.
+    private func startKeepalive() {
+        stopKeepalive()
+        keepaliveTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.keepaliveInterval,
+            repeats: true
+        ) { [weak self] _ in
+            guard let self, self.isStarted,
+                  self.stm32Manager.status == .connected else { return }
+            self.sendActuatorCommands(steering: self.steering, throttle: self.throttle)
+        }
+    }
+
+    private func stopKeepalive() {
+        keepaliveTimer?.invalidate()
+        keepaliveTimer = nil
     }
 
     private func toPulseWidth(_ normalized: Float) -> Int16 {
