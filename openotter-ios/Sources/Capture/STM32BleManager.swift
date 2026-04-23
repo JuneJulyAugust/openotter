@@ -52,10 +52,12 @@ public class STM32BleManager: NSObject, ObservableObject {
     private var peripheral: CBPeripheral?
     private var commandChar: CBCharacteristic?
     private var statusChar: CBCharacteristic?
+    private var safetyChar: CBCharacteristic?
 
     private var tofConfigChar: CBCharacteristic?
     private var tofFrameChar: CBCharacteristic?
     private var tofStatusChar: CBCharacteristic?
+    private var lastSafetySeq: UInt32?
 
     private let targetDeviceName = "OPENOTTER-MCP"
 
@@ -113,9 +115,11 @@ public class STM32BleManager: NSObject, ObservableObject {
         peripheral = nil
         commandChar = nil
         statusChar = nil
+        safetyChar = nil
         tofConfigChar = nil
         tofFrameChar = nil
         tofStatusChar = nil
+        lastSafetySeq = nil
         STM32TofService.shared.detach()
         status = .disconnected
     }
@@ -232,8 +236,12 @@ extension STM32BleManager: CBPeripheralDelegate {
                         peripheral.setNotifyValue(true, for: char)
                     }
                 case safetyCharUUID:
+                    safetyChar = char
                     if char.properties.contains(.notify) {
                         peripheral.setNotifyValue(true, for: char)
+                    }
+                    if char.properties.contains(.read) {
+                        peripheral.readValue(for: char)
                     }
                 case modeCharUUID:
                     // Write 0 (Drive) on connect
@@ -288,6 +296,13 @@ extension STM32BleManager: CBPeripheralDelegate {
             guard let data = characteristic.value else { return }
             do {
                 let ev = try FirmwareSafetyEvent(data: data)
+                if lastSafetySeq == ev.seq { return }
+                if let lastSafetySeq, ev.seq > lastSafetySeq + 1,
+                   let safetyChar,
+                   characteristic.properties.contains(.read) {
+                    peripheral.readValue(for: safetyChar)
+                }
+                lastSafetySeq = ev.seq
                 DispatchQueue.main.async { self.lastSafetyEvent = ev }
             } catch {
                 // Ignore malformed payloads; firmware should never send them.
