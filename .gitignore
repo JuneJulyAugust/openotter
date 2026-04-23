@@ -59,3 +59,6 @@ apk_out/
 
 # Python
 .venv/
+
+# Worktrees
+.worktrees/
