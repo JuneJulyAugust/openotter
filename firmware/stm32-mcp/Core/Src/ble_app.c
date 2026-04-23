@@ -156,11 +156,11 @@ static void BLE_InitGATTService(void) {
   /*
    * Add Custom Control Service
    * Max_Attribute_Records = 1 (service) + 2 (cmd char) + 2 (status char)
-   *                       + 1 (CCCD for notify) = 6
+   *                       + 1 (CCCD for notify) + 2 (safety char) + 2 (mode char) = 10
    */
   uuid = OPENOTTER_CONTROL_SVC_UUID;
   ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
-                          6, &bleCtx.svcHandle);
+                          10, &bleCtx.svcHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     /* Service creation failed — halt */
     return;
@@ -190,6 +190,46 @@ static void BLE_InitGATTService(void) {
                           CHAR_PROP_NOTIFY | CHAR_PROP_READ,
                           ATTR_PERMISSION_NONE, GATT_NOTIFY_ATTRIBUTE_WRITE, 10,
                           0, &bleCtx.statusCharHandle);
+
+  /*
+   * Add Safety Characteristic (Notify + Read) — see
+   * docs/.../2026-04-23-stm32-reverse-safety-and-protocol-design.md §3.6.
+   */
+  uuid = OPENOTTER_SAFETY_CHAR_UUID;
+  ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
+                          (const uint8_t *)&uuid,
+                          sizeof(BLE_SafetyEventPayload_t),
+                          CHAR_PROP_NOTIFY | CHAR_PROP_READ,
+                          ATTR_PERMISSION_NONE,
+                          GATT_DONT_NOTIFY_EVENTS,
+                          10,
+                          0,
+                          &bleCtx.safetyCharHandle);
+  (void)ret;
+
+  /* Seed a SAFE payload so a post-connect read returns sane bytes. */
+  BLE_SafetyEventPayload_t init = {0};
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                             0, sizeof(init), (uint8_t *)&init);
+
+  /*
+   * Add Mode Characteristic (Write / Write-w/o-Resp / Read). 1-byte enum.
+   */
+  uuid = OPENOTTER_MODE_CHAR_UUID;
+  uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
+  ret = aci_gatt_add_char(bleCtx.svcHandle, UUID_TYPE_16,
+                          (const uint8_t *)&uuid,
+                          1,
+                          CHAR_PROP_WRITE | CHAR_PROP_WRITE_WITHOUT_RESP |
+                              CHAR_PROP_READ,
+                          ATTR_PERMISSION_NONE,
+                          GATT_NOTIFY_ATTRIBUTE_WRITE,
+                          10,
+                          0,
+                          &bleCtx.modeCharHandle);
+  (void)ret;
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
+                             &drive);
 
   (void)ret; /* Suppress unused warning in release */
 }
@@ -262,6 +302,16 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
           bleCtx.safetyTriggered = 0;
         }
       }
+
+      if (attr_mod->attr_handle == (bleCtx.modeCharHandle + 1)) {
+        return_value = SVCCTL_EvtAck;
+        if (attr_mod->data_length >= 1) {
+          uint8_t v = attr_mod->att_data[0];
+          if (v == OPENOTTER_MODE_DRIVE || v == OPENOTTER_MODE_DEBUG) {
+            bleCtx.mode = (OpenOtterMode_t)v;
+          }
+        }
+      }
       break;
     }
     default:
@@ -292,6 +342,10 @@ void SVCCTL_App_Notification(void *pckt) {
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
+    bleCtx.mode = OPENOTTER_MODE_DRIVE;
+    uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
+    aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
+                               &drive);
     /* Defer re-advertising to the scheduler — calling
      * aci_gap_set_discoverable from inside an HCI event
      * callback can fail because the command channel is busy. */
