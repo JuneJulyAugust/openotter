@@ -17,15 +17,16 @@ static void expect_near(const char *label, float got, float want, float tol) {
 }
 
 static void test_critical_distance_reverse_table(void) {
-  /* Values from spec §3.9 reverse table, tSysFW=0.34 s, dMarginRear=0.17 m,
-   * decelIntercept=0.66, decelSlope=0.87. Exact integral stopping distance. */
+  /* Exact-integral values of v·tSysFW + v/k − (a0/k²)·ln(1+k·v/a0) + dMarginRear
+   * with tSysFW=0.34, a0=0.66, k=0.87, dMarginRear=0.17. These are the
+   * ground-truth outputs of the formula; spec §3.9 table mirrors them. */
   RevSafetyConfig_t cfg;
   RevSafety_GetDefaultConfig(&cfg);
 
-  expect_near("cd(0.3)", RevSafety_CriticalDistance(&cfg, 0.3f), 0.326f, 0.01f);
-  expect_near("cd(0.5)", RevSafety_CriticalDistance(&cfg, 0.5f), 0.473f, 0.01f);
-  expect_near("cd(1.0)", RevSafety_CriticalDistance(&cfg, 1.0f), 0.926f, 0.01f);
-  expect_near("cd(1.5)", RevSafety_CriticalDistance(&cfg, 1.5f), 1.453f, 0.01f);
+  expect_near("cd(0.3)", RevSafety_CriticalDistance(&cfg, 0.3f), 0.326f, 1e-3f);
+  expect_near("cd(0.5)", RevSafety_CriticalDistance(&cfg, 0.5f), 0.473f, 1e-3f);
+  expect_near("cd(1.0)", RevSafety_CriticalDistance(&cfg, 1.0f), 0.926f, 1e-3f);
+  expect_near("cd(1.5)", RevSafety_CriticalDistance(&cfg, 1.5f), 1.453f, 1e-3f);
 }
 
 static void test_critical_distance_zero_speed(void) {
