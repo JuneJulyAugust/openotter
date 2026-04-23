@@ -222,17 +222,18 @@ On-target / HIL tests (STM32 flashed, BlueNRG-MS active):
 
 **Feedback loop:** MCU emits the trigger snapshot over 0xFE43. iOS correlates with its own pose history to compute actual reverse stopping distance, same shape as the forward loop in iOS DESIGN.md §7. If measured reverse stopping distance is consistently greater than `criticalDistance(|v_latched|) − dMarginRear`, increase `tSysFW` (or adjust `decelIntercept` / `decelSlope` if the deviation is speed-dependent).
 
-**Reverse speed cap.** Not enforced. Commanded throttle is set by the Telegram agent, not a joystick. The current drive stack already uses an asymmetric throttle map (forward PWM default 0.4, reverse slower), so real-world reverse velocities stay well below the ToF valid range. An explicit velocity cap can be added later once brake-test data accumulates via the feedback loop. At |v|=1.5 m/s `criticalDistance` is 1.45 m, well inside the 2.3 m ToF valid range; at higher speeds an out-of-range center-zone status collapses to the invalid-frame path (§3.4 A) and brakes after two consecutive invalid samples.
+**Reverse speed cap.** Not enforced. Commanded throttle is set by the Telegram agent, not a joystick. The current drive stack already uses an asymmetric throttle map (forward PWM default 0.4, reverse slower), so real-world reverse velocities stay well below the ToF valid range. An explicit velocity cap can be added later once brake-test data accumulates via the feedback loop.
 
 Tabulated critical distances for reverse with `tSysFW = 0.34 s`, `dMarginRear = 0.17 m`:
 
 | |v|      | a(v)   | Reaction  | Stopping  | Margin  | **criticalDistance** |
 |----------|--------|-----------|-----------|---------|----------------------|
-| 0.3 m/s  | 0.92   | 0.102 m   | 0.054 m   | 0.17 m  | **0.33 m**           |
-| 0.5 m/s  | 1.09   | 0.170 m   | 0.133 m   | 0.17 m  | **0.47 m**           |
-| 1.0 m/s  | 1.53   | 0.340 m   | 0.416 m   | 0.17 m  | **0.93 m**           |
-| 1.5 m/s  | 1.96   | 0.510 m   | 0.773 m   | 0.17 m  | **1.45 m**           |
+| 0.3 m/s  | 0.92   | 0.102 m   | 0.043 m   | 0.17 m  | **0.32 m**           |
+| 0.5 m/s  | 1.10   | 0.170 m   | 0.110 m   | 0.17 m  | **0.45 m**           |
+| 1.0 m/s  | 1.53   | 0.340 m   | 0.363 m   | 0.17 m  | **0.87 m**           |
+| 1.5 m/s  | 1.97   | 0.510 m   | 0.686 m   | 0.17 m  | **1.37 m**           |
 
+If measured reverse velocity ever produces a `criticalDistance` beyond the 2.3 m ToF valid range, the supervisor fails conservatively — a ranged obstacle still outside critical reads as "clear," but any out-of-range center-zone status already collapses to the invalid-frame path (§3.4 A) and brakes after two consecutive invalid samples.
 
 ---
 
