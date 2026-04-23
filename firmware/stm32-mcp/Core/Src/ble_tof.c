@@ -155,13 +155,8 @@ int BLE_Tof_Init(void)
 
 void BLE_Tof_Process(void)
 {
-  /* ToF BLE notifications are disabled to avoid saturating the BlueNRG-MS
-   * TX buffers, which starves the control service (FE41 command writes).
-   * The ToF sensor keeps scanning via TofL1_Process(); only the BLE push
-   * is suppressed.  Re-enable by removing this early return. */
-  return;
-
   if (!BLE_App_IsConnected()) return;
+  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) return;
 
   uint32_t now = HAL_GetTick();
 
@@ -275,4 +270,16 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
     apply_config_write(attr_mod->att_data, attr_mod->data_length);
   }
   return ack;
+}
+
+void BLE_Tof_EnforceSafetyConfig(void)
+{
+  int rc = TofL1_Configure(TOF_LAYOUT_3x3, TOF_DIST_LONG, 30000u);
+  s_tof.last_error = (rc == TOF_L1_OK) ? 0 : (uint8_t)rc;
+  s_tof.state      = (rc == TOF_L1_ERR_DRIVER_DEAD) ? 2 : 1;
+  s_tof.last_published_seq    = 0;
+  s_tof.last_rate_window_seq  = 0;
+  s_tof.last_rate_window_tick = HAL_GetTick();
+  s_tof.pending_chunk         = 0;
+  publish_status();
 }

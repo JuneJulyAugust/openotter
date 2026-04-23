@@ -54,6 +54,10 @@ int  BLE_Tof_Init(void);
  * the central is connected; periodically refreshes the status characteristic. */
 void BLE_Tof_Process(void);
 
+/* Force the ToF back to the safety-critical config (3x3 LONG 30 ms).
+ * Call when the MCU transitions from Debug back to Drive mode. */
+void BLE_Tof_EnforceSafetyConfig(void);
+
 #ifdef __cplusplus
 }
 #endif

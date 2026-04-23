@@ -30,6 +30,7 @@
 #include "blesvc.h"
 #include "rev_safety.h"
 #include "tof_l1.h"
+#include "ble_tof.h"
 
 #include <string.h>
 
@@ -374,6 +375,10 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
           uint8_t v = attr_mod->att_data[0];
           if (v == OPENOTTER_MODE_DRIVE || v == OPENOTTER_MODE_DEBUG) {
             bleCtx.mode = (OpenOtterMode_t)v;
+            if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
+              BLE_Tof_EnforceSafetyConfig();
+              RevSafety_Disarm(s_rev_ctx);  /* clear any stale latch */
+            }
           }
         }
       }
