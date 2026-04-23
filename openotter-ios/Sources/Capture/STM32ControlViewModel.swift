@@ -162,10 +162,25 @@ class STM32ControlViewModel: ObservableObject {
         debounceTimer = nil
         let steeringUs = Self.toPulseWidth(steering)
         let throttleUs = Self.toPulseWidth(throttle)
-        bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs, velocityMmPerSec: 0)
+        let velocityMmPerSec = Int16(max(-32_000.0, min(32_000.0, currentSignedVelocityMps() * 1000.0)))
+        bleManager.sendCommand(steeringMicros: steeringUs,
+                               throttleMicros: throttleUs,
+                               velocityMmPerSec: velocityMmPerSec)
         restartKeepalive()
     }
 
+    /// Ground speed reported by the ESC, forwarded to the firmware reverse
+    /// safety supervisor.
+    ///
+    /// The ESC decodes eRPM via `signed32BE`, so `speedMps` preserves sign
+    /// when the firmware actually reports direction. In practice some ESC
+    /// firmwares emit unsigned magnitude; in that case the firmware
+    /// supervisor's velocity-sign gate will not fire for pure coast-backward
+    /// (throttle=0 rolling downhill) and falls back to the commanded-throttle
+    /// gate (spec §3.2 union). Either way we never send a wrong-signed value.
+    private func currentSignedVelocityMps() -> Float {
+        return Float(escTelemetry?.speedMps ?? 0.0)
+    }
     /// Schedules a repeating timer that re-sends current values every 500ms.
     /// Resets after every explicit send to avoid double-firing.
     private func restartKeepalive() {
@@ -177,9 +192,12 @@ class STM32ControlViewModel: ObservableObject {
             guard let self, self.status == .connected else { return }
             let steeringUs = Self.toPulseWidth(self.steering)
             let throttleUs = Self.toPulseWidth(self.throttle)
+            let velocityMmPerSec = Int16(max(-32_000.0,
+                                             min(32_000.0,
+                                                 self.currentSignedVelocityMps() * 1000.0)))
             self.bleManager.sendCommand(steeringMicros: steeringUs,
                                         throttleMicros: throttleUs,
-                                        velocityMmPerSec: 0)
+                                        velocityMmPerSec: velocityMmPerSec)
         }
     }
 

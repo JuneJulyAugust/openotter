@@ -132,11 +132,11 @@ final class SelfDrivingViewModel: ObservableObject {
         guard isStarted else { return }
 
         let motorSpeed: Double? = {
-            guard let tel = escManager.telemetry, tel.speedMps > 0.01 else { return nil }
+            guard let tel = escManager.telemetry, abs(tel.speedMps) > 0.01 else { return nil }
             return tel.speedMps
         }()
         let arkitSpeed: Double? = {
-            if let s = speed, s > 0.01 { return s }
+            if let s = speed, abs(s) > 0.01 { return s }
             return nil
         }()
 
@@ -157,7 +157,15 @@ final class SelfDrivingViewModel: ObservableObject {
             )
 
             let command = self.orchestrator.tick(context: context)
-            self.sendActuatorCommands(steering: command.steering, throttle: command.throttle)
+            // Forward the ESC/ARKit-reported speed as-is. If the ESC emits a
+            // signed value, the firmware supervisor's velocity-sign gate will
+            // arm on coast-backward; if unsigned, it falls back to the
+            // commanded-throttle gate (spec §3.2 union). Do not overlay a
+            // sign from `currentThrottle` — that double-negates when ESC
+            // actually reports signed values.
+            let signedSpeedMps: Double? = motorSpeed ?? arkitSpeed
+            self.sendActuatorCommands(steering: command.steering, throttle: command.throttle,
+                                      velocity: signedSpeedMps)
             self.steering = command.steering
             self.throttle = command.throttle
         }
@@ -174,10 +182,10 @@ final class SelfDrivingViewModel: ObservableObject {
         telegramGateway.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
     }
 
-    private func sendActuatorCommands(steering: Float, throttle: Float) {
+    private func sendActuatorCommands(steering: Float, throttle: Float, velocity: Double? = nil) {
         let sPWM = toPulseWidth(steering)
         let tPWM = toPulseWidth(throttle)
-        let speed = self.escManager.telemetry?.speedMps ?? self.poseModel.arkitSpeedMps
+        let speed = velocity ?? self.escManager.telemetry?.speedMps ?? self.poseModel.arkitSpeedMps
         let v_mm_s = Int16(max(-32000.0, min(32000.0, speed * 1000.0)))
         stm32Manager.sendCommand(steeringMicros: sPWM,
                                  throttleMicros: tPWM,
