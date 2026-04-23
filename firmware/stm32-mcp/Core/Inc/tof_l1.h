@@ -69,6 +69,9 @@ typedef enum {
   TOF_L1_ERR_RECOVERED   = 9,
   /* Sensor wedged and re-init failed. ToF subsystem is offline until reboot. */
   TOF_L1_ERR_DRIVER_DEAD = 10,
+  /* Config write rejected because MCU is in Drive mode and the safety
+   * config is locked. Sensor is still running with the safety config. */
+  TOF_L1_ERR_LOCKED_IN_DRIVE = 11,
 } TofL1_Status_t;
 
 /* Minimum per-zone timing budget the driver accepts for each (layout,mode)
