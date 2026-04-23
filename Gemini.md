@@ -86,6 +86,13 @@ When releasing a new version:
 5. Run `git tag ios-vX.Y.Z`.
 6. Run `git push origin main` and `git push origin --tags` to publish the release.
 
+# Naming Rules — Acronyms Seriously Suck
+Acronyms hide meaning from readers who are new to the domain, rot as the project's vocabulary drifts, and make reviews harder. Prefer spelled-out names.
+
+- In documentation, commit messages, design docs, comments, user-visible strings, and identifiers in new code: spell the term out the first time (and prefer it thereafter) instead of using an acronym. Example: `criticalDistance` not `dCrit`, "Exponential Moving Average" not "EMA", "Time To Collision" not "TTC".
+- Short physical symbols in formulas are allowed (`v`, `a`, `t`), and widely understood external names are kept as-is (URL, API, JSON, BLE, ARKit, LiDAR, RPM, iOS, UUID). If in doubt, spell it out.
+- When renaming or touching nearby code, migrate acronym-heavy names toward their full forms rather than propagating them.
+
 # Whitespace Rules
 - Never leave trailing whitespace at the end of any line in any file.
 
