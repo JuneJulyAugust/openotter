@@ -162,7 +162,7 @@ class STM32ControlViewModel: ObservableObject {
         debounceTimer = nil
         let steeringUs = Self.toPulseWidth(steering)
         let throttleUs = Self.toPulseWidth(throttle)
-        bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs)
+        bleManager.sendCommand(steeringMicros: steeringUs, throttleMicros: throttleUs, velocityMmPerSec: 0)
         restartKeepalive()
     }
 

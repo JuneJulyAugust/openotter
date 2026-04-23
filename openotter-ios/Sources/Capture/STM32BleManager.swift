@@ -25,6 +25,7 @@ public class STM32BleManager: NSObject, ObservableObject {
     @Published public var deviceName: String = "Unknown"
     @Published public var rssi: Int = 0
     @Published public var commandsSent: Int = 0
+    @Published public var lastSafetyEvent: FirmwareSafetyEvent? = nil
 
     // MARK: - BLE UUIDs (must match firmware ble_app.h)
 
@@ -34,6 +35,10 @@ public class STM32BleManager: NSObject, ObservableObject {
     private let commandCharUUID = CBUUID(string: "FE41")
     /// Notify characteristic: 0xFE42 — heartbeat/status from firmware
     private let statusCharUUID = CBUUID(string: "FE42")
+    /// Notify characteristic: 0xFE43 — safety event
+    private let safetyCharUUID = CBUUID(string: "FE43")
+    /// Write characteristic: 0xFE44 — mode
+    private let modeCharUUID = CBUUID(string: "FE44")
 
     /// ToF service: 0xFE60
     private let tofServiceUUID    = CBUUID(string: "FE60")
@@ -200,7 +205,7 @@ extension STM32BleManager: CBPeripheralDelegate {
         for service in services {
             switch service.uuid {
             case controlServiceUUID:
-                peripheral.discoverCharacteristics([commandCharUUID, statusCharUUID], for: service)
+                peripheral.discoverCharacteristics([commandCharUUID, statusCharUUID, safetyCharUUID, modeCharUUID], for: service)
             case tofServiceUUID:
                 peripheral.discoverCharacteristics(
                     [tofConfigCharUUID, tofFrameCharUUID, tofStatusCharUUID], for: service)
@@ -226,6 +231,14 @@ extension STM32BleManager: CBPeripheralDelegate {
                     if char.properties.contains(.notify) {
                         peripheral.setNotifyValue(true, for: char)
                     }
+                case safetyCharUUID:
+                    if char.properties.contains(.notify) {
+                        peripheral.setNotifyValue(true, for: char)
+                    }
+                case modeCharUUID:
+                    // Write 0 (Drive) on connect
+                    let mode: UInt8 = 0
+                    peripheral.writeValue(Data([mode]), for: char, type: .withoutResponse)
                 default:
                     break
                 }
@@ -279,20 +292,6 @@ extension STM32BleManager: CBPeripheralDelegate {
             } catch {
                 // Ignore malformed payloads; firmware should never send them.
             }
-        default:
-            break
-        }
-    }
-
-    public func peripheral(_ peripheral: CBPeripheral,
-                           didReadRSSI RSSI: NSNumber,
-                           error: Error?) {
-        rssi = RSSI.intValue
-    }
-}
-
-            // FE42 control-side status — no consumer yet.
-            break
         default:
             break
         }
