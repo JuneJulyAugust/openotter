@@ -44,6 +44,7 @@ final class PlannerOrchestrator: ObservableObject {
          modeReceiver: (any OperatingModeReceiving)? = nil) {
         self.activePlanner = planner
         self.modeReceiver = modeReceiver
+        modeReceiver?.setOperatingMode(.park)
     }
 
     // MARK: - Runtime Planner Swap
@@ -57,6 +58,15 @@ final class PlannerOrchestrator: ObservableObject {
 
     /// Called every control loop iteration. Returns the safe command to execute.
     func tick(context: PlannerContext) -> ControlCommand {
+        guard operatingMode == .drive else {
+            lastCommand = .neutral
+            lastSupervisorEvent = nil
+            isOverridden = false
+            supervisorState = .safe
+            brakeRecord = nil
+            return .neutral
+        }
+
         let plannerCommand = activePlanner.plan(context: context)
         let safeCommand = supervisor.supervise(command: plannerCommand, context: context)
 

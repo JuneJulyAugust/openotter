@@ -58,7 +58,8 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
     private var tofConfigChar: CBCharacteristic?
     private var tofFrameChar: CBCharacteristic?
     private var tofStatusChar: CBCharacteristic?
-    private var lastSafetySeq: UInt32?
+    private var safetyEventGate = FirmwareSafetyEventGate()
+    private var requestedOperatingMode: OperatingMode = .drive
 
     private let targetDeviceName = "OPENOTTER-MCP"
 
@@ -91,21 +92,19 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
     /// writes the byte — the firmware re-enables the supervisor in SAFE
     /// state on the mode-edge and broadcasts a SAFE snapshot itself.
     public func setOperatingMode(_ mode: OperatingMode) {
-        switch mode {
-        case .park:
-            DispatchQueue.main.async { self.lastSafetyEvent = nil }
-            writeModeByte(2)
-        case .drive:
-            writeModeByte(0)
-        }
+        requestedOperatingMode = mode
+        let visibleEvent = safetyEventGate.setOperatingMode(mode)
+        publishSafetyEvent(visibleEvent)
+
+        writeMode(mode)
     }
 
-    private func writeModeByte(_ mode: UInt8) {
+    private func writeMode(_ mode: OperatingMode) {
         guard let modeChar, let peripheral else { return }
         let writeType: CBCharacteristicWriteType =
             modeChar.properties.contains(.writeWithoutResponse)
                 ? .withoutResponse : .withResponse
-        peripheral.writeValue(Data([mode]), for: modeChar, type: writeType)
+        peripheral.writeValue(Data([mode.wireValue]), for: modeChar, type: writeType)
     }
 
     /// Send steering, throttle (pulse widths in µs) and measured velocity
@@ -144,8 +143,8 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
         tofConfigChar = nil
         tofFrameChar = nil
         tofStatusChar = nil
-        lastSafetySeq = nil
-        lastSafetyEvent = nil
+        safetyEventGate.resetConnection()
+        publishSafetyEvent(safetyEventGate.lastSafetyEvent)
         STM32TofService.shared.detach()
         status = .disconnected
     }
@@ -271,9 +270,8 @@ extension STM32BleManager: CBPeripheralDelegate {
                     }
                 case modeCharUUID:
                     modeChar = char
-                    // Write 0 (Drive) on connect
-                    let mode: UInt8 = 0
-                    peripheral.writeValue(Data([mode]), for: char, type: .withoutResponse)
+                    _ = safetyEventGate.setOperatingMode(requestedOperatingMode)
+                    writeMode(requestedOperatingMode)
                 default:
                     break
                 }
@@ -323,14 +321,18 @@ extension STM32BleManager: CBPeripheralDelegate {
             guard let data = characteristic.value else { return }
             do {
                 let ev = try FirmwareSafetyEvent(data: data)
-                if lastSafetySeq == ev.seq && lastSafetyEvent == ev { return }
-                if let lastSafetySeq, ev.seq > lastSafetySeq + 1,
+                if safetyEventGate.lastSafetySeq == ev.seq &&
+                   safetyEventGate.lastSafetyEvent == ev {
+                    return
+                }
+                if let lastSafetySeq = safetyEventGate.lastSafetySeq,
+                   ev.seq > lastSafetySeq + 1,
                    let safetyChar,
                    characteristic.properties.contains(.read) {
                     peripheral.readValue(for: safetyChar)
                 }
-                lastSafetySeq = ev.seq
-                DispatchQueue.main.async { self.lastSafetyEvent = ev }
+                let visibleEvent = safetyEventGate.ingest(ev)
+                publishSafetyEvent(visibleEvent)
             } catch {
                 // Ignore malformed payloads; firmware should never send them.
             }
@@ -343,5 +345,13 @@ extension STM32BleManager: CBPeripheralDelegate {
                            didReadRSSI RSSI: NSNumber,
                            error: Error?) {
         rssi = RSSI.intValue
+    }
+
+    fileprivate func publishSafetyEvent(_ event: FirmwareSafetyEvent?) {
+        if Thread.isMainThread {
+            lastSafetyEvent = event
+        } else {
+            DispatchQueue.main.async { self.lastSafetyEvent = event }
+        }
     }
 }

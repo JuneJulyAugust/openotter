@@ -22,12 +22,40 @@ final class PlannerOrchestratorTests: XCTestCase {
         XCTAssertEqual(orchestrator.operatingMode, .park)
     }
 
+    func testOrchestratorPushesInitialParkToReceiver() {
+        let receiver = RecordingModeReceiver()
+        _ = PlannerOrchestrator(
+            planner: ConstantSpeedPlanner(),
+            modeReceiver: receiver
+        )
+        XCTAssertEqual(receiver.modes, [.park])
+    }
+
+    func testParkedTickDoesNotEvaluateSafetyAgainstCloseObstacle() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+
+        let command = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.0,
+            forwardDepth: 0.01,
+            motorSpeedMps: 0.0,
+            arkitSpeedMps: 0.0
+        ))
+
+        XCTAssertEqual(command, .neutral)
+        XCTAssertEqual(orchestrator.operatingMode, .park)
+        XCTAssertEqual(orchestrator.supervisorState, .safe)
+        XCTAssertFalse(orchestrator.isOverridden)
+        XCTAssertNil(orchestrator.lastSupervisorEvent)
+        XCTAssertNil(orchestrator.brakeRecord)
+    }
+
     func testSetGoalEntersDriveAndPushesReceiver() {
         let receiver = RecordingModeReceiver()
         let orchestrator = PlannerOrchestrator(
             planner: ConstantSpeedPlanner(),
             modeReceiver: receiver
         )
+        receiver.modes.removeAll()
         orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
         XCTAssertEqual(orchestrator.operatingMode, .drive)
         XCTAssertEqual(receiver.modes, [.drive])
@@ -39,6 +67,7 @@ final class PlannerOrchestratorTests: XCTestCase {
             planner: ConstantSpeedPlanner(),
             modeReceiver: receiver
         )
+        receiver.modes.removeAll()
         orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
         receiver.modes.removeAll()
         orchestrator.reset()
@@ -54,6 +83,7 @@ final class PlannerOrchestratorTests: XCTestCase {
             planner: ConstantSpeedPlanner(),
             modeReceiver: receiver
         )
+        receiver.modes.removeAll()
         orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
         orchestrator.setGoal(.constantThrottle(targetThrottle: 0.7))
         XCTAssertEqual(receiver.modes, [.drive, .drive])

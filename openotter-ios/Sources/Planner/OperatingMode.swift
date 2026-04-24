@@ -18,6 +18,13 @@ import Foundation
 public enum OperatingMode: Equatable {
     case drive
     case park
+
+    var wireValue: UInt8 {
+        switch self {
+        case .drive: return 0
+        case .park: return 2
+        }
+    }
 }
 
 /// Synchronous push channel for mode transitions. Implementations should be
