@@ -168,23 +168,28 @@ iOS integration (out of scope for this doc but sketched for completeness):
 
 ### 3.7 Operating Modes and Sensor Config Ownership
 
-A global MCU operating mode governs sensor configurability, ToF frame streaming, and whether the reverse supervisor is armed.
+A global MCU operating mode governs sensor configurability, ToF frame streaming, throttle pass-through, and whether the reverse supervisor is armed.
 
-| Mode  | 0xFE61 config writes | 0xFE62 frame notify | Reverse supervisor | Default on boot |
-|-------|----------------------|---------------------|--------------------|-----------------|
-| Drive | Rejected with a new status error `TOF_L1_ERR_LOCKED_IN_DRIVE` (added to `TofL1_Status_t`). Firmware enforces the safety config `layout=3, dist_mode=LONG, budget=30 ms`. | Suppressed (BLE_Tof_Process early-returns). | Active. | Yes. |
-| Debug | Accepted. iOS may reconfigure the ToF freely (any layout/mode/budget permitted by `TofL1_Configure`). | Streamed (existing chunking path re-enabled). | Disabled (passthrough; supervisor is not armed because config may not match safety assumptions). | No. |
+| Mode  | 0xFE61 config writes | 0xFE62 frame notify | Reverse supervisor | Throttle (FE41) output | Default on boot |
+|-------|----------------------|---------------------|--------------------|------------------------|-----------------|
+| Drive | Rejected with status error `TOF_L1_ERR_LOCKED_IN_DRIVE`. Firmware enforces safety config `layout=3, dist_mode=LONG, budget=30 ms`. | Suppressed (BLE_Tof_Process early-returns). | Active. May publish BRAKE on FE43 and clamp reverse to neutral. | Pass-through, clamped to neutral on the reverse side while latched in BRAKE. | Yes. |
+| Debug | Accepted. iOS may reconfigure freely. | Streamed (existing chunking path re-enabled). | Disabled (passthrough; config may not match safety assumptions). | Pass-through. | No. |
+| Park  | Rejected (same as Drive). | Suppressed (same as Drive). | Held disarmed; never ticked, cannot publish BRAKE. | **Hard-neutral regardless of payload.** Steering still passes through. | No. |
 
-Mode selection — new characteristic **0xFE44 "mode"** in service 0xFE40:
+Mode selection — characteristic **0xFE44 "mode"** in service 0xFE40:
 
 - Properties: `WRITE | WRITE_WITHOUT_RESP | READ`, fixed 1 B payload.
-- Values: `0x00 = DRIVE`, `0x01 = DEBUG`. All other values rejected.
+- Values: `0x00 = DRIVE`, `0x01 = DEBUG`, `0x02 = PARK`. All other values rejected.
 - On connect / boot: `DRIVE`.
-- On BLE disconnect: MCU forces mode back to `DRIVE` (safest default; debug is for tethered bring-up only).
-- On `DEBUG → DRIVE` transition: MCU re-applies the safety ToF config and clears any supervisor transient state.
-- On `DRIVE → DEBUG` transition: MCU disarms the supervisor and stops suppressing 0xFE62 notifications.
+- On BLE disconnect: MCU forces mode back to `DRIVE` (safest default; Debug is for tethered bring-up; Park makes no sense without a connected operator).
+- On `(DEBUG|PARK) → DRIVE` transition: MCU re-applies the safety ToF config and disarms the supervisor (clean SAFE state) before the next supervisor tick.
+- On `DRIVE → (DEBUG|PARK)` transition: MCU disarms the supervisor and broadcasts a SAFE snapshot on FE43 so iOS can drop any BRAKE overlay/alarm immediately.
 
-Operator contract: the reverse supervisor is only trusted in `DRIVE`. Reversing while in `DEBUG` is the operator's responsibility.
+Operator contract:
+
+- The reverse supervisor is only trusted in `DRIVE`. Reversing while in `DEBUG` is the operator's responsibility.
+- Park is the explicit "operator stopped" terminal state — the only way to suppress a sticky rear BRAKE that would otherwise re-arm on residual coast-back motion (`armed = moving_back || cmd_reverse` evaluates true while the chassis still has reverse momentum even if the iOS planner has gone idle).
+- iOS leaves Park automatically when the agent dispatches a `move` action: `PlannerOrchestrator.setGoal` always pushes Drive through `OperatingModeReceiving` before forwarding the goal to the planner.
 
 ### 3.8 Required Tests
 
@@ -196,7 +201,7 @@ Unit / host tests (compile for host, no STM32):
 4. Direction inference truth table (velocity sign × throttle sign vs armed).
 5. Symmetric release: BRAKE with latched reverse speed → iOS commands forward → latch drops, SAFE.
 6. Actuator arbitration matrix (§3.5 table, all rows).
-7. Mode transitions: `DRIVE ↔ DEBUG`; BLE disconnect forces `DRIVE`; safety config re-applied on `DEBUG → DRIVE`.
+7. Mode transitions: `DRIVE ↔ DEBUG`, `DRIVE ↔ PARK`, `DEBUG ↔ PARK`; BLE disconnect forces `DRIVE`; safety config re-applied on `(DEBUG|PARK) → DRIVE`; supervisor disarmed and SAFE snapshot broadcast on every `DRIVE → (DEBUG|PARK)` edge.
 
 On-target / HIL tests (STM32 flashed, BlueNRG-MS active):
 
@@ -245,15 +250,15 @@ Service **0xFE40** (existing "OpenOtter Control"):
 | 0xFE41 | write, write-w/o-resp   | 6 B   | iOS → MCU  | steering_us, throttle_us, velocity_mm_per_s        |
 | 0xFE42 | notify, read            | TBD   | MCU → iOS  | reserved (future generic heartbeat/telemetry)      |
 | 0xFE43 | notify, read            | 20 B  | MCU → iOS  | safety state + trigger snapshot (see §3.6)         |
-| 0xFE44 | write, write-w/o-resp, read | 1 B | iOS → MCU | operating mode: 0 = Drive, 1 = Debug              |
+| 0xFE44 | write, write-w/o-resp, read | 1 B | iOS → MCU | operating mode: 0 = Drive, 1 = Debug, 2 = Park    |
 
 Service **0xFE60** (existing "OpenOtter ToF"):
 
-| UUID   | Behavior in Drive mode                         | Behavior in Debug mode |
-|--------|------------------------------------------------|------------------------|
-| 0xFE61 | Config writes rejected; safety config enforced | Config writes accepted |
-| 0xFE62 | Frame notifications suppressed                 | Frame notifications streamed (existing chunking path) |
-| 0xFE63 | Status notifications as today                  | Status notifications as today |
+| UUID   | Behavior in Drive mode                         | Behavior in Debug mode | Behavior in Park mode |
+|--------|------------------------------------------------|------------------------|-----------------------|
+| 0xFE61 | Config writes rejected; safety config enforced | Config writes accepted | Config writes rejected (same as Drive) |
+| 0xFE62 | Frame notifications suppressed                 | Frame notifications streamed (existing chunking path) | Suppressed (same as Drive) |
+| 0xFE63 | Status notifications as today                  | Status notifications as today | Status notifications as today |
 
 ## 5. Configuration Struct (Firmware)
 

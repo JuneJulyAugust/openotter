@@ -6,7 +6,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 
-TESTS = test_tof_l1_roi test_rev_safety
+TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test clean dirs
@@ -21,6 +21,9 @@ $(BUILD_DIR)/test_tof_l1_roi: test_tof_l1_roi.c ../../Core/Src/tof_l1_roi.c ../.
 
 $(BUILD_DIR)/test_rev_safety: test_rev_safety.c ../../Core/Src/rev_safety.c ../../Core/Inc/rev_safety.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety.c ../../Core/Src/rev_safety.c -o $@ -lm
+
+$(BUILD_DIR)/test_rev_safety_tof: test_rev_safety_tof.c ../../Core/Src/rev_safety_tof.c ../../Core/Inc/rev_safety_tof.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_tof.c ../../Core/Src/rev_safety_tof.c -o $@
 
 test: all
 	@set -e; for t in $(TESTS); do echo "=== $$t ==="; $(BUILD_DIR)/$$t; done

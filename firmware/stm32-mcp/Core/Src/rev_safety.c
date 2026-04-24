@@ -21,6 +21,11 @@ struct RevSafetyCtx {
   float    smoothed_depth_m;
   bool     has_smoothed;
   uint8_t  invalid_frame_count;
+  /* Counts consecutive valid+new frames since the last invalid. Used by the
+   * TOF_BLIND release path so release confidence equals trigger confidence:
+   * we require the same number of clean frames to leave BRAKE as we needed
+   * to enter it, preventing single-frame release-then-rearm thrash. */
+  uint8_t  valid_streak;
   uint32_t last_valid_frame_ms;
 
   /* Latched on transition to BRAKE */
@@ -46,16 +51,20 @@ _Static_assert(sizeof(struct RevSafetyCtx) <= REV_SAFETY_CTX_STORAGE_BYTES,
 
 void RevSafety_GetDefaultConfig(RevSafetyConfig_t *out) {
   if (!out) return;
-  out->t_sys_fw_s         = 0.34f;
+  out->t_sys_fw_s         = 0.40f;
   out->decel_intercept    = 0.66f;
   out->decel_slope        = 0.87f;
-  out->d_margin_rear_m    = 0.17f;
+  out->d_margin_rear_m    = 0.30f;
   out->alpha_smoothing    = 0.5f;
   out->release_hold_s     = 0.3f;
   out->v_eps_mps          = 0.05f;
   out->throttle_eps_us    = 30;
   out->stop_speed_eps_mps = 0.05f;
-  out->tof_blind_frames   = 2;
+  /* 4 frames at the default 33 ms ranging budget = ~130 ms of sustained
+   * sensor failure before declaring the rear blind. Two frames was too
+   * sensitive at high reverse speed: brief WRP/SIG/SIGMA bursts on smooth
+   * surfaces produced spurious TOF_BLIND brakes well before any obstacle. */
+  out->tof_blind_frames   = 4;
   out->frame_gap_ms       = 500u;
   out->pwm_neutral_us     = 1500u;
 }
@@ -162,7 +171,7 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
   if (ctx->last_valid_frame_ms == 0) ctx->last_valid_frame_ms = in->now_ms;
   RevSafetyState_t prev = ctx->state;
 
-  /* 1. Update smoothed depth and invalid counter */
+  /* 1. Update smoothed depth and invalid/valid counters */
   if (in->frame_is_new && in->zone_valid) {
     if (!ctx->has_smoothed) {
       ctx->smoothed_depth_m = in->raw_depth_m;
@@ -173,9 +182,11 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
           a * in->raw_depth_m + (1.0f - a) * ctx->smoothed_depth_m;
     }
     ctx->invalid_frame_count = 0;
+    if (ctx->valid_streak < 0xFF) ctx->valid_streak++;
     ctx->last_valid_frame_ms = in->now_ms;
   } else if (in->frame_is_new && !in->zone_valid) {
     if (ctx->invalid_frame_count < 0xFF) ctx->invalid_frame_count++;
+    ctx->valid_streak = 0;
     ctx->last_valid_frame_ms = in->now_ms; /* frame arrived, just invalid */
   }
 
@@ -217,11 +228,18 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
       clear_snapshot(ctx);
       ctx->release_timer_running = false;
     } else {
-      /* (a) Genuine clearance with debounce against latched-speed critical. */
+      /* (a) Genuine clearance with debounce against latched-speed critical.
+       * For TOF_BLIND, also require that as many consecutive valid frames
+       * have arrived as it took to declare blind in the first place — a
+       * single recovered frame is not enough to release. */
       float critical = RevSafety_CriticalDistance(&ctx->config,
                                                   ctx->latched_speed_mps);
       bool clear = ctx->has_smoothed && ctx->smoothed_depth_m > critical &&
                    ctx->invalid_frame_count == 0;
+      if (ctx->cause == REV_SAFETY_CAUSE_TOF_BLIND &&
+          ctx->valid_streak < ctx->config.tof_blind_frames) {
+        clear = false;
+      }
       if (clear) {
         if (!ctx->release_timer_running) {
           ctx->release_timer_running = true;

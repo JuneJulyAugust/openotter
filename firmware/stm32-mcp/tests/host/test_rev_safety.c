@@ -23,10 +23,10 @@ static void test_critical_distance_reverse_table(void) {
   RevSafetyConfig_t cfg;
   RevSafety_GetDefaultConfig(&cfg);
 
-  expect_near("cd(0.3)", RevSafety_CriticalDistance(&cfg, 0.3f), 0.326f, 1e-3f);
-  expect_near("cd(0.5)", RevSafety_CriticalDistance(&cfg, 0.5f), 0.473f, 1e-3f);
-  expect_near("cd(1.0)", RevSafety_CriticalDistance(&cfg, 1.0f), 0.926f, 1e-3f);
-  expect_near("cd(1.5)", RevSafety_CriticalDistance(&cfg, 1.5f), 1.453f, 1e-3f);
+  expect_near("cd(0.3)", RevSafety_CriticalDistance(&cfg, 0.3f), 0.474f, 1e-3f);
+  expect_near("cd(0.5)", RevSafety_CriticalDistance(&cfg, 0.5f), 0.633f, 1e-3f);
+  expect_near("cd(1.0)", RevSafety_CriticalDistance(&cfg, 1.0f), 1.116f, 1e-3f);
+  expect_near("cd(1.5)", RevSafety_CriticalDistance(&cfg, 1.5f), 1.673f, 1e-3f);
 }
 
 static void test_critical_distance_zero_speed(void) {
@@ -89,6 +89,7 @@ static void test_ema_smoothing_converges(void) {
 
 static void test_invalid_tolerates_one_then_brakes_on_two(void) {
   RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  cfg.tof_blind_frames = 2;
   RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
   RevSafety_Init(ctx, &cfg);
 
@@ -108,6 +109,45 @@ static void test_invalid_tolerates_one_then_brakes_on_two(void) {
   RevSafety_Tick(ctx, &in, &ev);
   expect_state("two invalid BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
   expect_cause("two invalid cause", ev.cause, REV_SAFETY_CAUSE_TOF_BLIND);
+}
+
+static void test_tof_blind_release_requires_valid_streak(void) {
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  cfg.tof_blind_frames = 2;
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  /* Prime smoothed depth and arm the supervisor (reverse, clear path). */
+  RevSafetyInput_t in = make_input(-0.5f, 1400, 2.0f, true, 0);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("blind prime SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+
+  /* Two consecutive invalids -> TOF_BLIND BRAKE. */
+  in = make_input(-0.5f, 1400, 0.0f, false, 100);
+  RevSafety_Tick(ctx, &in, &ev);
+  in = make_input(-0.5f, 1400, 0.0f, false, 200);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("blind setup BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("blind cause", ev.cause, REV_SAFETY_CAUSE_TOF_BLIND);
+
+  /* Single valid frame must NOT release, even after the 0.3s hold elapses:
+   * trigger needed 2 invalid frames, release needs 2 valid frames. */
+  in = make_input(-0.5f, 1400, 2.0f, true, 300);
+  RevSafety_Tick(ctx, &in, &ev);
+  in.now_ms = 700;  /* +400 ms past release_hold_s */
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("one valid frame insufficient", ev.state, REV_SAFETY_STATE_BRAKE);
+
+  /* Second valid frame meets the streak; release timer arms. */
+  in = make_input(-0.5f, 1400, 2.0f, true, 800);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("streak met, timer armed", ev.state, REV_SAFETY_STATE_BRAKE);
+
+  /* After 300 ms of continued clearance, release fires. */
+  in = make_input(-0.5f, 1400, 2.0f, true, 1100);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("blind release SAFE", ev.state, REV_SAFETY_STATE_SAFE);
 }
 
 static void test_obstacle_triggers_brake(void) {
@@ -290,6 +330,7 @@ int main(void) {
   test_critical_distance_zero_speed();
   test_ema_smoothing_converges();
   test_invalid_tolerates_one_then_brakes_on_two();
+  test_tof_blind_release_requires_valid_streak();
   test_obstacle_triggers_brake();
   test_release_requires_continuous_clearance();
   test_forward_command_releases_latch();

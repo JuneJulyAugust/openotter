@@ -29,11 +29,18 @@ extern "C" {
 /* Added in v0.4.0 — see
  * docs/superpowers/specs/2026-04-23-stm32-reverse-safety-and-protocol-design.md */
 #define OPENOTTER_SAFETY_CHAR_UUID 0xFE43 /* Notify: safety state + snapshot */
-#define OPENOTTER_MODE_CHAR_UUID   0xFE44 /* Write+read: 0=Drive, 1=Debug */
+#define OPENOTTER_MODE_CHAR_UUID   0xFE44 /* Write+read: 0=Drive, 1=Debug, 2=Park */
 
 typedef enum {
   OPENOTTER_MODE_DRIVE = 0,
   OPENOTTER_MODE_DEBUG = 1,
+  /* Park: throttle is forced to neutral regardless of the FE41 payload, and
+   * the reverse-safety supervisor is held disarmed so no BRAKE notifications
+   * are published. Steering is still passed through. Park is the explicit
+   * "operator has stopped" state — entering it is the only way for an iOS
+   * client to suppress a sticky rear BRAKE that would otherwise re-arm on
+   * residual reverse momentum. */
+  OPENOTTER_MODE_PARK  = 2,
 } OpenOtterMode_t;
 
 typedef struct __attribute__((packed)) {

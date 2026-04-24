@@ -29,6 +29,7 @@
 #include "ble_lib.h"
 #include "blesvc.h"
 #include "rev_safety.h"
+#include "rev_safety_tof.h"
 #include "tof_l1.h"
 #include "ble_tof.h"
 
@@ -144,6 +145,13 @@ static void publish_safety_event(const RevSafetyEvent_t *ev) {
                              0, sizeof(p), (uint8_t *)&p);
 }
 
+static void publish_safe_safety_snapshot(void) {
+  BLE_SafetyEventPayload_t p = {0};
+  p.seq = s_last_event_seq;
+  aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
+                             0, sizeof(p), (uint8_t *)&p);
+}
+
 void BLE_App_Process(void) {
   SCH_Run();
 
@@ -168,8 +176,10 @@ void BLE_App_Process(void) {
     if (f && f->num_zones >= 5) {
       /* Center zone in 3x3 is index 4 (top-to-bottom, left-to-right). */
       const TofL1_Zone_t *z = &f->zones[4];
-      in.zone_valid = (z->status == 0);
-      in.raw_depth_m = (float)z->range_mm / 1000.0f;
+      RevSafetyTofReading_t reading =
+          RevSafety_ClassifyTofReading(z->range_mm, z->status);
+      in.zone_valid  = (reading.tof_class != REV_SAFETY_TOF_INVALID);
+      in.raw_depth_m = reading.depth_m;
     }
     in.driver_dead = TofL1_IsDriverDead() ? true : false;
     in.now_ms      = now;
@@ -180,7 +190,14 @@ void BLE_App_Process(void) {
   int16_t steering_us = bleCtx.desiredSteeringUs;
   int16_t throttle_us = bleCtx.desiredThrottleUs;
 
-  if (bleCtx.mode == OPENOTTER_MODE_DRIVE && RevSafety_IsBraking(s_rev_ctx)) {
+  if (bleCtx.mode == OPENOTTER_MODE_PARK) {
+    /* Park is hard-neutral: any commanded throttle is dropped on the floor.
+     * Steering still passes through so the operator can re-aim wheels. The
+     * supervisor was disarmed on the mode-edge and is not run above, so no
+     * BRAKE notifications can fire from this state. */
+    throttle_us = (int16_t)PWM_NEUTRAL_US;
+  } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE &&
+             RevSafety_IsBraking(s_rev_ctx)) {
     /* Per-direction clamp: block reverse, let forward through. */
     int16_t neutral = (int16_t)PWM_NEUTRAL_US;
     if (throttle_us < neutral) throttle_us = neutral;
@@ -380,18 +397,25 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
         return_value = SVCCTL_EvtAck;
         if (attr_mod->data_length >= 1) {
           uint8_t v = attr_mod->att_data[0];
-          if (v == OPENOTTER_MODE_DRIVE || v == OPENOTTER_MODE_DEBUG) {
+          if (v == OPENOTTER_MODE_DRIVE || v == OPENOTTER_MODE_DEBUG ||
+              v == OPENOTTER_MODE_PARK) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
-            if (prev != bleCtx.mode && bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-              /* Debug→Drive: re-apply safety config and clear any latch
-               * that persisted from the prior Drive session. */
-              BLE_Tof_EnforceSafetyConfig();
-              RevSafety_Disarm(s_rev_ctx);
-            } else if (prev != bleCtx.mode &&
-                       bleCtx.mode == OPENOTTER_MODE_DEBUG) {
-              /* Drive→Debug: disarm once on the edge, not every tick. */
-              RevSafety_Disarm(s_rev_ctx);
+            if (prev != bleCtx.mode) {
+              if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
+                /* (Debug|Park)→Drive: re-apply safety config and clear any
+                 * latch from the prior Drive session before the supervisor
+                 * starts ticking again. */
+                BLE_Tof_EnforceSafetyConfig();
+                RevSafety_Disarm(s_rev_ctx);
+                publish_safe_safety_snapshot();
+              } else {
+                /* Drive→(Debug|Park): supervisor is suppressed in both
+                 * modes, so disarm once on the edge and broadcast a SAFE
+                 * snapshot so the iOS overlay drops immediately. */
+                RevSafety_Disarm(s_rev_ctx);
+                publish_safe_safety_snapshot();
+              }
             }
           }
         }
@@ -429,6 +453,7 @@ void SVCCTL_App_Notification(void *pckt) {
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
     BLE_Tof_EnforceSafetyConfig();
     RevSafety_Disarm(s_rev_ctx);
+    publish_safe_safety_snapshot();
     uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
     aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
                                &drive);

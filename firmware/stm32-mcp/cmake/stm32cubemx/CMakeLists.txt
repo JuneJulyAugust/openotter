@@ -34,6 +34,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_app.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1_roi.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof.c
