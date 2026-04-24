@@ -47,7 +47,7 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - The vehicle stops before obstacles under a configurable policy. (Done)
 - The system performs a safe stop on stale LiDAR data or control-link timeout. (Done)
 
-#### 2.4.2 Agent Runtime & Telegram Control (Active)
+#### 2.4.2 Agent Runtime & Telegram Control (Achieved: v1.0.0)
 
 - The app receives commands from a Telegram bot via long polling.
 - Fixed command set (forward, backward, stop, status) dispatches through the planner/safety stack.
@@ -57,10 +57,10 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Bot token is stored securely in the iOS Keychain.
 - Stub interfaces exist for future LLM interpreter, skill registry, and memory store.
 
-### 2.5 Current Release (v0.11.0)
+### 2.5 Current Release (v1.0.0)
 
 - The project was formally rebranded to OpenOtter on 2026-04-16.
-- Version 0.11.0 establishes the baseline with an advanced physics-based safety model and Telegram speed controls.
+- Version 1.0.0 establishes the first complete iPhone + STM32 safety milestone: forward LiDAR safety, rear ToF firmware safety, Telegram Park/Drive control, Self Driving emergency UI parity, and repeatable simulator test workflow.
 
 ## 3. Product Direction
 

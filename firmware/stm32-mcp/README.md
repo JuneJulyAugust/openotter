@@ -7,15 +7,18 @@ Receives steering and throttle commands over BLE and drives PWM outputs to contr
 
 - **Target MCU**: STM32L475 (Cortex-M4 with FPU)
 - **Board**: B-L475E-IOT01A (Discovery Kit IoT Node)
-- **Current Version**: 0.3.0
+- **Current Version**: 1.0.0
 - **Framework**: STM32Cube HAL + BlueNRG-MS BLE middleware
 - **BLE Module**: SPBTLE-RF (BlueNRG-MS) via SPI3
 
 ## Features
 
 - **BLE GATT Control Service** (`0xFE40`)
-  - **Command Characteristic** (`0xFE41`): Write — receives `[int16_t steering, int16_t throttle]` pulse widths in µs
-  - **Status Characteristic** (`0xFE42`): Notify — firmware heartbeat/status (reserved)
+  - **Command Characteristic** (`0xFE41`): Write — receives `[int16_t steering, int16_t throttle, int16_t velocity_mm_per_s]`
+  - **Status Characteristic** (`0xFE42`): Notify / Read — firmware heartbeat/status
+  - **Safety Characteristic** (`0xFE43`): Notify — reverse safety state and trigger snapshot
+  - **Mode Characteristic** (`0xFE44`): Write / Read — Drive, Debug, or Park operating mode
+- **Reverse ToF Safety**: VL53L1CB rear ToF supervisor brakes reverse motion based on speed-dependent critical distance.
 - **PWM Servo Output** via TIM3
   - `PB1` (TIM3_CH4) → Steering servo
   - `PB4` (TIM3_CH1) → Throttle ESC

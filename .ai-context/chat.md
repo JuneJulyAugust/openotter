@@ -4,6 +4,30 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
+## 2026-04-24 - OpenOtter v1.0 Safety Milestone
+
+### Summary
+Released the first v1.0.0 milestone across the iOS app and STM32 firmware. The integrated safety loop now covers forward LiDAR braking, rear ToF firmware braking, Telegram Park/Drive state management, and Self Driving emergency UI parity.
+
+### Achievements
+1. **Rear emergency panel parity:** Reverse firmware BRAKE notifications now appear in the Self Driving emergency panel with the same operational detail as forward collision warnings.
+2. **Park state correctness:** Telegram/app Park clears planner, firmware-event, brake-record, and emergency presentation state instead of leaving stale BRAKE visible while speed is zero.
+3. **Safety latch hardening:** Forward BRAKE holds through sensor dropout, and re-sending Drive during BRAKE no longer releases the latch through transient planner zero throttle.
+4. **Simulator workflow captured:** `openotter-ios/build.sh test` now auto-selects a stable installed simulator and supports explicit simulator overrides.
+5. **Version synchronization:** Bumped and tagged:
+   - iOS App: `v1.0.0`
+   - STM32 MCP: `v1.0.0`
+
+### Current State
+- **iOS App:** `v1.0.0` release metadata is current.
+- **STM32 Firmware:** `v1.0.0` release metadata is current.
+- **Next Step:** Deploy iOS v1.0.0 and flash STM32 v1.0.0 for the physical milestone validation run.
+
+### Prompt Context for Next Session
+"OpenOtter is at the v1.0.0 safety milestone. iOS and STM32 are synchronized at v1.0.0, with rear firmware BRAKE events shown in the Self Driving emergency panel, Park clearing stale emergency state, and forward/reverse safety latches hardened. Next priority is physical validation on the vehicle phone and STM32 board."
+
+---
+
 ## 2026-04-22 - Safety Calibration & ToF Sensor Support Release
 
 ### Summary

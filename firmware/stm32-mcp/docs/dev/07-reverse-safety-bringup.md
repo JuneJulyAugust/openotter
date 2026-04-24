@@ -1,12 +1,12 @@
 # Reverse Safety Supervisor — Bringup Checklist
 
-Follow after flashing firmware ≥ v0.4.0 and pairing with an iOS build that
+Follow after flashing firmware ≥ v1.0.0 and pairing with an iOS build that
 speaks the 6 B command and 0xFE43/0xFE44 protocol. All checks run with the
 vehicle on blocks (wheels off the ground) except items that explicitly say
 otherwise.
 
-1. **Default mode on connect.** After BLE connect, read 0xFE44. Expect `0x00`
-   (Drive). Disconnect and reconnect; expect `0x00` again.
+1. **Default mode on connect.** After BLE connect, read 0xFE44. Expect Park
+   from the iOS app during idle, then Drive after a movement command.
 
 2. **Drive rejects ToF config writes.** Write an arbitrary valid config
    (e.g. layout=1, dist_mode=2, budget=50000) to 0xFE61. Read 0xFE63.
@@ -37,6 +37,10 @@ otherwise.
    scan periods (≈540 ms). Uncover; expect release after 0.3 s of continuous
    clearance.
 
-8. **BLE watchdog.** Disconnect the iPhone while reversing. PWM must go to
+8. **Park clears emergency state.** Trigger reverse BRAKE, then send Park from
+   Telegram or the app. Expect 0xFE43 to clear and the Self Driving emergency
+   panel to dismiss without another BRAKE while speed is zero.
+
+9. **BLE watchdog.** Disconnect the iPhone while reversing. PWM must go to
    neutral within `BLE_SAFETY_TIMEOUT_MS` (1.5 s). Reconnect; supervisor
    should resume from SAFE.

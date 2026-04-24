@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-04-24
+
+### Added
+- **Rear Emergency UI Parity**: Reverse firmware BRAKE events now surface in the Self Driving emergency panel with the same distance, speed, critical-distance, and timing details used for forward collision warnings.
+- **Parked Safety Event Gate**: Added app-side filtering so late firmware BRAKE notifications are dropped after Park and the visible safety event clears immediately.
+- **Repeatable Simulator Workflow**: `build.sh test` now resolves an installed simulator automatically, defaults to the stable `iPhone 17` simulator, and supports `SIMULATOR_NAME`, `SIMULATOR_UDID`, and `TEST_DESTINATION` overrides.
+
+### Changed
+- **Park is a hard safety boundary**: `PlannerOrchestrator` now enters Park on initialization and reset, writes Park to the STM32 mode characteristic, and skips forward safety evaluation while parked.
+- **Firmware command protocol alignment**: iOS keeps sending the 6 B command payload with signed velocity so reverse safety can compute the correct stopping distance on the STM32.
+
+### Fixed
+- **Emergency state clearing after Telegram Park**: Park now clears the app emergency state, brake record, supervisor override, and cached firmware event so the UI and control stack stop reporting BRAKE while the vehicle is intentionally idle.
+- **Forward safety dropout latch**: A latched forward BRAKE now holds through nil, NaN, zero, or negative depth readings instead of treating sensor dropout as clearance.
+- **Brake latch release from drive re-command**: Sending a fresh drive/setGoal command during an active BRAKE no longer releases the latch through a transient zero-throttle planner tick.
+
 ## [0.12.0] - 2026-04-23
 
 ### Added

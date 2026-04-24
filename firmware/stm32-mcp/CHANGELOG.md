@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [1.0.0] - 2026-04-24
+
+### Added
+- **Park Operating Mode**: Added a Park mode on 0xFE44 so the app can intentionally idle the vehicle and clear reverse safety state without leaving the firmware armed for reverse BRAKE evaluation.
+- **Reverse Safety Notification Recovery**: Firmware safety notifications now support the app's Self Driving emergency panel with state, cause, distance, speed, critical distance, and timing details.
+
+### Changed
+- **Reverse Safety Margin Increased**: Increased the reverse stopping margin by 8 cm for a more conservative bumper gap during rear obstacle approaches.
+- **Reset and Release Paths Hardened**: Reverse safety state now clears consistently when leaving BRAKE through explicit safe modes, forward escape motion, disconnect, and board reset paths.
+
+### Fixed
+- **Stationary BRAKE Re-triggering**: Reverse safety no longer treats an intentionally parked or zero-speed command as a reason to keep reasserting BRAKE from stale distance readings.
+- **Late BRAKE Notifications**: Firmware/app state transitions now prevent stale reverse BRAKE notifications from keeping the iOS app in emergency state after Park.
+
 ## [0.4.0] - 2026-04-23
 
 ### Added

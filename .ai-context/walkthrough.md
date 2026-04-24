@@ -32,6 +32,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-04-24 - OpenOtter v1.0 Safety Milestone
+
+- **Context:** Finalizing the first integrated iPhone + STM32 safety release after rear ToF reverse safety, Self Driving emergency panel parity, and Telegram Park state management landed.
+- **What we built/tested:** Added app-side firmware safety event gating, Park-mode clearing, reverse emergency UI presentation, forward BRAKE dropout holding, and a repeatable iOS simulator test workflow.
+- **Issue observed:** Park could leave stale BRAKE state visible in the iOS app, late reverse BRAKE notifications could re-trigger emergency UI while idle, and forward LiDAR dropout during BRAKE could incorrectly look like clearance.
+- **Root cause:** Safety state was split across planner, firmware event, and UI layers without a hard Park boundary; forward safety treated missing depth uniformly instead of distinguishing SAFE from BRAKE.
+- **Resolution:** Park now clears planner and firmware safety presentation state; firmware events are filtered by operating mode; forward BRAKE holds through invalid depth until real clearance is observed; simulator tests default to a stable installed simulator.
+- **Validation:** Focused XCTest runs passed for `PlannerOrchestratorTests`, `FirmwareSafetyEventGateTests`, and `SafetySupervisorTests`.
+- **Follow-up:** Flash STM32 v1.0.0 and deploy iOS v1.0.0 to the vehicle phone for the physical milestone run.
+
 ### 2026-04-22 - Safety Calibration & ToF Sensor Support (v0.11.0 / v0.3.1)
 
 - **Context:** Resolving massive bumper gaps during emergency stops, integrating the new VL53L1CB ToF sensor into the STM32 direct-control path, and rendering it on iOS.
