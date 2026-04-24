@@ -22,6 +22,7 @@ Commands:
   deploy      Build + install + launch (full cycle)
   test        Run unit tests on the iOS Simulator
   devices     List connected iOS devices
+  simulators  List available iOS Simulators
 
 Options:
   --device <UDID>   Target device UDID (auto-detected if one device connected)
@@ -30,17 +31,23 @@ Options:
 Environment:
   DEVICE_UDID       Device UDID (alternative to --device flag)
   CONFIG            Build configuration (default: Debug)
+  SIMULATOR_NAME    Preferred test simulator name (default: iPhone 17)
+  SIMULATOR_UDID    Exact test simulator UDID
+  TEST_DESTINATION  Full xcodebuild test destination override
 EOF
     exit 1
 }
 
 # Parse global options
 DEVICE_UDID="${DEVICE_UDID:-}"
+SIMULATOR_NAME="${SIMULATOR_NAME:-iPhone 17}"
+SIMULATOR_UDID="${SIMULATOR_UDID:-}"
+TEST_DESTINATION="${TEST_DESTINATION:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device) DEVICE_UDID="$2"; shift 2 ;;
         --release) CONFIG="Release"; shift ;;
-        generate|build|install|launch|deploy|test|devices) COMMAND="$1"; shift; break ;;
+        generate|build|install|launch|deploy|test|devices|simulators) COMMAND="$1"; shift; break ;;
         -h|--help) usage ;;
         *) echo "Unknown argument: $1"; usage ;;
     esac
@@ -167,17 +174,96 @@ cmd_devices() {
     xcrun devicectl list devices
 }
 
+cmd_simulators() {
+    xcrun simctl list devices available
+}
+
+simulator_udid_for_name() {
+    local name="$1"
+    xcrun simctl list devices available 2>/dev/null | awk -v target="$name" '
+        $0 ~ "^[[:space:]]*" target " \\([0-9A-F-]+\\) \\((Booted|Shutdown)\\)" {
+            line = $0
+            sub("^[[:space:]]*" target " \\(", "", line)
+            sub("\\) \\((Booted|Shutdown)\\).*$", "", line)
+            print line
+            exit
+        }
+    '
+}
+
+test_destination() {
+    if [[ -n "$TEST_DESTINATION" ]]; then
+        echo "$TEST_DESTINATION"
+        return
+    fi
+
+    if [[ -n "$SIMULATOR_UDID" ]]; then
+        echo "platform=iOS Simulator,id=$SIMULATOR_UDID"
+        return
+    fi
+
+    local names=(
+        "$SIMULATOR_NAME"
+        "iPhone 17"
+        "iPhone 13 Pro Max"
+        "iPhone 16e"
+        "iPhone 17 Pro"
+        "iPhone 17 Pro Max"
+    )
+
+    local name
+    for name in "${names[@]}"; do
+        local udid
+        udid="$(simulator_udid_for_name "$name")"
+        if [[ -n "$udid" ]]; then
+            echo "platform=iOS Simulator,id=$udid"
+            return
+        fi
+    done
+
+    cat >&2 <<EOF
+No preferred iOS Simulator is available.
+Set SIMULATOR_NAME, SIMULATOR_UDID, or TEST_DESTINATION, or install one of:
+  ${names[*]}
+
+Available simulators:
+EOF
+    cmd_simulators >&2
+    exit 1
+}
+
+show_simulator_hint() {
+    cat <<'EOF'
+Hint: this looks like a transient Simulator launch/preflight issue.
+1. Retry with the stable default: SIMULATOR_NAME="iPhone 17" ./build.sh test
+2. If the Simulator is stuck busy, reset runtime state with: xcrun simctl shutdown all
+3. To pin a known device, run ./build.sh simulators and then SIMULATOR_UDID=<UDID> ./build.sh test
+EOF
+}
+
 cmd_test() {
     if [[ ! -d "$PROJECT_NAME.xcodeproj" ]]; then
         cmd_generate
     fi
-    echo "==> Running tests..."
+    local destination
+    destination="$(test_destination)"
+
+    echo "==> Running tests on $destination..."
     export APP_VERSION=$(cat VERSION)
-    xcodebuild test \
+    local test_output
+    test_output="$(mktemp)"
+    if ! xcodebuild test \
         -project "$PROJECT_NAME.xcodeproj" \
         -scheme "$SCHEME" \
-        -destination "platform=iOS Simulator,name=iPhone 17 Pro" \
-        -derivedDataPath "$DERIVED_DATA"
+        -destination "$destination" \
+        -derivedDataPath "$DERIVED_DATA" 2>&1 | tee "$test_output"; then
+        if grep -qiE 'busy|failed preflight checks|FBSOpenApplicationServiceErrorDomain|Simulator device failed to launch' "$test_output"; then
+            show_simulator_hint
+        fi
+        rm -f "$test_output"
+        return 1
+    fi
+    rm -f "$test_output"
     echo "==> Tests complete."
 }
 
@@ -189,5 +275,6 @@ case "$COMMAND" in
     deploy)   cmd_deploy ;;
     test)     cmd_test ;;
     devices)  cmd_devices ;;
+    simulators) cmd_simulators ;;
     *)        usage ;;
 esac
