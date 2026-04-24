@@ -122,10 +122,28 @@ final class SafetySupervisor {
             return handleNonForwardCommand(command, context: context)
         }
 
+        // When depth is missing, behavior depends on state:
+        //   SAFE  → pass through (no evidence of danger).
+        //   BRAKE → hold brake (losing vision is not clearance).
         guard let rawDepth = validDepth(from: context) else {
-            // No depth data → cannot evaluate safety. Pass through, clear any stale event.
-            lastEvent = nil
-            return command
+            switch state {
+            case .safe:
+                lastEvent = nil
+                return command
+
+            case .brake:
+                let reason = "BRAKE held: depth unavailable (sensor dropout)"
+                lastEvent = SafetySupervisorEvent(
+                    timestamp: context.timestamp,
+                    rawDepth: .nan,
+                    smoothedDepth: smoothedDepth ?? .nan,
+                    speed: latchedSpeed,
+                    criticalDistance: criticalDistance(speed: latchedSpeed),
+                    isBraking: true,
+                    reason: reason
+                )
+                return .brake(reason: reason)
+            }
         }
 
         let smoothed = updateSmoothedDepth(raw: rawDepth)
@@ -310,12 +328,36 @@ final class SafetySupervisor {
         _ command: ControlCommand,
         context: PlannerContext
     ) -> ControlCommand {
-        // Operator override: drop latch, return to SAFE.
+        // While in BRAKE, only release for *explicit* non-forward operator intent:
+        //   - throttle < 0 (reverse command — the escape hatch)
+        //   - source == .idle (explicit stop/park via neutral)
+        //
+        // A planner producing throttle == 0 transiently (e.g. ramp warmup after
+        // setGoal) is NOT operator override — the operator's intent is "drive
+        // forward." Releasing the latch for that transient zero would let the
+        // next ramped tick accelerate into a known obstacle.
         if case .brake = state {
-            state = .safe
-            currentBrake = nil
-            latchedSpeed = 0
-            clearanceStartedAt = nil
+            let isExplicitReverse = command.throttle < 0
+            let isExplicitIdle = command.source == .idle
+            if isExplicitReverse || isExplicitIdle {
+                state = .safe
+                currentBrake = nil
+                latchedSpeed = 0
+                clearanceStartedAt = nil
+            } else {
+                // Planner at zero throttle while BRAKE — hold the brake.
+                let reason = "BRAKE held: planner at zero throttle (ramp warmup)"
+                lastEvent = SafetySupervisorEvent(
+                    timestamp: context.timestamp,
+                    rawDepth: .nan,
+                    smoothedDepth: smoothedDepth ?? .nan,
+                    speed: latchedSpeed,
+                    criticalDistance: criticalDistance(speed: latchedSpeed),
+                    isBraking: true,
+                    reason: reason
+                )
+                return .brake(reason: reason)
+            }
         }
 
         // Keep the smoothing filter alive so re-entry to forward motion is continuous.

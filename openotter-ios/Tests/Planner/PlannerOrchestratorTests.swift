@@ -359,4 +359,80 @@ final class PlannerPipelineIntegrationTests: XCTestCase {
         XCTAssertEqual(brakeCount, 0,
                        "Depth comfortably above criticalDistance should never trigger BRAKE (triggered \(brakeCount) times)")
     }
+
+    /// Exact scenario: BRAKE active → user sends "drive" (setGoal) → system stays safe.
+    /// Proves that setGoal during an active collision warning does not release the supervisor.
+    func testSetGoalDuringBrakeDoesNotReleaseSupervisor() {
+        let planner = ConstantSpeedPlanner(config: .init(maxRampRatePerSecond: 10.0))
+        let orchestrator = PlannerOrchestrator(planner: planner)
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+
+        let dt = 1.0 / 60.0
+
+        // Ramp up with open road.
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0.5, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+
+        // Drive smoothed depth below critical (sustained close readings).
+        for i in 1...15 {
+            let t = 0.5 + Double(i) * dt
+            _ = orchestrator.tick(context: PlannerTestFactory.context(
+                timestamp: t, forwardDepth: 0.1, arkitSpeedMps: 1.0
+            ))
+        }
+        XCTAssertTrue(orchestrator.isOverridden, "Should be in BRAKE before setGoal")
+
+        // User sends "drive" — this calls setGoal on the orchestrator.
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.8))
+
+        // Next tick with obstacle still present.
+        let cmd = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.0, forwardDepth: 0.1, arkitSpeedMps: 0.0
+        ))
+
+        XCTAssertEqual(cmd.throttle, 0, accuracy: 1e-5,
+                       "setGoal during BRAKE must not release the supervisor")
+        XCTAssertEqual(cmd.source, .safetySupervisor)
+        XCTAssertTrue(orchestrator.isOverridden,
+                      "isOverridden must remain true after setGoal during BRAKE")
+    }
+
+    /// BRAKE active → depth drops out → system stays safe (does not pass through).
+    func testBrakeHoldsThroughDepthDropoutInOrchestrator() {
+        let planner = ConstantSpeedPlanner(config: .init(maxRampRatePerSecond: 10.0))
+        let orchestrator = PlannerOrchestrator(planner: planner)
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+
+        let dt = 1.0 / 60.0
+
+        // Ramp up.
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0.5, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+
+        // Trigger BRAKE.
+        for i in 1...15 {
+            let t = 0.5 + Double(i) * dt
+            _ = orchestrator.tick(context: PlannerTestFactory.context(
+                timestamp: t, forwardDepth: 0.1, arkitSpeedMps: 1.0
+            ))
+        }
+        XCTAssertTrue(orchestrator.isOverridden, "Should be in BRAKE")
+
+        // Depth drops out (nil). BRAKE must hold.
+        let cmd = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.5, forwardDepth: nil, arkitSpeedMps: 0.0
+        ))
+        XCTAssertEqual(cmd.throttle, 0, accuracy: 1e-5,
+                       "Depth dropout during BRAKE must not release the robot")
+        XCTAssertEqual(cmd.source, .safetySupervisor)
+        XCTAssertTrue(orchestrator.isOverridden)
+    }
 }

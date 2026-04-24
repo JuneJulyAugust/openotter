@@ -128,6 +128,8 @@ Each tick while in BRAKE:
 - Keep emitting the brake command.
 - If `|v_now| < stopSpeedEpsilonMPS` and no stop snapshot yet, capture `stop = { t, pose, depth: smoothedDepth }`. Used to compute actual deceleration (§7).
 
+**Sensor dropout invariant.** While in BRAKE, depth unavailability (nil, NaN, zero, or negative readings) is treated as "no evidence of clearance" and the brake holds. Losing forward vision while already in a known-dangerous situation is not safe grounds for release — only genuine depth readings above `criticalDistance(latchedSpeed)` can start the release timer. This mirrors the firmware reverse safety's `TOF_BLIND` / `FRAME_GAP` policy (see `rev_safety.c`).
+
 ### 5.3 Release (BRAKE → SAFE)
 
 Three independent release paths:

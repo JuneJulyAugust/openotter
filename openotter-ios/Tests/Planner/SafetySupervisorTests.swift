@@ -435,4 +435,145 @@ final class SafetySupervisorTests: XCTestCase {
         _ = sv.supervise(command: forwardCmd(), context: ctx)
         XCTAssertEqual(sv.state, .safe)
     }
+
+    // MARK: - Sensor dropout during BRAKE (safety-critical)
+
+    func testBrakeHoldsWhenDepthBecomesNil() {
+        let sv = makeSupervisor()
+
+        // Trigger BRAKE: depth 0.30 m < criticalDistance(1.0) = 0.45 m.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        if case .brake = sv.state {} else { XCTFail("Expected BRAKE") }
+
+        // Depth drops out (nil). Supervisor must hold BRAKE, not pass through.
+        let result = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: nil, arkitSpeedMps: 1.0)
+        )
+        XCTAssertEqual(result.throttle, 0, accuracy: 1e-6, "BRAKE must hold through nil depth")
+        XCTAssertEqual(result.source, .safetySupervisor)
+        if case .brake = sv.state {} else {
+            XCTFail("State must remain BRAKE when depth is nil")
+        }
+    }
+
+    func testBrakeHoldsWhenDepthBecomesNaN() {
+        let sv = makeSupervisor()
+
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        if case .brake = sv.state {} else { XCTFail("Expected BRAKE") }
+
+        let result = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: .nan, arkitSpeedMps: 1.0)
+        )
+        XCTAssertEqual(result.throttle, 0, accuracy: 1e-6, "BRAKE must hold through NaN depth")
+        XCTAssertEqual(result.source, .safetySupervisor)
+        if case .brake = sv.state {} else {
+            XCTFail("State must remain BRAKE when depth is NaN")
+        }
+    }
+
+    func testBrakeHoldsWhenDepthBecomesZero() {
+        let sv = makeSupervisor()
+
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        if case .brake = sv.state {} else { XCTFail("Expected BRAKE") }
+
+        let result = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: 0.0, arkitSpeedMps: 1.0)
+        )
+        XCTAssertEqual(result.throttle, 0, accuracy: 1e-6, "BRAKE must hold through zero depth")
+        XCTAssertEqual(result.source, .safetySupervisor)
+    }
+
+    func testDepthRecoveryAfterDropoutRestartsReleaseTimer() {
+        let sv = makeSupervisor()
+
+        // Trigger BRAKE.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+
+        // Depth drops out for a while.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: nil, arkitSpeedMps: 0.0)
+        )
+
+        // Depth recovers above critical at t=0.2 (clearance starts here).
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.2, forwardDepth: 2.0, arkitSpeedMps: 0.0)
+        )
+        if case .brake = sv.state {} else {
+            XCTFail("Should still be BRAKE — clearance just started")
+        }
+
+        // At t=0.45, only 0.25 s since depth recovery — still below releaseHoldS (0.3 s).
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.45, forwardDepth: 2.0, arkitSpeedMps: 0.0)
+        )
+        if case .brake = sv.state {} else {
+            XCTFail("Should still be BRAKE — clearance hold not met yet")
+        }
+
+        // At t=0.55, 0.35 s since recovery — exceeds releaseHoldS → release.
+        let released = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.55, forwardDepth: 2.0, arkitSpeedMps: 0.0)
+        )
+        XCTAssertEqual(sv.state, .safe, "Should release after clearance held past recovery")
+        XCTAssertEqual(released.throttle, 0.5, accuracy: 1e-6)
+    }
+
+    func testForwardDriveCommandDuringBrakeStaysBraking() {
+        let sv = makeSupervisor()
+
+        // Trigger BRAKE at 1.0 m/s.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.0)
+        )
+        if case .brake = sv.state {} else { XCTFail("Expected BRAKE") }
+
+        // Send a fresh forward command — obstacle still present.
+        // This is the exact scenario: user sends "drive" while BRAKE is active.
+        let driveCmd = PlannerTestFactory.forwardCommand(throttle: 0.8)
+        let result = sv.supervise(command: driveCmd, context:
+            PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 0.30, arkitSpeedMps: 0.0)
+        )
+        XCTAssertEqual(result.throttle, 0, accuracy: 1e-6,
+                       "Forward command during BRAKE must be overridden to brake")
+        XCTAssertEqual(result.source, .safetySupervisor)
+        if case .brake = sv.state {} else {
+            XCTFail("Supervisor must remain in BRAKE despite forward command")
+        }
+    }
+
+    // MARK: - Sensor dropout event diagnostics
+
+    func testSensorDropoutEventReportsLatchedSpeedAndBraking() {
+        let sv = makeSupervisor()
+
+        // Trigger at 1.5 m/s.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0, forwardDepth: 0.30, arkitSpeedMps: 1.5)
+        )
+
+        // Depth drops out.
+        _ = sv.supervise(command: forwardCmd(), context:
+            PlannerTestFactory.context(timestamp: 0.05, forwardDepth: nil, arkitSpeedMps: 0.0)
+        )
+
+        guard let event = sv.lastEvent else {
+            XCTFail("lastEvent should be set during sensor dropout in BRAKE")
+            return
+        }
+        XCTAssertTrue(event.isBraking)
+        XCTAssertEqual(event.speed, 1.5, accuracy: 1e-5, "Should report latched speed")
+        XCTAssertTrue(event.rawDepth.isNaN, "Raw depth should be NaN for dropout")
+        XCTAssertNotNil(event.reason)
+        XCTAssertTrue(event.reason!.contains("dropout") || event.reason!.contains("unavailable"))
+    }
 }
