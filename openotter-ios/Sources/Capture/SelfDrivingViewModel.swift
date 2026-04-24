@@ -54,7 +54,10 @@ final class SelfDrivingViewModel: ObservableObject {
     private static let keepaliveInterval: TimeInterval = 0.5
 
     init() {
-        let orch = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+        let orch = PlannerOrchestrator(
+            planner: ConstantSpeedPlanner(),
+            modeReceiver: STM32BleManager.shared
+        )
         let speechOutput = SpeechOutput()
 
         let token = KeychainHelper.read(key: "telegram-bot-token") ?? ""

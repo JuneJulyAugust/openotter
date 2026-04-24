@@ -30,6 +30,7 @@ targets:
       - path: Sources
         excludes:
           - "**/*.md"
+          - "Planner/Safety/FirmwareSafetyEvent.swift"
       - path: Resources/Assets.xcassets
       - path: VERSION
         buildPhase: resources
@@ -52,6 +53,8 @@ targets:
     platform: iOS
     sources:
       - path: Tests
+        excludes:
+          - "Planner/FirmwareSafetyEventTests.swift"
     dependencies:
       - target: openotter
     settings:

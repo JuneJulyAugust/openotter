@@ -31,12 +31,50 @@ SelfDrivingViewModel (10 Hz)
         │  tick(context:) → ControlCommand
         ▼
 PlannerOrchestrator
+  ├── operatingMode: OperatingMode    →  setOperatingMode(.drive|.park) ─┐
   ├── activePlanner: PlannerProtocol  →  plan(context:)  →  ControlCommand
-  └── supervisor: SafetySupervisor    →  supervise(cmd, context) → ControlCommand (safe or brake)
-        │
-        ▼
-STM32BleManager (PWM)
+  └── supervisor: SafetySupervisor    →  supervise(cmd, context) → ControlCommand
+        │                                                                 │
+        ▼                                                                 ▼
+STM32BleManager (FE41 PWM commands)             STM32BleManager (FE44 mode byte)
 ```
+
+The orchestrator is the single iOS-side source of truth for the operating
+mode. `STM32BleManager` is registered as the optional
+`OperatingModeReceiving` and is pushed synchronously on every transition,
+which translates into a write to the firmware mode characteristic.
+
+---
+
+## 3.1 Operating Mode
+
+`OperatingMode` is a binary, mutually-exclusive operator commitment:
+
+| Mode    | Planner             | Forward supervisor | Firmware (FE44)        | Firmware reverse supervisor | Firmware throttle output |
+|---------|---------------------|--------------------|------------------------|------------------------------|--------------------------|
+| `drive` | active, may emit motion | armed; may publish BRAKE on close obstacle | `0x00 = DRIVE`         | armed; may publish BRAKE on FE43 | passes commanded throttle, clamped on BRAKE |
+| `park`  | inactive (`reset`)  | passes through; cannot enter BRAKE because planner emits neutral | `0x02 = PARK`          | held disarmed; no FE43 events | hard-neutral regardless of FE41 payload |
+
+Transitions are driven exclusively by the orchestrator:
+
+- `setGoal(_:)` → `.drive`. Always re-pushes Drive through the receiver
+  (idempotent), so a stale firmware Park left over from another client is
+  cleared on the first goal-set.
+- `reset()` → `.park`. Drops the planner goal, drops any supervisor latch,
+  pushes Park through the receiver, and clears the cached firmware safety
+  event in the BLE bridge so the UI overlay/alarm collapse without waiting
+  for the firmware's SAFE snapshot to round-trip.
+
+Park is a stable terminal state by construction:
+
+- iOS forward supervisor cannot enter BRAKE because it only inspects the
+  planner command and the planner emits neutral throttle.
+- Firmware reverse supervisor is held SAFE (not ticked) so it cannot fire
+  BRAKE on residual reverse coast.
+
+The only way out of Park is an explicit `setGoal` (operator intent to
+drive). `STM32ControlViewModel.init` writes `.drive` unconditionally so
+manual control re-arms the firmware regardless of the prior session.
 
 ---
 
@@ -153,7 +191,8 @@ Sources/Planner/
 ├── PlannerProtocol.swift             ← protocol, PlannerGoal, Waypoint
 ├── PlannerContext.swift              ← sensor snapshot
 ├── ControlCommand.swift              ← command + source
-├── PlannerOrchestrator.swift         ← wires planner + supervisor
+├── OperatingMode.swift               ← Park/Drive enum + receiving protocol
+├── PlannerOrchestrator.swift         ← wires planner + supervisor + mode
 ├── Safety/
 │   ├── DESIGN.md                     ← safety design
 │   ├── SafetySupervisor.swift        ← supervise() logic

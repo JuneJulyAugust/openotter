@@ -1,6 +1,10 @@
 import Foundation
 
 /// Narrow interface for setting planner goals — satisfied by PlannerOrchestrator.
+/// `setGoal` implies "enter Drive and pursue this goal"; `reset` implies
+/// "enter Park". The orchestrator coordinates the corresponding firmware
+/// mode transition through its own injected `OperatingModeReceiving`, so
+/// the dispatcher does not need to know the BLE layer exists.
 protocol GoalReceiving: AnyObject {
     func setGoal(_ goal: PlannerGoal)
     func reset()

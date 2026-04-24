@@ -20,8 +20,9 @@ struct SelfDrivingView: View {
     @State private var lastScale: CGFloat = 40.0
     @State private var lastOffset: CGSize = .zero
 
-    // Repeating alarm timer — active while safety override is engaged.
+    // Repeating alarm timer — active while any emergency override is engaged.
     @State private var alarmTimer: Timer?
+    @State private var rearSafetyReceivedAt: Date?
 
     var body: some View {
         GeometryReader { geo in
@@ -48,9 +49,18 @@ struct SelfDrivingView: View {
         .navigationBarHidden(true)
         .onAppear {
             viewModel.start()
+            syncAlarm()
         }
         .onDisappear {
             viewModel.stop()
+            stopAlarm()
+        }
+        .onChange(of: viewModel.orchestrator.isOverridden) { _ in
+            syncAlarm()
+        }
+        .onReceive(viewModel.stm32Manager.$lastSafetyEvent.receive(on: RunLoop.main)) { event in
+            rearSafetyReceivedAt = event.map { _ in Date() }
+            syncAlarm()
         }
         .sheet(isPresented: $viewModel.showMapManager) {
             MapManagerView(viewModel: viewModel.poseModel)
@@ -77,16 +87,14 @@ struct SelfDrivingView: View {
                     .zIndex(1)
             }
 
-            // EMERGENCY BRAKE OVERLAY
-            if viewModel.orchestrator.isOverridden {
-                emergencyBrakeOverlay
-                    .zIndex(10)
+            TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
+                if let alert = currentEmergencyAlert(now: timeline.date) {
+                    emergencyBrakeOverlay(alert)
+                        .zIndex(10)
+                }
             }
         }
         .background(Color(.systemGray6))
-        .onChange(of: viewModel.orchestrator.isOverridden) { overridden in
-            overridden ? startAlarm() : stopAlarm()
-        }
     }
 
     // MARK: - Components
@@ -247,27 +255,6 @@ struct SelfDrivingView: View {
         String(format: "%.2fm @ %.2fm/s (Dc %.2fm)", t.depth, t.speed, t.criticalDistance)
     }
 
-    private func triggerFullText(_ t: SafetyBrakeTrigger) -> String {
-        let motor = t.motorSpeed.isNaN ? "—" : String(format: "%.2f m/s", t.motorSpeed)
-        let arkit = t.arkitSpeed.isNaN ? "—" : String(format: "%.2f m/s", t.arkitSpeed)
-        return String(
-            format: "Trigger | t %.3fs | Depth %.2fm | v %.2fm/s | Dc %.2fm | Motor %@ | ARKit %@",
-            t.timestamp, t.depth, t.speed, t.criticalDistance, motor, arkit
-        )
-    }
-
-    private func stopFullText(_ record: SafetyBrakeRecord) -> String? {
-        guard let stop = record.stop else { return nil }
-        let bumperGap = record.stop.map { String(format: "%.2fm", $0.depth - 0.13) } ?? "—"
-        let elapsed = record.stoppingTimeS.map { String(format: "%.2fs", $0) } ?? "—"
-        let decel = record.actualDecelMPS2.map { String(format: "%.2f m/s²", $0) } ?? "—"
-        let brakingDistance = record.brakingDistanceM.map { String(format: "%.2fm", $0) } ?? "—"
-        return String(
-            format: "Stopped | t %.3fs | Δt %@ | Depth %.2fm | bumper gap %@ | actual decel %@ | braking dist %@",
-            stop.timestamp, elapsed, stop.depth, bumperGap, decel, brakingDistance
-        )
-    }
-
     private var safetyLabelColor: Color {
         switch viewModel.orchestrator.supervisorState {
         case .safe: return .secondary
@@ -395,6 +382,7 @@ struct SelfDrivingView: View {
     // MARK: - Alarm
 
     private func startAlarm() {
+        guard alarmTimer == nil else { return }
         AudioServicesPlayAlertSound(AlarmConfig.soundID)
         alarmTimer = Timer.scheduledTimer(withTimeInterval: AlarmConfig.repeatIntervalS, repeats: true) { _ in
             AudioServicesPlayAlertSound(AlarmConfig.soundID)
@@ -406,9 +394,39 @@ struct SelfDrivingView: View {
         alarmTimer = nil
     }
 
+    private func syncAlarm() {
+        hasActiveEmergencyAlert() ? startAlarm() : stopAlarm()
+    }
+
+    private func hasActiveEmergencyAlert() -> Bool {
+        viewModel.orchestrator.isOverridden || viewModel.stm32Manager.lastSafetyEvent?.state == .brake
+    }
+
+    private func rearSafetyPresentation(now: Date) -> RearSafetyPresentation? {
+        guard let event = viewModel.stm32Manager.lastSafetyEvent,
+              event.state == .brake,
+              let rearSafetyReceivedAt else {
+            return nil
+        }
+        return RearSafetyPresentation(
+            event: event,
+            receivedAt: rearSafetyReceivedAt,
+            now: now,
+            currentSpeedMps: Float(viewModel.escManager.telemetry?.speedMps ?? 0.0)
+        )
+    }
+
+    private func currentEmergencyAlert(now: Date) -> SelfDrivingEmergencyAlert? {
+        SelfDrivingEmergencyAlert.current(
+            forwardEvent: viewModel.orchestrator.isOverridden ? viewModel.orchestrator.lastSupervisorEvent : nil,
+            forwardRecord: viewModel.orchestrator.isOverridden ? viewModel.orchestrator.brakeRecord : nil,
+            rearPresentation: rearSafetyPresentation(now: now)
+        )
+    }
+
     // MARK: - Emergency Brake Overlay
 
-    private var emergencyBrakeOverlay: some View {
+    private func emergencyBrakeOverlay(_ alert: SelfDrivingEmergencyAlert) -> some View {
         VStack(spacing: 8) {
             Spacer()
             HStack {
@@ -416,24 +434,16 @@ struct SelfDrivingView: View {
                 VStack(spacing: 6) {
                     Image(systemName: "exclamationmark.octagon.fill")
                         .font(.system(size: 36))
-                    Text("EMERGENCY BRAKE")
+                    Text(alert.title)
                         .font(.title2.bold())
-                    if let event = viewModel.orchestrator.lastSupervisorEvent {
-                        Text(String(
-                            format: "Depth %.2fm (raw %.2fm)  |  Dcrit %.2fm  |  v %.2fm/s",
-                            event.smoothedDepth, event.rawDepth,
-                            event.criticalDistance, event.speed
-                        ))
+                    Text(alert.detail)
                         .font(.caption.monospacedDigit())
-                    }
                     Divider().background(Color.white.opacity(0.4))
-                    if let record = viewModel.orchestrator.brakeRecord {
-                        Text(triggerFullText(record.trigger))
+                    Text(alert.metricsLine)
+                        .font(.caption.monospacedDigit())
+                    if let secondaryLine = alert.secondaryLine {
+                        Text(secondaryLine)
                             .font(.caption.monospacedDigit())
-                        if let stopLine = stopFullText(record) {
-                            Text(stopLine)
-                                .font(.caption.monospacedDigit())
-                        }
                     }
                 }
                 .foregroundColor(.white)

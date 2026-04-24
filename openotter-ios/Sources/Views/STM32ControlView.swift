@@ -9,8 +9,9 @@ struct STM32ControlView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
+            ZStack {
+                ScrollView {
+                    VStack(spacing: 24) {
 
                     // --- ESC TELEMETRY CARD ---
                     GroupBox(label:
@@ -74,6 +75,55 @@ struct STM32ControlView: View {
                         .padding(.vertical, 4)
                     }
                     .groupBoxStyle(ModernGroupBoxStyle())
+
+                    TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
+                        if let rearSafety = viewModel.rearSafetyPresentation(now: timeline.date) {
+                            GroupBox(label:
+                                Label("REAR SAFETY", systemImage: rearSafety.isBrake ? "exclamationmark.triangle.fill" : "checkmark.shield.fill")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.secondary)
+                            ) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(alignment: .top) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(rearSafety.title)
+                                                .font(.headline)
+                                                .foregroundColor(rearSafety.isBrake ? .red : .green)
+                                            Text(rearSafety.detail)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Text(rearSafety.statusText)
+                                            .font(.caption.monospaced().bold())
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background((rearSafety.isBrake ? Color.red : Color.green).opacity(0.12))
+                                            .foregroundColor(rearSafety.isBrake ? .red : .green)
+                                            .clipShape(Capsule())
+                                    }
+
+                                    Text(rearSafety.metricsLine)
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+
+                                    if let timingLine = rearSafety.timingLine {
+                                        Text(timingLine)
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    if rearSafety.isBrake {
+                                        Text("Move forward or clear the rear path, then try reversing again.")
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                            }
+                            .groupBoxStyle(ModernGroupBoxStyle())
+                        }
+                    }
 
                     // --- TOF DEBUG (FE60 multi-zone grid) ---
                     GroupBox(label:
@@ -166,10 +216,18 @@ struct STM32ControlView: View {
                             .foregroundStyle(.tertiary)
                     }
                     .padding(.horizontal)
+                    }
+                    .padding()
                 }
-                .padding()
+                .background(Color(.systemGroupedBackground))
+
+                TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
+                    if let rearSafety = viewModel.rearSafetyPresentation(now: timeline.date),
+                       rearSafety.isBrake {
+                        emergencyRearBrakeOverlay(rearSafety)
+                    }
+                }
             }
-            .background(Color(.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -213,6 +271,36 @@ struct STM32ControlView: View {
     /// Convert normalized throttle [-1, +1] to PWM µs for display
     private var throttlePWM: Int {
         Int(1500.0 + viewModel.throttle * 500.0)
+    }
+
+    private func emergencyRearBrakeOverlay(_ rearSafety: RearSafetyPresentation) -> some View {
+        VStack(spacing: 8) {
+            Spacer()
+            HStack {
+                Spacer()
+                VStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .font(.system(size: 36))
+                    Text("REAR EMERGENCY BRAKE")
+                        .font(.title2.bold())
+                    Text(rearSafety.detail)
+                        .font(.caption)
+                    Text(rearSafety.metricsLine)
+                        .font(.caption.monospacedDigit())
+                    if let timingLine = rearSafety.timingLine {
+                        Text(timingLine)
+                            .font(.caption.monospacedDigit())
+                    }
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 32)
+                .padding(.vertical, 16)
+                .background(Color.red.opacity(0.88), in: RoundedRectangle(cornerRadius: 16))
+                Spacer()
+            }
+            Spacer()
+        }
+        .allowsHitTesting(false)
     }
 }
 

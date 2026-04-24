@@ -57,6 +57,7 @@ final class ActionDispatcherTests: XCTestCase {
         XCTAssertTrue(goalReceiver.didReset)
     }
 
+
     func testQueryStatusReturnsStatusText() {
         let result = dispatcher.dispatch(.queryStatus)
         XCTAssertTrue(result.success)

@@ -130,11 +130,13 @@ Each tick while in BRAKE:
 
 ### 5.3 Release (BRAKE → SAFE)
 
-Two independent release paths:
+Three independent release paths:
 
 **(a) Genuine clearance.** `smoothedDepth > criticalDistance(latchedSpeed)` must hold continuously for `releaseHoldS` (default 0.3 s). The debounce only guards against single-frame depth noise; it does **not** force a minimum brake duration. Physical interpretation: obstacle (or robot) must have actually moved away by the full safety margin computed at trigger speed.
 
 **(b) Operator intervention.** Planner issues `throttle ≤ 0` (stop, neutral, or reverse). Supervisor drops latch and passes the command through. This is the escape hatch: a human operator can always override by commanding reverse.
+
+**(c) Operating mode → Park.** When the orchestrator transitions to `OperatingMode.park` it calls `supervisor.reset()`, dropping any latch and returning the supervisor to SAFE in a single step. From Park the supervisor cannot re-enter BRAKE because the planner emits neutral throttle and the trigger condition (§5.1) requires `command.throttle > 0`. See `Planner/DESIGN.md §3.1` for the mode contract.
 
 On release: clear `latchedSpeed`, clear stop snapshot (kept on the event record one more tick for the UI), transition to SAFE.
 

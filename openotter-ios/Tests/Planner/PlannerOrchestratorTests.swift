@@ -8,7 +8,56 @@ import XCTest
 // tested in SafetySupervisorTests; here we only verify the orchestrator
 // correctly forwards state, events, and records.
 
+private final class RecordingModeReceiver: OperatingModeReceiving {
+    var modes: [OperatingMode] = []
+    func setOperatingMode(_ mode: OperatingMode) { modes.append(mode) }
+}
+
 final class PlannerOrchestratorTests: XCTestCase {
+
+    // MARK: - Operating Mode
+
+    func testOrchestratorBootsInPark() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+        XCTAssertEqual(orchestrator.operatingMode, .park)
+    }
+
+    func testSetGoalEntersDriveAndPushesReceiver() {
+        let receiver = RecordingModeReceiver()
+        let orchestrator = PlannerOrchestrator(
+            planner: ConstantSpeedPlanner(),
+            modeReceiver: receiver
+        )
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+        XCTAssertEqual(orchestrator.operatingMode, .drive)
+        XCTAssertEqual(receiver.modes, [.drive])
+    }
+
+    func testResetEntersParkAndPushesReceiver() {
+        let receiver = RecordingModeReceiver()
+        let orchestrator = PlannerOrchestrator(
+            planner: ConstantSpeedPlanner(),
+            modeReceiver: receiver
+        )
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+        receiver.modes.removeAll()
+        orchestrator.reset()
+        XCTAssertEqual(orchestrator.operatingMode, .park)
+        XCTAssertEqual(receiver.modes, [.park])
+    }
+
+    func testRedundantSetGoalStillPushesReceiver() {
+        // Idempotent push: protects against the firmware having been
+        // forced into Park by another client without iOS knowing.
+        let receiver = RecordingModeReceiver()
+        let orchestrator = PlannerOrchestrator(
+            planner: ConstantSpeedPlanner(),
+            modeReceiver: receiver
+        )
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.7))
+        XCTAssertEqual(receiver.modes, [.drive, .drive])
+    }
 
     // MARK: - Planner ↔ Supervisor Wiring
 

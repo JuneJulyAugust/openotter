@@ -14,7 +14,7 @@ public enum STM32BleStatus: String {
 
 /// Manages CoreBluetooth connection to the STM32 OPENOTTER-MCP BLE peripheral.
 /// Sends steering + throttle commands as packed int16_t pairs (4 bytes).
-public class STM32BleManager: NSObject, ObservableObject {
+public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving {
 
     /// Shared singleton — only one connection to OPENOTTER-MCP may exist at a time.
     public static let shared = STM32BleManager()
@@ -53,6 +53,7 @@ public class STM32BleManager: NSObject, ObservableObject {
     private var commandChar: CBCharacteristic?
     private var statusChar: CBCharacteristic?
     private var safetyChar: CBCharacteristic?
+    private var modeChar: CBCharacteristic?
 
     private var tofConfigChar: CBCharacteristic?
     private var tofFrameChar: CBCharacteristic?
@@ -82,6 +83,29 @@ public class STM32BleManager: NSObject, ObservableObject {
             centralManager.cancelPeripheralConnection(peripheral)
         }
         cleanup()
+    }
+
+    /// Push the firmware operating mode (FE44). Park additionally clears the
+    /// cached BRAKE event so the UI overlay/alarm drops immediately, without
+    /// waiting for the firmware's SAFE snapshot to round-trip. Drive only
+    /// writes the byte — the firmware re-enables the supervisor in SAFE
+    /// state on the mode-edge and broadcasts a SAFE snapshot itself.
+    public func setOperatingMode(_ mode: OperatingMode) {
+        switch mode {
+        case .park:
+            DispatchQueue.main.async { self.lastSafetyEvent = nil }
+            writeModeByte(2)
+        case .drive:
+            writeModeByte(0)
+        }
+    }
+
+    private func writeModeByte(_ mode: UInt8) {
+        guard let modeChar, let peripheral else { return }
+        let writeType: CBCharacteristicWriteType =
+            modeChar.properties.contains(.writeWithoutResponse)
+                ? .withoutResponse : .withResponse
+        peripheral.writeValue(Data([mode]), for: modeChar, type: writeType)
     }
 
     /// Send steering, throttle (pulse widths in µs) and measured velocity
@@ -116,10 +140,12 @@ public class STM32BleManager: NSObject, ObservableObject {
         commandChar = nil
         statusChar = nil
         safetyChar = nil
+        modeChar = nil
         tofConfigChar = nil
         tofFrameChar = nil
         tofStatusChar = nil
         lastSafetySeq = nil
+        lastSafetyEvent = nil
         STM32TofService.shared.detach()
         status = .disconnected
     }
@@ -244,6 +270,7 @@ extension STM32BleManager: CBPeripheralDelegate {
                         peripheral.readValue(for: char)
                     }
                 case modeCharUUID:
+                    modeChar = char
                     // Write 0 (Drive) on connect
                     let mode: UInt8 = 0
                     peripheral.writeValue(Data([mode]), for: char, type: .withoutResponse)
@@ -296,7 +323,7 @@ extension STM32BleManager: CBPeripheralDelegate {
             guard let data = characteristic.value else { return }
             do {
                 let ev = try FirmwareSafetyEvent(data: data)
-                if lastSafetySeq == ev.seq { return }
+                if lastSafetySeq == ev.seq && lastSafetyEvent == ev { return }
                 if let lastSafetySeq, ev.seq > lastSafetySeq + 1,
                    let safetyChar,
                    characteristic.properties.contains(.read) {

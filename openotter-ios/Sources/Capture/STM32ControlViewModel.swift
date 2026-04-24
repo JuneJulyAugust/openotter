@@ -25,6 +25,8 @@ class STM32ControlViewModel: ObservableObject {
     @Published var tofState: TofState = .unknown
     @Published var tofScanHz: UInt8 = 0
     @Published var tofLastError: UInt8 = 0
+    @Published var rearSafetyEvent: FirmwareSafetyEvent?
+    @Published private var rearSafetyReceivedAt: Date?
     /// Defaults match firmware Init: 1×1 / LONG / 33 ms.
     @Published var tofConfig = TofConfig(layout: 1, distMode: 3, budgetUs: 33_000)
 
@@ -65,6 +67,10 @@ class STM32ControlViewModel: ObservableObject {
         setupSubscriptions()
         bleManager.start()   // idempotent — no-op if already connected
         escManager.start()   // idempotent — no-op if already connected
+        // Manual control unconditionally re-arms Drive: if the prior
+        // self-driving session left the firmware in Park, throttle commands
+        // would otherwise be silently dropped to neutral by the firmware.
+        bleManager.setOperatingMode(.drive)
     }
 
     deinit {
@@ -220,6 +226,14 @@ class STM32ControlViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .assign(to: &$commandsSent)
 
+        bleManager.$lastSafetyEvent
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] event in
+                self?.rearSafetyEvent = event
+                self?.rearSafetyReceivedAt = event.map { _ in Date() }
+            }
+            .store(in: &cancellables)
+
         escManager.$status
             .receive(on: DispatchQueue.main)
             .assign(to: &$escStatus)
@@ -254,5 +268,15 @@ class STM32ControlViewModel: ObservableObject {
         let clamped = max(-1.0, min(1.0, normalized))
         let us = Float(pwmNeutral) + clamped * Float(pwmMax - pwmNeutral)
         return Int16(us)
+    }
+
+    func rearSafetyPresentation(now: Date = Date()) -> RearSafetyPresentation? {
+        guard let rearSafetyEvent, let rearSafetyReceivedAt else { return nil }
+        return RearSafetyPresentation(
+            event: rearSafetyEvent,
+            receivedAt: rearSafetyReceivedAt,
+            now: now,
+            currentSpeedMps: Float(escTelemetry?.speedMps ?? 0.0)
+        )
     }
 }
