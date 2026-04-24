@@ -1,5 +1,16 @@
 import Foundation
 
+public enum TofSensorType: UInt8, Equatable, Sendable {
+    case none = 0
+    case vl53l1cb = 1
+    case vl53l5cx = 2
+    case unknown = 255
+
+    public init(raw: UInt8) {
+        self = TofSensorType(rawValue: raw) ?? .unknown
+    }
+}
+
 /// VL53L1 range-status codes — subset we surface in the UI.
 /// Wire authority: firmware Drivers/VL53L1CB/core/inc/vl53l1_def.h.
 public enum VL53L1RangeStatus: UInt8, Equatable, Sendable {
@@ -43,20 +54,40 @@ public enum VL53L1RangeStatus: UInt8, Equatable, Sendable {
 public struct ZoneReading: Equatable, Sendable {
     public let rangeMm: UInt16
     public let status: VL53L1RangeStatus
+    public let flags: UInt8
+
+    public init(rangeMm: UInt16, status: VL53L1RangeStatus, flags: UInt8 = 0) {
+        self.rangeMm = rangeMm
+        self.status = status
+        self.flags = flags
+    }
 }
 
 public struct TofConfig: Equatable, Sendable {
+    public var sensor: TofSensorType
     /// Zones per side: 1, 3, or 4.
     public var layout: UInt8
-    /// 1 = SHORT, 2 = MEDIUM, 3 = LONG.
+    /// L1: 1 = SHORT, 2 = MEDIUM, 3 = LONG. L5: profile id.
     public var distMode: UInt8
     /// Per-zone timing budget, microseconds.
     public var budgetUs: UInt32
+    /// L5 ranging frequency in Hz; 0 lets firmware choose default.
+    public var frequencyHz: UInt8
+    /// L5 integration time in ms; 0 lets firmware choose default.
+    public var integrationMs: UInt16
 
-    public init(layout: UInt8, distMode: UInt8, budgetUs: UInt32) {
+    public init(sensor: TofSensorType = .vl53l1cb,
+                layout: UInt8,
+                distMode: UInt8,
+                budgetUs: UInt32,
+                frequencyHz: UInt8 = 0,
+                integrationMs: UInt16 = 0) {
+        self.sensor = sensor
         self.layout = layout
         self.distMode = distMode
         self.budgetUs = budgetUs
+        self.frequencyHz = frequencyHz
+        self.integrationMs = integrationMs
     }
 
     /// Minimum per-zone budget (µs) that the firmware will accept for a given
@@ -94,6 +125,21 @@ public struct TofConfig: Equatable, Sendable {
         let hi = max(lo, maxBudgetUs(layout: layout))
         return max(lo, min(hi, requestedUs))
     }
+
+    public static func maxL5FrequencyHz(layout: UInt8) -> UInt8 {
+        layout == 8 ? 15 : 60
+    }
+
+    public static func maxL5IntegrationMs(frequencyHz: UInt8) -> UInt16 {
+        let hz = max(1, UInt16(frequencyHz))
+        return max(2, 1000 / hz)
+    }
+
+    public static func clampL5IntegrationMs(_ requestedMs: UInt16,
+                                            frequencyHz: UInt8) -> UInt16 {
+        let hi = maxL5IntegrationMs(frequencyHz: frequencyHz)
+        return min(max(requestedMs, 2), hi)
+    }
 }
 
 public enum TofState: UInt8, Equatable, Sendable {
@@ -109,10 +155,27 @@ public enum TofState: UInt8, Equatable, Sendable {
 
 /// Decoded view of the 76-byte FE62 notification.
 public struct TofFrame: Equatable, Sendable {
+    public let sensor: TofSensorType
     public let seq: UInt32
     public let budgetUsPerZone: UInt16
     public let layout: UInt8
     public let distMode: UInt8
     public let numZones: UInt8
     public let zones: [ZoneReading]
+
+    public init(sensor: TofSensorType = .vl53l1cb,
+                seq: UInt32,
+                budgetUsPerZone: UInt16,
+                layout: UInt8,
+                distMode: UInt8,
+                numZones: UInt8,
+                zones: [ZoneReading]) {
+        self.sensor = sensor
+        self.seq = seq
+        self.budgetUsPerZone = budgetUsPerZone
+        self.layout = layout
+        self.distMode = distMode
+        self.numZones = numZones
+        self.zones = zones
+    }
 }

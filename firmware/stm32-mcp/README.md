@@ -33,6 +33,25 @@ Make sure you have STM32CubeCLT installed at `/opt/st/STM32CubeCLT_1.21.0/` or s
 (On newer macOS installers the default path is uppercase `/opt/ST/...` — see
 [docs/dev/01-toolchain-and-build.md](docs/dev/01-toolchain-and-build.md) §2.)
 
+### Worktree Mode
+
+This repository often keeps active feature work in a git worktree while the
+repo root stays on `main`. If you are working on a branch like
+`feature/vl53l5cx-tof-debug`, build from the worktree path, not the repo root
+checkout:
+
+```bash
+cd /Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/firmware/stm32-mcp
+./build.sh
+```
+
+Host tests live beside that worktree too:
+
+```bash
+cd /Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/firmware/stm32-mcp/tests/host
+make test
+```
+
 ### Quick Commands
 
 - **Build Debug firmware:**

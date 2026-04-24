@@ -38,4 +38,13 @@ final class FirmwareSafetyEventGateTests: XCTestCase {
         XCTAssertEqual(gate.ingest(makeEvent(seq: 2, state: .brake))?.state, .brake)
         XCTAssertEqual(gate.lastSafetyEvent?.state, .brake)
     }
+
+    func testDebugClearsCachedBrakeAndDropsBrakeEvents() {
+        var gate = FirmwareSafetyEventGate()
+        XCTAssertEqual(gate.ingest(makeEvent(state: .brake))?.state, .brake)
+
+        XCTAssertNil(gate.setOperatingMode(.debug))
+        XCTAssertNil(gate.lastSafetyEvent)
+        XCTAssertNil(gate.ingest(makeEvent(seq: 2, state: .brake)))
+    }
 }

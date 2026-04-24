@@ -37,6 +37,21 @@ Use the build script from the `openotter-ios` directory:
 ./build.sh --release deploy
 ```
 
+### Worktree Mode
+
+If the active feature branch lives in a git worktree while the repo root stays
+on `main`, build from the worktree checkout, not the root checkout. For this
+feature branch:
+
+```bash
+cd /Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/openotter-ios
+./build.sh generate
+./build.sh test
+```
+
+That is the right place to run XcodeGen, Simulator tests, and any manual app
+debugging while feature work is isolated in the worktree.
+
 ## If Signing Expires Again
 
 If a future build fails with `expired provisioning profile`, `invalid code signature`, or `profile has not been explicitly trusted by the user`:

@@ -14,6 +14,13 @@ stated. Absolute paths referenced below:
 | Build output       | `firmware/stm32-mcp/build/Debug/` (or `Release/`)     |
 | ELF image          | `build/<cfg>/stm32-mcp.elf`                           |
 
+If you are working in a git worktree, replace `firmware/stm32-mcp/` above
+with the worktree path. For this feature branch that is:
+
+`/Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/firmware/stm32-mcp/`
+
+The commands below are the same after that path change.
+
 ---
 
 ## 1. What STM32CubeCLT provides

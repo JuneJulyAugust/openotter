@@ -1,13 +1,14 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /******************************************************************************
- * BLE GATT service for VL53L1CB ToF (svc 0xFE60). Mirrors ble_app.c.
+ * BLE GATT service for ToF debug frames (svc 0xFE60). Keeps the legacy
+ * VL53L1CB 76-byte frame stream and adds the generic VL53L5CX V2 frame stream.
  *
  *   FE61  config  write/write-w/o-resp, 8 B fixed
- *   FE62  frame   notify, 76 B fixed   (== sizeof(TofL1_Frame_t))
+ *   FE62  frame   notify, 20 B fixed chunks
  *   FE63  status  notify + read, 4 B fixed
  *
  * Frame publish strategy: BLE_Tof_Process is called once per main-loop
- * iteration. When TofL1 reports a new frame and a central is connected,
+ * iteration. When the selected debug ToF reports a new frame and a central is connected,
  * we update the FE62 characteristic value (which auto-pushes a notification
  * if the CCCD enabled it). Status is refreshed once per second.
  ******************************************************************************/
@@ -15,6 +16,7 @@
 #include "ble_tof.h"
 
 #include "ble_app.h"
+#include "ble_tof_policy.h"
 #include "common.h"
 #include "tl_types.h"
 #include "tl_ble_hci.h"
@@ -22,25 +24,34 @@
 #include "ble_lib.h"
 #include "blesvc.h"
 
+#include "tof_frame_codec.h"
 #include "tof_l1.h"
+#include "tof_l5.h"
+#include "tof_types.h"
 
 #include <string.h>
 
 extern UART_HandleTypeDef huart1;
 
-/* BlueNRG-MS hardcodes ATT_MTU = 23 → max notify value = 20 bytes. The
- * 76-byte TofL1_Frame_t is therefore split into 4 × 20-byte chunks. Each
+/* BlueNRG-MS hardcodes ATT_MTU = 23 -> max notify value = 20 bytes. The
+ * 76-byte legacy TofL1_Frame_t is therefore split into 4 x 20-byte chunks. Each
  * chunk = 1 header byte (chunk_idx, top bit = "last") + 19 payload bytes.
  * 76 / 19 = 4 exactly, so no padding is needed. iOS reassembles in order
  * and drops on out-of-sequence delivery.
  */
-#define TOF_FRAME_CHUNK_PAYLOAD 20u
-#define TOF_FRAME_CHUNK_DATA    19u
-#define TOF_FRAME_CHUNK_COUNT   4u  /* 76 / 19 == 4 */
+#define TOF_L1_FRAME_CHUNK_SIZE  20u
+#define TOF_L1_FRAME_CHUNK_DATA  19u
+#define TOF_L1_FRAME_CHUNK_COUNT 4u  /* 76 / 19 == 4 */
 
-_Static_assert(TOF_FRAME_CHUNK_DATA * TOF_FRAME_CHUNK_COUNT ==
+_Static_assert(TOF_L1_FRAME_CHUNK_DATA * TOF_L1_FRAME_CHUNK_COUNT ==
                    sizeof(TofL1_Frame_t),
                "Chunk geometry must cover entire TofL1_Frame_t");
+
+typedef enum {
+  TOF_PENDING_NONE = 0,
+  TOF_PENDING_L1_V1,
+  TOF_PENDING_V2,
+} BLE_TofPendingProtocol_t;
 
 typedef struct {
   uint16_t svc_handle;
@@ -56,12 +67,16 @@ typedef struct {
   uint8_t  scan_hz;
   uint8_t  state;       /* 0 idle, 1 running, 2 error */
   uint8_t  last_error;
+  uint8_t  debug_sensor;
 
   /* Frame chunk transmitter state. pending_chunk == 0 means idle; values
-   * 1..TOF_FRAME_CHUNK_COUNT are the next chunk to push. */
+   * 1..pending_chunk_count are the next chunk to push. */
   uint8_t  pending_chunk;
+  uint8_t  pending_chunk_count;
+  uint16_t pending_len;
   uint32_t pending_seq;
-  uint8_t  pending_buf[sizeof(TofL1_Frame_t)];
+  BLE_TofPendingProtocol_t pending_protocol;
+  uint8_t  pending_buf[TOF_FRAME_MAX_PAYLOAD];
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
@@ -87,13 +102,101 @@ static void publish_status(void)
                                    0, sizeof(st), (uint8_t *)&st);
 }
 
+static void reset_stream_state(void)
+{
+  s_tof.last_published_seq    = 0;
+  s_tof.last_rate_window_seq  = 0;
+  s_tof.last_rate_window_tick = HAL_GetTick();
+  s_tof.pending_chunk         = 0;
+  s_tof.pending_chunk_count   = 0;
+  s_tof.pending_len           = 0;
+  s_tof.pending_protocol      = TOF_PENDING_NONE;
+}
+
+static void snapshot_l1_if_ready(void)
+{
+  if (s_tof.pending_chunk != 0 || !TofL1_HasNewFrame()) return;
+
+  const TofL1_Frame_t *f = TofL1_GetLatestFrame();
+  if (f->seq == s_tof.last_published_seq) {
+    TofL1_ClearNewFrame();
+    return;
+  }
+
+  memcpy(s_tof.pending_buf, f, sizeof(TofL1_Frame_t));
+  s_tof.pending_seq         = f->seq;
+  s_tof.pending_len         = sizeof(TofL1_Frame_t);
+  s_tof.pending_chunk_count = TOF_L1_FRAME_CHUNK_COUNT;
+  s_tof.pending_protocol    = TOF_PENDING_L1_V1;
+  s_tof.pending_chunk       = 1;
+  TofL1_ClearNewFrame();
+}
+
+static void snapshot_l5_if_ready(void)
+{
+  if (s_tof.pending_chunk != 0 || !TofL5_HasNewFrame()) return;
+
+  const Tof_Frame_t *f = TofL5_GetLatestFrame();
+  if (f->seq == s_tof.last_published_seq) {
+    TofL5_ClearNewFrame();
+    return;
+  }
+
+  uint16_t payload_len = 0;
+  int rc = TofFrameCodec_Serialize(f, s_tof.pending_buf,
+                                   sizeof(s_tof.pending_buf), &payload_len);
+  if (rc != TOF_CODEC_OK) {
+    s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+    s_tof.state = 2;
+    TofL5_ClearNewFrame();
+    return;
+  }
+
+  s_tof.pending_seq         = f->seq;
+  s_tof.pending_len         = payload_len;
+  s_tof.pending_chunk_count = TofFrameCodec_ChunkCount(payload_len);
+  s_tof.pending_protocol    = TOF_PENDING_V2;
+  s_tof.pending_chunk       = 1;
+  TofL5_ClearNewFrame();
+}
+
+static tBleStatus publish_pending_chunk(void)
+{
+  uint8_t idx = (uint8_t)(s_tof.pending_chunk - 1u);
+  uint8_t buf[TOF_FRAME_CHUNK_SIZE];
+
+  if (s_tof.pending_protocol == TOF_PENDING_L1_V1) {
+    buf[0] = idx | ((idx == TOF_L1_FRAME_CHUNK_COUNT - 1u) ? 0x80u : 0u);
+    memcpy(&buf[1], &s_tof.pending_buf[idx * TOF_L1_FRAME_CHUNK_DATA],
+           TOF_L1_FRAME_CHUNK_DATA);
+  } else if (s_tof.pending_protocol == TOF_PENDING_V2) {
+    int rc = TofFrameCodec_MakeChunk(s_tof.pending_buf, s_tof.pending_len,
+                                     s_tof.pending_seq, idx, buf);
+    if (rc != TOF_CODEC_OK) return BLE_STATUS_FAILED;
+  } else {
+    return BLE_STATUS_FAILED;
+  }
+
+  return aci_gatt_update_char_value(s_tof.svc_handle, s_tof.frame_char_handle,
+                                    0, sizeof(buf), buf);
+}
+
+static uint32_t current_debug_seq(void)
+{
+  if (s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
+    return TofL5_GetLatestFrame()->seq;
+  }
+  return TofL1_GetLatestFrame()->seq;
+}
+
 int BLE_Tof_Init(void)
 {
   uint16_t uuid;
   tBleStatus ret;
 
   memset(&s_tof, 0, sizeof(s_tof));
-  s_tof.state = 1;  /* default scan starts during TofL1_Init */
+  s_tof.state = 1;
+  s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
 
   SVCCTL_RegisterSvcHandler(BLE_Tof_EventHandler);
 
@@ -120,11 +223,11 @@ int BLE_Tof_Init(void)
   if (ret != BLE_STATUS_SUCCESS) { log_str("BLE_Tof: add_char FE61 failed\r\n"); return -1; }
 
   /* FE62 — frame chunk (notify), fixed 20 B. Frame is reassembled by the
-   * client from TOF_FRAME_CHUNK_COUNT consecutive notifications. */
+   * client from consecutive notifications. */
   uuid = OPENOTTER_TOF_FRAME_CHAR_UUID;
   ret = aci_gatt_add_char(s_tof.svc_handle, UUID_TYPE_16,
                           (const uint8_t *)&uuid,
-                          TOF_FRAME_CHUNK_PAYLOAD,
+                          TOF_FRAME_CHUNK_SIZE,
                           CHAR_PROP_NOTIFY,
                           ATTR_PERMISSION_NONE,
                           GATT_DONT_NOTIFY_EVENTS,
@@ -164,49 +267,39 @@ void BLE_Tof_Process(void)
   uint32_t now = HAL_GetTick();
 
   /* If no chunk transmission in flight, snapshot the latest frame. */
-  if (s_tof.pending_chunk == 0 && TofL1_HasNewFrame()) {
-    const TofL1_Frame_t *f = TofL1_GetLatestFrame();
-    if (f->seq != s_tof.last_published_seq) {
-      memcpy(s_tof.pending_buf, f, sizeof(TofL1_Frame_t));
-      s_tof.pending_seq   = f->seq;
-      s_tof.pending_chunk = 1;
-      TofL1_ClearNewFrame();
-    }
+  if (s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
+    snapshot_l5_if_ready();
+  } else {
+    snapshot_l1_if_ready();
   }
 
-  /* Drain pending chunks: 1 header byte (idx, top bit = last) + 19 payload.
+  /* Drain pending chunks.
    * Stop on BLE_STATUS_INSUFFICIENT_RESOURCES — TX buffers are full; resume
    * next loop iteration. The scratch buf is preserved across iterations. */
   while (s_tof.pending_chunk > 0 &&
-         s_tof.pending_chunk <= TOF_FRAME_CHUNK_COUNT) {
-    uint8_t idx = (uint8_t)(s_tof.pending_chunk - 1u);
-    uint8_t buf[TOF_FRAME_CHUNK_PAYLOAD];
-    buf[0] = idx | ((idx == TOF_FRAME_CHUNK_COUNT - 1u) ? 0x80u : 0u);
-    memcpy(&buf[1], &s_tof.pending_buf[idx * TOF_FRAME_CHUNK_DATA],
-           TOF_FRAME_CHUNK_DATA);
-    tBleStatus ret = aci_gatt_update_char_value(
-        s_tof.svc_handle, s_tof.frame_char_handle,
-        0, TOF_FRAME_CHUNK_PAYLOAD, buf);
+         s_tof.pending_chunk <= s_tof.pending_chunk_count) {
+    tBleStatus ret = publish_pending_chunk();
     if (ret != BLE_STATUS_SUCCESS) break;
     s_tof.pending_chunk++;
   }
-  if (s_tof.pending_chunk > TOF_FRAME_CHUNK_COUNT) {
+  if (s_tof.pending_chunk > s_tof.pending_chunk_count) {
     s_tof.last_published_seq = s_tof.pending_seq;
-    s_tof.pending_chunk      = 0;
+    s_tof.pending_chunk = 0;
+    s_tof.pending_protocol = TOF_PENDING_NONE;
   }
 
   /* Recompute scan rate over a 1 s sliding window and push status. */
   uint32_t since_status = now - s_tof.last_status_tick;
   if (since_status >= STATUS_REFRESH_MS) {
-    const TofL1_Frame_t *f = TofL1_GetLatestFrame();
+    uint32_t seq = current_debug_seq();
     uint32_t window_ms = now - s_tof.last_rate_window_tick;
     if (window_ms > 0) {
-      uint32_t delta = f->seq - s_tof.last_rate_window_seq;
+      uint32_t delta = seq - s_tof.last_rate_window_seq;
       uint32_t hz    = (delta * 1000u + window_ms / 2u) / window_ms;
       s_tof.scan_hz  = (hz > 255u) ? 255u : (uint8_t)hz;
     }
     s_tof.last_rate_window_tick = now;
-    s_tof.last_rate_window_seq  = f->seq;
+    s_tof.last_rate_window_seq  = seq;
     s_tof.last_status_tick      = now;
     publish_status();
   }
@@ -215,15 +308,41 @@ void BLE_Tof_Process(void)
 static void apply_config_write(const uint8_t *data, uint16_t len)
 {
   if (len < sizeof(BLE_TofConfigPayload_t)) {
-    s_tof.last_error = TOF_L1_ERR_BAD_LAYOUT;
+    s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
     s_tof.state      = 2;
     publish_status();
     return;
   }
 
-  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) {
-    s_tof.last_error = TOF_L1_ERR_LOCKED_IN_DRIVE;
+  if (!BLE_Tof_ConfigWriteAllowed((uint8_t)BLE_App_GetMode(), data[0])) {
+    s_tof.last_error = (uint8_t)TOF_STATUS_LOCKED_IN_DRIVE;
     s_tof.state      = 1;
+    publish_status();
+    return;
+  }
+
+  if (data[0] == TOF_SENSOR_VL53L5CX) {
+    Tof_Config_t cfg;
+    memcpy(&cfg, data, sizeof(cfg));
+
+    int rc = TofL5_Configure(&cfg);
+    if (rc != TOF_STATUS_BAD_CONFIG) {
+      s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
+      reset_stream_state();
+    }
+
+    if (rc == TOF_STATUS_OK) {
+      s_tof.last_error = 0;
+      s_tof.state = 1;
+    } else if (rc == TOF_STATUS_DRIVER_MISSING ||
+               rc == TOF_STATUS_NO_SENSOR ||
+               rc == TOF_STATUS_DRIVER_DEAD) {
+      s_tof.last_error = (uint8_t)rc;
+      s_tof.state = 2;
+    } else {
+      s_tof.last_error = (uint8_t)rc;
+      s_tof.state = 1;
+    }
     publish_status();
     return;
   }
@@ -239,19 +358,15 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
    * we rolled back to the last-known-good config. Sensor is still streaming;
    * surface the rc so the UI can show a transient warning. */
   if (rc == TOF_L1_OK) {
-    s_tof.last_error            = 0;
-    s_tof.state                 = 1;
-    s_tof.last_published_seq    = 0;
-    s_tof.last_rate_window_seq  = 0;
-    s_tof.last_rate_window_tick = HAL_GetTick();
-    s_tof.pending_chunk         = 0;
+    s_tof.debug_sensor = TOF_SENSOR_VL53L1CB;
+    s_tof.last_error = 0;
+    s_tof.state = 1;
+    reset_stream_state();
   } else if (rc == TOF_L1_ERR_RECOVERED) {
-    s_tof.last_error            = (uint8_t)rc;
-    s_tof.state                 = 1;
-    s_tof.last_published_seq    = 0;
-    s_tof.last_rate_window_seq  = 0;
-    s_tof.last_rate_window_tick = HAL_GetTick();
-    s_tof.pending_chunk         = 0;
+    s_tof.debug_sensor = TOF_SENSOR_VL53L1CB;
+    s_tof.last_error = (uint8_t)rc;
+    s_tof.state = 1;
+    reset_stream_state();
   } else if (rc == TOF_L1_ERR_DRIVER_DEAD) {
     s_tof.last_error = (uint8_t)rc;
     s_tof.state      = 2;
@@ -287,9 +402,6 @@ void BLE_Tof_EnforceSafetyConfig(void)
   int rc = TofL1_Configure(TOF_LAYOUT_3x3, TOF_DIST_LONG, 30000u);
   s_tof.last_error = (rc == TOF_L1_OK) ? 0 : (uint8_t)rc;
   s_tof.state      = (rc == TOF_L1_ERR_DRIVER_DEAD) ? 2 : 1;
-  s_tof.last_published_seq    = 0;
-  s_tof.last_rate_window_seq  = 0;
-  s_tof.last_rate_window_tick = HAL_GetTick();
-  s_tof.pending_chunk         = 0;
+  reset_stream_state();
   publish_status();
 }

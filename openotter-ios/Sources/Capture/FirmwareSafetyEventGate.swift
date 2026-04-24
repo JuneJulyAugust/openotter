@@ -7,7 +7,7 @@ struct FirmwareSafetyEventGate {
 
     mutating func setOperatingMode(_ mode: OperatingMode) -> FirmwareSafetyEvent? {
         operatingMode = mode
-        if mode == .park {
+        if mode != .drive {
             lastSafetySeq = nil
             lastSafetyEvent = nil
         }
@@ -15,7 +15,7 @@ struct FirmwareSafetyEventGate {
     }
 
     mutating func ingest(_ event: FirmwareSafetyEvent) -> FirmwareSafetyEvent? {
-        if operatingMode == .park {
+        if operatingMode != .drive {
             lastSafetySeq = event.seq
             lastSafetyEvent = nil
             return nil

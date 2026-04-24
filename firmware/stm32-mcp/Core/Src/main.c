@@ -26,6 +26,7 @@
 #include "stm32l4xx_ll_pwr.h"
 #include "stm32l4xx_ll_rcc.h"
 #include "tof_l1.h"
+#include "tof_l5.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -149,9 +150,11 @@ int main(void) {
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
-  /* Bring up VL53L1CB ToF sensor on I²C3 before BLE so the sensor-id log is
-   * visible even when the BLE stack takes its time coming up. */
+  /* Bring up ToF sensors on I2C3 before BLE so probe logs are visible even when
+   * the BLE stack takes its time coming up. VL53L1CB stays available for the
+   * existing reverse-safety path; VL53L5CX is the default Debug stream. */
   TofL1_Init();
+  TofL5_Init();
 
   /* Initialize BLE stack and custom GATT service */
   BLE_App_Init(&htim3);
@@ -166,6 +169,7 @@ int main(void) {
   while (1) {
     BLE_App_Process();
     TofL1_Process();
+    TofL5_Process();
     /* BLE_Tof_Process is mode-gated: in Drive mode (default) frame
      * notifications are suppressed; in Debug mode they stream normally. */
     BLE_Tof_Process();

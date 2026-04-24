@@ -13,7 +13,9 @@ struct TofGridView: View {
 
         LazyVGrid(columns: cols, spacing: 4) {
             ForEach(frame.zones.indices, id: \.self) { i in
-                TofCell(reading: frame.zones[i], maxRangeMm: maxRangeMm)
+                TofCell(sensor: frame.sensor,
+                        reading: frame.zones[i],
+                        maxRangeMm: maxRangeMm)
                     .aspectRatio(1.0, contentMode: .fit)
             }
         }
@@ -21,6 +23,7 @@ struct TofGridView: View {
 }
 
 private struct TofCell: View {
+    let sensor: TofSensorType
     let reading: ZoneReading
     let maxRangeMm: UInt16
 
@@ -42,7 +45,7 @@ private struct TofCell: View {
                 Text("mm")
                     .font(.system(size: 8, design: .monospaced))
                     .foregroundColor(.white.opacity(0.9))
-                Text(reading.status.shortLabel)
+                Text(statusLabel)
                     .font(.system(size: 8, design: .monospaced).bold())
                     .padding(.horizontal, 3)
                     .background(Color.black.opacity(0.35))
@@ -56,14 +59,31 @@ private struct TofCell: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(style: StrokeStyle(
                     lineWidth: 2,
-                    dash: reading.status.isUsable ? [] : [3]))
+                    dash: isUsable ? [] : [3]))
                 .foregroundColor(borderColor)
         )
+    }
+
+    private var isUsable: Bool {
+        if sensor == .vl53l5cx {
+            return reading.status.rawValue == 5 || reading.status.rawValue == 9
+        }
+        return reading.status.isUsable
+    }
+
+    private var statusLabel: String {
+        if sensor == .vl53l5cx {
+            return isUsable ? "OK" : "\(reading.status.rawValue)"
+        }
+        return reading.status.shortLabel
     }
 
     /// Tint for the small status pill — muted white for OK, accent for others
     /// so the label stands out without repainting the entire cell.
     private var statusLabelColor: Color {
+        if sensor == .vl53l5cx {
+            return isUsable ? .white : .orange
+        }
         switch reading.status {
         case .valid:                              return .white
         case .minRangeClipped, .noWrapCheckFail:  return .yellow
@@ -80,6 +100,9 @@ private struct TofCell: View {
     }
 
     private var borderColor: Color {
+        if sensor == .vl53l5cx {
+            return isUsable ? .green : .red
+        }
         switch reading.status {
         case .valid:                          return .green
         case .minRangeClipped, .noWrapCheckFail: return .yellow

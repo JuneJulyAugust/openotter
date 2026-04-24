@@ -27,6 +27,9 @@ set(MX_Include_Dirs
     # VL53L1CB bare driver includes
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/core/inc
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/platform/inc
+    # VL53L5CX Ultra Lite Driver includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/modules
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/platform
 )
 
 # STM32CubeMX generated application sources
@@ -37,6 +40,10 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1_roi.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_frame_codec.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_hal_msp.c
@@ -116,6 +123,10 @@ file(GLOB VL53L1CB_Src CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/platform/src/*.c
 )
 
+file(GLOB VL53L5CX_Src CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/modules/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/platform/*.c
+)
 
 # Link directories setup
 set(MX_LINK_DIRS
@@ -126,6 +137,7 @@ set(MX_LINK_LIBS
     STM32_Drivers
     BLE_Middleware
     VL53L1CB_Driver
+    VL53L5CX_Driver
     ${TOOLCHAIN_LINK_LIBRARIES}
 
 )
@@ -149,6 +161,9 @@ add_library(VL53L1CB_Driver OBJECT)
 target_sources(VL53L1CB_Driver PRIVATE ${VL53L1CB_Src})
 target_link_libraries(VL53L1CB_Driver PUBLIC stm32cubemx)
 
+add_library(VL53L5CX_Driver OBJECT)
+target_sources(VL53L5CX_Driver PRIVATE ${VL53L5CX_Src})
+target_link_libraries(VL53L5CX_Driver PUBLIC stm32cubemx)
 
 # Add STM32CubeMX generated application sources to the project
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${MX_Application_Src})

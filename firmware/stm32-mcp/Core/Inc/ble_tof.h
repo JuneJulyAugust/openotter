@@ -1,15 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /******************************************************************************
- * BLE GATT service for the VL53L1CB multi-zone ToF sensor.
+ * BLE GATT service for ToF debug data.
  *
  *   Service 0xFE60
  *     Char 0xFE61  Config (write-w/o-resp + write)         8 B
- *     Char 0xFE62  Frame  (notify, fixed)                 76 B
+ *     Char 0xFE62  Frame  (notify, fixed chunks)          20 B
  *     Char 0xFE63  Status (notify + read)                  4 B
  *
- * Wire format authority: docs/superpowers/specs/2026-04-19-vl53l1cb-multizone-
- * tof-design.md §5. Wrap over BlueNRG-MS — requires ATT MTU ≥ 79 (iOS
- * negotiates this automatically).
+ * FE61 accepts the legacy VL53L1CB config payload below, or the generic
+ * Tof_Config_t V2 payload when byte 0 is TOF_SENSOR_VL53L5CX.
+ * FE62 emits either legacy L1 chunks or generic V2 chunks depending on the
+ * selected debug sensor.
  ******************************************************************************/
 #ifndef __BLE_TOF_H
 #define __BLE_TOF_H
@@ -25,7 +26,8 @@ extern "C" {
 #define OPENOTTER_TOF_FRAME_CHAR_UUID   0xFE62
 #define OPENOTTER_TOF_STATUS_CHAR_UUID  0xFE63
 
-/* iOS → MCU configuration write payload (8 B, little-endian on wire). */
+/* Legacy iOS -> MCU VL53L1CB configuration write payload (8 B,
+ * little-endian on wire). */
 typedef struct __attribute__((packed)) {
   uint8_t  layout;        /* 1, 3, 4 */
   uint8_t  dist_mode;     /* 1=SHORT, 2=MEDIUM, 3=LONG */
@@ -36,7 +38,7 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(BLE_TofConfigPayload_t) == 8,
                "BLE_TofConfigPayload_t must be 8 B on wire");
 
-/* MCU → iOS status notification (4 B). */
+/* MCU -> iOS status notification (4 B). */
 typedef struct __attribute__((packed)) {
   uint8_t state;         /* 0=idle, 1=running, 2=error */
   uint8_t last_error;    /* TofL1_Status_t code; 0 = none */

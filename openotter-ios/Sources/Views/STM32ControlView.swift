@@ -13,6 +13,16 @@ struct STM32ControlView: View {
                 ScrollView {
                     VStack(spacing: 24) {
 
+                    // --- VL53L5CX TOF DEBUG (FE60 multi-zone grid) ---
+                    GroupBox(label:
+                        Label("VL53L5CX DEPTH MAP", systemImage: "square.grid.3x3.fill")
+                            .font(.caption.bold())
+                            .foregroundColor(.secondary)
+                    ) {
+                        TofDebugCard(viewModel: viewModel)
+                    }
+                    .groupBoxStyle(ModernGroupBoxStyle())
+
                     // --- ESC TELEMETRY CARD ---
                     GroupBox(label:
                         Label("ESC TELEMETRY (Direct BLE)", systemImage: "bolt.horizontal.fill")
@@ -75,67 +85,6 @@ struct STM32ControlView: View {
                         .padding(.vertical, 4)
                     }
                     .groupBoxStyle(ModernGroupBoxStyle())
-
-                    TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
-                        if let rearSafety = viewModel.rearSafetyPresentation(now: timeline.date) {
-                            GroupBox(label:
-                                Label("REAR SAFETY", systemImage: rearSafety.isBrake ? "exclamationmark.triangle.fill" : "checkmark.shield.fill")
-                                    .font(.caption.bold())
-                                    .foregroundColor(.secondary)
-                            ) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(alignment: .top) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(rearSafety.title)
-                                                .font(.headline)
-                                                .foregroundColor(rearSafety.isBrake ? .red : .green)
-                                            Text(rearSafety.detail)
-                                                .font(.subheadline)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Text(rearSafety.statusText)
-                                            .font(.caption.monospaced().bold())
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background((rearSafety.isBrake ? Color.red : Color.green).opacity(0.12))
-                                            .foregroundColor(rearSafety.isBrake ? .red : .green)
-                                            .clipShape(Capsule())
-                                    }
-
-                                    Text(rearSafety.metricsLine)
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-
-                                    if let timingLine = rearSafety.timingLine {
-                                        Text(timingLine)
-                                            .font(.caption.monospacedDigit())
-                                            .foregroundStyle(.secondary)
-                                    }
-
-                                    if rearSafety.isBrake {
-                                        Text("Move forward or clear the rear path, then try reversing again.")
-                                            .font(.caption)
-                                            .foregroundColor(.red)
-                                    }
-                                }
-                                .padding(.vertical, 4)
-                            }
-                            .groupBoxStyle(ModernGroupBoxStyle())
-                        }
-                    }
-
-                    // --- TOF DEBUG (FE60 multi-zone grid) ---
-                    GroupBox(label:
-                        Label("TOF DEBUG", systemImage: "square.grid.3x3.fill")
-                            .font(.caption.bold())
-                            .foregroundColor(.secondary)
-                    ) {
-                        TofDebugCard(viewModel: viewModel)
-                    }
-                    .groupBoxStyle(ModernGroupBoxStyle())
-                    .opacity(viewModel.status == .connected ? 1.0 : 0.4)
-                    .disabled(viewModel.status != .connected)
 
                     // --- DIRECT CONTROL (Discrete Steps) ---
                     GroupBox(label:
@@ -221,12 +170,6 @@ struct STM32ControlView: View {
                 }
                 .background(Color(.systemGroupedBackground))
 
-                TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
-                    if let rearSafety = viewModel.rearSafetyPresentation(now: timeline.date),
-                       rearSafety.isBrake {
-                        emergencyRearBrakeOverlay(rearSafety)
-                    }
-                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -273,35 +216,6 @@ struct STM32ControlView: View {
         Int(1500.0 + viewModel.throttle * 500.0)
     }
 
-    private func emergencyRearBrakeOverlay(_ rearSafety: RearSafetyPresentation) -> some View {
-        VStack(spacing: 8) {
-            Spacer()
-            HStack {
-                Spacer()
-                VStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.octagon.fill")
-                        .font(.system(size: 36))
-                    Text("REAR EMERGENCY BRAKE")
-                        .font(.title2.bold())
-                    Text(rearSafety.detail)
-                        .font(.caption)
-                    Text(rearSafety.metricsLine)
-                        .font(.caption.monospacedDigit())
-                    if let timingLine = rearSafety.timingLine {
-                        Text(timingLine)
-                            .font(.caption.monospacedDigit())
-                    }
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 32)
-                .padding(.vertical, 16)
-                .background(Color.red.opacity(0.88), in: RoundedRectangle(cornerRadius: 16))
-                Spacer()
-            }
-            Spacer()
-        }
-        .allowsHitTesting(false)
-    }
 }
 
 // MARK: - Discrete Control Picker
@@ -352,44 +266,29 @@ private struct DiscreteControlPicker: View {
 private struct TofDebugCard: View {
     @ObservedObject var viewModel: STM32ControlViewModel
 
-    /// UI-side mirror of slider position (ms). Initialised from current cfg.
-    @State private var budgetMs: Double = 33
+    @State private var frequencyHz: Double = 10
+    @State private var integrationMs: Double = 20
 
-    /// Hue cap (mm) inferred from distance mode — keeps the heat map readable
-    /// regardless of the configured distance ceiling.
     private var maxRangeMm: UInt16 {
-        switch viewModel.tofConfig.distMode {
-        case 1:  return 1300
-        case 2:  return 2900
-        default: return 3600
-        }
+        4000
     }
 
-    /// Coarse Hz prediction: 1 / (zones × budget). Not a guarantee — actual
-    /// rate is reported by the firmware in tofScanHz.
-    private var predictedHz: Int {
-        let zones = max(1, Int(viewModel.tofConfig.layout) * Int(viewModel.tofConfig.layout))
-        let budgetSec = Double(viewModel.tofConfig.budgetUs) / 1_000_000.0
-        let total = budgetSec * Double(zones)
-        return total > 0 ? Int((1.0 / total).rounded()) : 0
+    private var maxFrequencyHz: Double {
+        Double(TofConfig.maxL5FrequencyHz(layout: viewModel.tofConfig.layout))
     }
 
-    /// Per-combo budget bounds for the slider. Kept in sync with the firmware
-    /// `TofL1_MinBudgetUs` matrix via TofConfig static helpers.
-    private var minBudgetMs: Double {
-        Double(TofConfig.minBudgetUs(layout: viewModel.tofConfig.layout,
-                                     distMode: viewModel.tofConfig.distMode)) / 1000.0
+    private var maxIntegrationMs: Double {
+        Double(TofConfig.maxL5IntegrationMs(frequencyHz: viewModel.tofConfig.frequencyHz))
     }
 
-    private var maxBudgetMs: Double {
-        Double(TofConfig.maxBudgetUs(layout: viewModel.tofConfig.layout)) / 1000.0
-    }
-
-    /// Human-readable explanation for the last firmware-reported config error.
-    /// Empty string if no error → banner hidden.
     private var errorBanner: String {
         switch viewModel.tofLastError {
         case 0:  return ""
+        case 1:  return "VL53L5CX not detected"
+        case 2:  return "VL53L5CX boot failed"
+        case 3:  return "VL53L5CX I2C error"
+        case 4:  return "Firmware rejected VL53L5CX config"
+        case 5:  return "VL53L5CX driver missing"
         case 6:  return "Firmware rejected layout"
         case 7:  return "Firmware rejected distance mode"
         case 8:  return "Budget below sensor minimum for this combo"
@@ -401,42 +300,46 @@ private struct TofDebugCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Layout", selection: layoutBinding) {
-                Text("1×1").tag(UInt8(1))
-                Text("3×3").tag(UInt8(3))
-                Text("4×4").tag(UInt8(4))
+            Picker("Mode", selection: modeBinding) {
+                Text("Drive").tag(OperatingMode.drive)
+                Text("Debug").tag(OperatingMode.debug)
             }
             .pickerStyle(.segmented)
 
-            Picker("Distance", selection: distModeBinding) {
-                Text("Short").tag(UInt8(1))
-                Text("Medium").tag(UInt8(2))
-                Text("Long").tag(UInt8(3))
+            Picker("Layout", selection: layoutBinding) {
+                Text("4×4").tag(UInt8(4))
+                Text("8×8").tag(UInt8(8))
             }
             .pickerStyle(.segmented)
 
             HStack {
-                Text("Budget")
+                Text("Rate")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Slider(value: $budgetMs, in: minBudgetMs...maxBudgetMs, step: 1)
-                    .onChange(of: budgetMs) { new in
-                        viewModel.setTofBudgetMs(UInt32(new))
+                Slider(value: $frequencyHz, in: 1...maxFrequencyHz, step: 1)
+                    .onChange(of: frequencyHz) { new in
+                        viewModel.setTofFrequencyHz(UInt8(new))
                     }
-                Text("\(Int(budgetMs)) ms")
+                Text("\(Int(frequencyHz)) Hz")
                     .font(.caption.monospaced())
                     .frame(width: 60, alignment: .trailing)
             }
 
             HStack {
-                Text("min \(Int(minBudgetMs)) / max \(Int(maxBudgetMs)) ms")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                Spacer()
+                Text("Integration")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Slider(value: $integrationMs, in: 2...maxIntegrationMs, step: 1)
+                    .onChange(of: integrationMs) { new in
+                        viewModel.setTofIntegrationMs(UInt16(new))
+                    }
+                Text("\(Int(integrationMs)) ms")
+                    .font(.caption.monospaced())
+                    .frame(width: 60, alignment: .trailing)
             }
 
             HStack {
-                Text("≈ \(predictedHz) Hz expected")
+                Text("\(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout) target")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -478,14 +381,16 @@ private struct TofDebugCard: View {
         }
         .padding(.vertical, 4)
         .onAppear {
-            budgetMs = Double(viewModel.tofConfig.budgetUs) / 1000.0
+            frequencyHz = Double(viewModel.tofConfig.frequencyHz)
+            integrationMs = Double(viewModel.tofConfig.integrationMs)
         }
-        .onChange(of: viewModel.tofConfig.budgetUs) { newUs in
-            /* Layout/mode changes can auto-clamp the viewModel budget; mirror
-             * into the slider so the thumb stays in sync without firing
-             * another FE61 write. */
-            let newMs = Double(newUs) / 1000.0
-            if abs(budgetMs - newMs) > 0.5 { budgetMs = newMs }
+        .onChange(of: viewModel.tofConfig.frequencyHz) { newHz in
+            let value = Double(newHz)
+            if abs(frequencyHz - value) > 0.5 { frequencyHz = value }
+        }
+        .onChange(of: viewModel.tofConfig.integrationMs) { newMs in
+            let value = Double(newMs)
+            if abs(integrationMs - value) > 0.5 { integrationMs = value }
         }
     }
 
@@ -494,8 +399,9 @@ private struct TofDebugCard: View {
                 set: { viewModel.setTofLayout($0) })
     }
 
-    private var distModeBinding: Binding<UInt8> {
-        Binding(get: { viewModel.tofConfig.distMode },
-                set: { viewModel.setTofDistMode($0) })
+    private var modeBinding: Binding<OperatingMode> {
+        Binding(get: { viewModel.firmwareMode },
+                set: { viewModel.setFirmwareMode($0) })
     }
+
 }
