@@ -17,12 +17,14 @@ extern "C" {
 int TofL5_ValidateConfig(const Tof_Config_t *cfg);
 
 int TofL5_Init(void);
+int TofL5_EnsureInitialized(void);
 int TofL5_Configure(const Tof_Config_t *cfg);
 void TofL5_Process(void);
 
 const Tof_Frame_t *TofL5_GetLatestFrame(void);
 int  TofL5_HasNewFrame(void);
 void TofL5_ClearNewFrame(void);
+int  TofL5_IsInitialized(void);
 int  TofL5_IsDriverDead(void);
 
 #ifdef __cplusplus

@@ -23,6 +23,8 @@ static uint32_t g_seq;
 static uint32_t g_last_configure_tick;
 
 #define TOF_L5_RECONFIGURE_DEBOUNCE_MS  500u
+#define TOF_L5_I2C_MIN_TIMEOUT_MS       1000u
+#define TOF_L5_I2C_MAX_TIMEOUT_MS       15000u
 static Tof_Config_t g_cfg = {
     .sensor_type = TOF_SENSOR_VL53L5CX,
     .layout = 4,
@@ -69,15 +71,24 @@ static uint16_t integration_for_config(const Tof_Config_t *cfg)
   return (period_ms > 2u) ? (uint16_t)(period_ms - 1u) : 2u;
 }
 
-/* ULD downloads ~85 KB of firmware in 32 KB single-shot chunks. At 100 kHz
- * I2C plus sensor clock-stretching, one chunk can take several seconds, so
- * the timeout must be generous; ST ULD reference uses HAL_MAX_DELAY. */
+/* ULD downloads ~85 KB of firmware in large single-shot chunks. At 100 kHz
+ * plus sensor clock-stretching, large transfers need seconds, but a cold
+ * power-on bus fault must not trap the firmware forever.
+ */
+static uint32_t i2c_timeout_for_size(uint16_t size)
+{
+  uint32_t timeout = TOF_L5_I2C_MIN_TIMEOUT_MS + ((uint32_t)size / 4u);
+  return (timeout > TOF_L5_I2C_MAX_TIMEOUT_MS)
+             ? TOF_L5_I2C_MAX_TIMEOUT_MS
+             : timeout;
+}
+
 static int32_t l5_i2c_write(uint16_t dev_addr, uint16_t reg_addr,
                             uint8_t *data, uint16_t size)
 {
   HAL_StatusTypeDef s = HAL_I2C_Mem_Write(&hi2c3, dev_addr, reg_addr,
                                           I2C_MEMADD_SIZE_16BIT, data, size,
-                                          HAL_MAX_DELAY);
+                                          i2c_timeout_for_size(size));
   return (s == HAL_OK) ? 0 : -1;
 }
 
@@ -86,7 +97,7 @@ static int32_t l5_i2c_read(uint16_t dev_addr, uint16_t reg_addr,
 {
   HAL_StatusTypeDef s = HAL_I2C_Mem_Read(&hi2c3, dev_addr, reg_addr,
                                          I2C_MEMADD_SIZE_16BIT, data, size,
-                                         HAL_MAX_DELAY);
+                                         i2c_timeout_for_size(size));
   return (s == HAL_OK) ? 0 : -1;
 }
 
@@ -136,6 +147,8 @@ static void pulse_reset(void)
 
 int TofL5_Init(void)
 {
+  if (g_initialized) return TOF_STATUS_OK;
+
   configure_gpio();
   pulse_reset();
   stamp_empty_frame();
@@ -168,6 +181,11 @@ int TofL5_Init(void)
             (unsigned)g_cfg.integration_ms);
   }
   return rc;
+}
+
+int TofL5_EnsureInitialized(void)
+{
+  return g_initialized ? TOF_STATUS_OK : TofL5_Init();
 }
 
 static uint8_t config_matches(const Tof_Config_t *a, const Tof_Config_t *b)
@@ -274,5 +292,7 @@ const Tof_Frame_t *TofL5_GetLatestFrame(void)
 int TofL5_HasNewFrame(void) { return g_has_new_frame; }
 
 void TofL5_ClearNewFrame(void) { g_has_new_frame = 0; }
+
+int TofL5_IsInitialized(void) { return (int)g_initialized; }
 
 int TofL5_IsDriverDead(void) { return (int)g_driver_dead; }

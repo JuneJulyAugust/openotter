@@ -150,11 +150,11 @@ int main(void) {
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
-  /* Bring up ToF sensors on I2C3 before BLE so probe logs are visible even when
-   * the BLE stack takes its time coming up. VL53L1CB stays available for the
-   * existing reverse-safety path; VL53L5CX is the default Debug stream. */
+  /* VL53L1CB stays available for the existing reverse-safety path. VL53L5CX is
+   * initialized lazily from the BLE debug config path so a cold MSP01 power-up
+   * cannot block BLE advertising or the heartbeat LED before the main loop.
+   */
   TofL1_Init();
-  TofL5_Init();
 
   /* Initialize BLE stack and custom GATT service */
   BLE_App_Init(&htim3);

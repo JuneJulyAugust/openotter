@@ -346,7 +346,10 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
     Tof_Config_t cfg;
     memcpy(&cfg, data, sizeof(cfg));
 
-    int rc = TofL5_Configure(&cfg);
+    int rc = TofL5_EnsureInitialized();
+    if (rc == TOF_STATUS_OK) {
+      rc = TofL5_Configure(&cfg);
+    }
     if (rc != TOF_STATUS_BAD_CONFIG) {
       s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
       reset_stream_state();
@@ -357,6 +360,7 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
       s_tof.state = 1;
     } else if (rc == TOF_STATUS_DRIVER_MISSING ||
                rc == TOF_STATUS_NO_SENSOR ||
+               rc == TOF_STATUS_BOOT_FAILED ||
                rc == TOF_STATUS_DRIVER_DEAD) {
       s_tof.last_error = (uint8_t)rc;
       s_tof.state = 2;
