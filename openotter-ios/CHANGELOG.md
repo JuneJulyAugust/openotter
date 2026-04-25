@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-04-25
+
+### Added
+- **BLE Diagnostic Logging**: CCCD subscription state (`isNotifying`, error) is now logged per characteristic in `didUpdateNotificationStateFor`; write acknowledgments are logged for FE44 mode and FE61 config writes; FE62 chunk header (index, length) logged for the first 3 chunks and every 64th thereafter; characteristic property bitmasks logged in `applyDebugStreamingState`.
+
+### Fixed
+- **FE62 Chunk Length Guard**: Relaxed from requiring a full 20-byte ATT payload to a minimum of 2 bytes, eliminating dropped frames on short debug chunk notifications.
+- **Mode and Config Write Type**: FE44 mode and FE61 config writes now use `.withResponse` when the characteristic supports it, preventing silent drops that left the firmware stuck in Drive mode on some reconnections.
+
 ## [1.0.0] - 2026-04-24
 
 ### Added

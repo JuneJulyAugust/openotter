@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [1.1.0] - 2026-04-25
+
+### Added
+- **VL53L5CX Reverse Safety Supervisor**: VL53L5CX row-3 center zones (indices 9 and 10 of the 4×4 grid) now serve as the primary rear collision sensor in Drive mode; the supervisor computes a speed-dependent critical distance and latches BRAKE with cause, depth, and velocity snapshot.
+- **BLE GATT Diagnostic Logging**: Explicit UART failure message on each `aci_gatt_add_char` call so slot-exhaustion errors are never silently swallowed. Restored 1 Hz `L5 dbg:` UART status line reporting frames-seen, snapshots, pushed/failed chunk counters, operating mode, and current scan rate.
+
+### Fixed
+- **FE40 GATT Slot Under-allocation (Critical)**: `Max_Attribute_Records` for the FE40 control service corrected from 10 → 11. The omitted slot caused `aci_gatt_add_char` for FE44 to fail silently, leaving the mode characteristic undiscoverable. iOS could not write the operating mode, firmware stayed in Drive mode, `BLE_Tof_FrameStreamAllowed` returned false, and no FE62 frame chunks were sent — depth map showed `chunks rx 0`. See `docs/dev/09-ble-gatt-slot-bug-postmortem.md`.
+- **VL53L5CX target_status Whitelist (Critical)**: `rev_safety_l5.c` was copy-pasted from the VL53L1 path and reused the L1 valid-status whitelist `{0, 3, 6, 11}`. VL53L5CX assigns completely different semantics to those codes (0 = data not updated, 11 = consistency failed — both invalid). The actual valid statuses on L5 per ST UM2884 §5.5.6 are 5 (range valid) and 9 (range valid with large pulse), with 6 and 10 as valid-range variants. Every normal status=5 frame was counted as invalid, triggering `REV_SAFETY_CAUSE_TOF_BLIND` after 4 frames and producing a spurious rear emergency brake with no obstacle present.
+- **VL53L5CX Boot Blocking BLE**: VL53L5CX initialization no longer stalls the BLE main loop during firmware startup.
+- **VL53L5CX Config Re-apply on BLE Attach**: Safety config is resent to the sensor after STM32TofService attaches on reconnection.
+- **ToF Debug Notifications Restored**: FE62 / FE63 notifications are re-enabled correctly after a debug-mode transition.
+
 ## [1.0.0] - 2026-04-24
 
 ### Added
