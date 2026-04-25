@@ -85,6 +85,7 @@ class STM32ControlViewModel: ObservableObject {
         debounceTimer?.invalidate()
         keepaliveTimer?.invalidate()
         tofConfigTimer?.invalidate()
+        bleManager.setOperatingMode(.drive)
         // Shared singletons are not stopped — they outlive this viewmodel
     }
 

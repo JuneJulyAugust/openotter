@@ -272,14 +272,14 @@ void BLE_Tof_RequestSafetyConfig(void)
 
 void BLE_Tof_Process(void)
 {
-  if (!BLE_App_IsConnected()) return;
-
   uint32_t now = HAL_GetTick();
 
   if (s_tof.safety_config_pending && BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
     s_tof.safety_config_pending = 0u;
     BLE_Tof_EnforceSafetyConfig();
   }
+
+  if (!BLE_App_IsConnected()) return;
 
   if (!BLE_Tof_FrameStreamAllowed((uint8_t)BLE_App_GetMode())) {
     uint32_t since_status = now - s_tof.last_status_tick;
