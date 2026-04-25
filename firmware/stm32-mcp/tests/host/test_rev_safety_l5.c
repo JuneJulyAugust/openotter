@@ -7,6 +7,20 @@
 
 static int g_fails = 0;
 
+/*
+ * VL53L5CX target_status codes (per ST UM2884 §5.5.6):
+ *   0  ranging data not updated   (INVALID)
+ *   2  target phase                (INVALID)
+ *   3  sigma estimator too high   (INVALID)
+ *   4  target consistency failed  (INVALID)
+ *   5  range valid                (VALID, primary)
+ *   6  wrap-around not performed  (VALID)
+ *   9  range valid w/ large pulse (VALID, primary)
+ *  10  range valid, no prev target(VALID)
+ *  11  measurement consistency failed (INVALID)
+ *  14  no documented mapping; treat as INVALID
+ */
+
 static Tof_Frame_t make_l5_4x4(void) {
   Tof_Frame_t f;
   memset(&f, 0, sizeof(f));
@@ -40,9 +54,9 @@ static void expect_near(const char *label, float got, float want, float tol) {
 static void test_uses_min_of_row3_center_zones(void) {
   Tof_Frame_t f = make_l5_4x4();
   f.zones[9].range_mm = 900u;
-  f.zones[9].status = 0u;
+  f.zones[9].status = 5u;          /* range valid */
   f.zones[10].range_mm = 700u;
-  f.zones[10].status = 0u;
+  f.zones[10].status = 5u;
 
   RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
 
@@ -53,9 +67,9 @@ static void test_uses_min_of_row3_center_zones(void) {
 static void test_uses_single_valid_selected_zone(void) {
   Tof_Frame_t f = make_l5_4x4();
   f.zones[9].range_mm = 1000u;
-  f.zones[9].status = 2u;
+  f.zones[9].status = 2u;          /* target phase — INVALID */
   f.zones[10].range_mm = 850u;
-  f.zones[10].status = 0u;
+  f.zones[10].status = 9u;         /* range valid w/ large pulse */
 
   RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
 
@@ -81,13 +95,56 @@ static void test_rejects_non_4x4_l5_frame(void) {
   f.layout = 8;
   f.zone_count = 64;
   f.zones[9].range_mm = 500u;
-  f.zones[9].status = 0u;
+  f.zones[9].status = 5u;
   f.zones[10].range_mm = 400u;
-  f.zones[10].status = 0u;
+  f.zones[10].status = 5u;
 
   RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
 
   expect_class("non-4x4", r.tof_class, REV_SAFETY_TOF_INVALID);
+}
+
+/* Regression: VL53L1 status codes must NOT be treated as valid on L5.
+ * VL53L1 RangeStatus 0 = RANGE_VALID, but L5 target_status 0 = "data not
+ * updated". Earlier code copied the L1 whitelist {0,3,6,11} to L5, which
+ * (a) rejected real status=5 frames as invalid (false TOF_BLIND brake)
+ * and (b) accepted real status=0/11 frames as valid.
+ */
+static void test_l1_valid_codes_are_invalid_on_l5(void) {
+  uint8_t l1_valid_only_codes[2] = {0u, 11u};
+  for (size_t i = 0; i < sizeof(l1_valid_only_codes); ++i) {
+    Tof_Frame_t f = make_l5_4x4();
+    f.zones[9].range_mm = 500u;
+    f.zones[9].status = l1_valid_only_codes[i];
+    f.zones[10].range_mm = 500u;
+    f.zones[10].status = l1_valid_only_codes[i];
+
+    RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
+    char label[64];
+    snprintf(label, sizeof(label), "L1 status %u rejected on L5",
+             (unsigned)l1_valid_only_codes[i]);
+    expect_class(label, r.tof_class, REV_SAFETY_TOF_INVALID);
+  }
+}
+
+/* Regression: status 6 (wrap-around not performed) and status 10 (range
+ * valid, no previous target) are both documented as valid range readings
+ * on VL53L5CX (UM2884) and must be accepted. */
+static void test_l5_marginal_valid_codes(void) {
+  uint8_t l5_valid_codes[2] = {6u, 10u};
+  for (size_t i = 0; i < sizeof(l5_valid_codes); ++i) {
+    Tof_Frame_t f = make_l5_4x4();
+    f.zones[9].range_mm = 750u;
+    f.zones[9].status = l5_valid_codes[i];
+    /* Other selected zone is invalid so we know depth comes from zone 9. */
+
+    RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
+    char label[64];
+    snprintf(label, sizeof(label), "L5 status %u accepted",
+             (unsigned)l5_valid_codes[i]);
+    expect_class(label, r.tof_class, REV_SAFETY_TOF_VALID);
+    expect_near(label, r.depth_m, 0.75f, 1e-6f);
+  }
 }
 
 int main(void) {
@@ -95,6 +152,8 @@ int main(void) {
   test_uses_single_valid_selected_zone();
   test_rejects_invalid_selected_zones();
   test_rejects_non_4x4_l5_frame();
+  test_l1_valid_codes_are_invalid_on_l5();
+  test_l5_marginal_valid_codes();
   if (g_fails == 0) {
     printf("rev_safety_l5 tests: OK\n");
     return 0;

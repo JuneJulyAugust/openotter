@@ -1,8 +1,27 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 #include "rev_safety_l5.h"
 
+/*
+ * VL53L5CX target_status codes (per ST UM2884 §5.5.6 and the driver header
+ * comment "5 & 9 means ranging OK" in vl53l5cx_api.h):
+ *
+ *    5  Range valid                                        — primary
+ *    6  Wrap around not performed (typical for long range) — valid range
+ *    9  Range valid with large pulse                       — primary
+ *   10  Range valid, no target at previous range           — valid range
+ *
+ * All four are documented as valid distance measurements. Anything else
+ * (including 0 = "ranging data not updated", 3 = "sigma too high",
+ * 11 = "measurement consistency failed") must be rejected — those are the
+ * VL53L1 "valid" codes and have completely different semantics on L5.
+ *
+ * Earlier revisions copied the L1 whitelist {0, 3, 6, 11} verbatim, which
+ * rejected every normal status=5 frame and tripped REV_SAFETY_CAUSE_TOF_BLIND
+ * after `tof_blind_frames` clean reads, producing a spurious rear emergency
+ * brake whenever the sensor was actually working.
+ */
 static int l5_status_is_valid(uint8_t status) {
-  return status == 0u || status == 3u || status == 6u || status == 11u;
+  return status == 5u || status == 6u || status == 9u || status == 10u;
 }
 
 static int zone_is_valid(const Tof_Zone_t *zone) {
