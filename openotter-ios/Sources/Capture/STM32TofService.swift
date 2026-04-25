@@ -111,7 +111,7 @@ public final class STM32TofService: NSObject, ObservableObject {
         )
 
         let writeType: CBCharacteristicWriteType =
-            configChar.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+            configChar.properties.contains(.write) ? .withResponse : .withoutResponse
         peripheral.writeValue(payload, for: configChar, type: writeType)
     }
 

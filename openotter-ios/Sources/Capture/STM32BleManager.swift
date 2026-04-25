@@ -103,8 +103,8 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
     private func writeMode(_ mode: OperatingMode) {
         guard let modeChar, let peripheral else { return }
         let writeType: CBCharacteristicWriteType =
-            modeChar.properties.contains(.writeWithoutResponse)
-                ? .withoutResponse : .withResponse
+            modeChar.properties.contains(.write)
+                ? .withResponse : .withoutResponse
         peripheral.writeValue(Data([mode.wireValue]), for: modeChar, type: writeType)
     }
 
