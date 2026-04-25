@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 #include "tof_l5.h"
+#include "tof_l5_debounce.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,7 +23,7 @@ static uint8_t g_driver_dead;
 static uint32_t g_seq;
 static uint32_t g_last_configure_tick;
 
-#define TOF_L5_RECONFIGURE_DEBOUNCE_MS  500u
+/* TOF_L5_RECONFIGURE_DEBOUNCE_MS is owned by tof_l5_debounce.h. */
 #define TOF_L5_I2C_MIN_TIMEOUT_MS       1000u
 #define TOF_L5_I2C_MAX_TIMEOUT_MS       15000u
 static Tof_Config_t g_cfg = {
@@ -180,6 +181,11 @@ int TofL5_Init(void)
             (unsigned)g_cfg.layout, (unsigned)g_cfg.frequency_hz,
             (unsigned)g_cfg.integration_ms);
   }
+  /* Release the debounce sentinel so the first external Configure call
+   * (e.g. BLE_Tof_EnforceSafetyConfig raising the rate from 10 to 30 Hz on
+   * Drive entry) is not silently dropped within the 500 ms window we just
+   * stamped. See tof_l5_debounce.h for the contract. */
+  g_last_configure_tick = 0u;
   return rc;
 }
 
@@ -212,8 +218,8 @@ int TofL5_Configure(const Tof_Config_t *cfg)
   /* Debounce: reject reconfigure if the last one was < 500ms ago.
    * Rapid I2C stop/start cycles can corrupt VL53L5CX sensor state. */
   uint32_t now = HAL_GetTick();
-  if (g_last_configure_tick != 0 &&
-      (now - g_last_configure_tick) < TOF_L5_RECONFIGURE_DEBOUNCE_MS) {
+  if (TofL5Debounce_ShouldSkip(now, g_last_configure_tick,
+                               TOF_L5_RECONFIGURE_DEBOUNCE_MS)) {
     return TOF_STATUS_OK; /* silently accepted, will apply next time */
   }
 

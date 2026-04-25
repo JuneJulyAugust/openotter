@@ -33,6 +33,9 @@
 #include "rev_safety_tof.h"
 #include "tof_l5.h"
 #include "ble_tof.h"
+#include "ble_command.h"
+#include "ble_gatt_layout.h"
+#include "pwm_control.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -80,7 +83,6 @@ static void BLE_InitStack(void);
 static void BLE_InitGATTService(void);
 static void BLE_StartAdvertising(void);
 static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us);
-static int16_t BLE_ClampPulse(int16_t pulse_us);
 static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *event);
 
 static void BLE_InitRTC(void);
@@ -247,21 +249,25 @@ static void BLE_InitGATTService(void) {
   SVCCTL_RegisterSvcHandler(BLE_EventHandler);
 
   /*
-   * Add Custom Control Service.
-   * Max_Attribute_Records exact accounting (BlueNRG-MS):
-   *   1  service declaration
-   * + 2  FE41 cmd     (decl + value, write/wwr — no CCCD)
-   * + 3  FE42 status  (decl + value + CCCD, notify+read)
-   * + 3  FE43 safety  (decl + value + CCCD, notify+read)
-   * + 2  FE44 mode    (decl + value, write/wwr/read — no CCCD)
-   * = 11 records.
-   * Under-allocation silently fails the LAST add_char with
-   * BLE_STATUS_INSUFFICIENT_RESOURCES, leaving the iOS client unable to
-   * discover that characteristic.
+   * Add Custom Control Service. Slot count is computed from the
+   * characteristic property table below — see ble_gatt_layout.h for the
+   * accounting rules. Hard-coding the count caused the FE44 GATT slot bug
+   * (postmortem: docs/dev/09-ble-gatt-slot-bug-postmortem.md); deriving it
+   * from the same source of truth as the actual add_char calls makes that
+   * class of bug unrepresentable.
    */
+  static const BleGattCharSpec_t kFe40Chars[] = {
+    { .notify = false, .indicate = false }, /* FE41 cmd     */
+    { .notify = true,  .indicate = false }, /* FE42 status  */
+    { .notify = true,  .indicate = false }, /* FE43 safety  */
+    { .notify = false, .indicate = false }, /* FE44 mode    */
+  };
+  uint8_t slots = BleGattLayout_RequiredSlots(
+      kFe40Chars, (uint8_t)(sizeof(kFe40Chars) / sizeof(kFe40Chars[0])));
+
   uuid = OPENOTTER_CONTROL_SVC_UUID;
   ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
-                          11, &bleCtx.svcHandle);
+                          slots, &bleCtx.svcHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     /* Service creation failed — halt */
     return;
@@ -406,9 +412,9 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
       if (attr_mod->attr_handle == (bleCtx.cmdCharHandle + 1)) {
         return_value = SVCCTL_EvtAck;
 
-        if (attr_mod->data_length >= (uint16_t)sizeof(BLE_CommandPayload_t)) {
-          BLE_CommandPayload_t cmd;
-          memcpy(&cmd, attr_mod->att_data, sizeof(cmd));
+        BleCommand_t cmd;
+        if (BleCommand_Parse(attr_mod->att_data, attr_mod->data_length, &cmd)
+            == BLE_CMD_OK) {
           bleCtx.desiredSteeringUs      = cmd.steering_us;
           bleCtx.desiredThrottleUs      = cmd.throttle_us;
           bleCtx.reportedVelocityMmPerS = cmd.velocity_mm_per_s;
@@ -509,14 +515,6 @@ void SVCCTL_App_Notification(void *pckt) {
 /*  PWM OUTPUT                                                                */
 /*============================================================================*/
 
-static int16_t BLE_ClampPulse(int16_t pulse_us) {
-  if (pulse_us < PWM_MIN_US)
-    return PWM_MIN_US;
-  if (pulse_us > PWM_MAX_US)
-    return PWM_MAX_US;
-  return pulse_us;
-}
-
 /**
  * @brief  Apply steering and throttle pulse widths to TIM3.
  *         TIM3 config: PSC=79, ARR=19999 → 1 tick = 1µs, period = 20ms
@@ -526,8 +524,8 @@ static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us) {
   if (!bleCtx.htim)
     return;
 
-  int16_t s = BLE_ClampPulse(steering_us);
-  int16_t t = BLE_ClampPulse(throttle_us);
+  int16_t s = PwmControl_ClampPulse(steering_us);
+  int16_t t = PwmControl_ClampPulse(throttle_us);
 
   bleCtx.currentSteering = s;
   bleCtx.currentThrottle = t;

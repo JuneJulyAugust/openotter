@@ -12,6 +12,7 @@
 #define __BLE_APP_H
 
 #include "stm32l4xx_hal.h"
+#include "pwm_control.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -67,11 +68,8 @@ typedef struct __attribute__((packed)) {
 _Static_assert(sizeof(BLE_SafetyEventPayload_t) == 20,
                "BLE_SafetyEventPayload_t must be 20 B on wire");
 
-/* ---- PWM Constants (matching TIM3 config: PSC=79, ARR=19999 → 50Hz) ---- */
-#define PWM_PERIOD_US 20000 /* 20ms full period */
-#define PWM_NEUTRAL_US 1500 /* 1.5ms = neutral position */
-#define PWM_MIN_US 1000     /* 1.0ms = full reverse / left */
-#define PWM_MAX_US 2000     /* 2.0ms = full forward / right */
+/* PWM constants (PWM_NEUTRAL_US, PWM_MIN_US, PWM_MAX_US, PWM_PERIOD_US)
+ * are owned by pwm_control.h, included above. */
 
 /* ---- Safety ---- */
 #define BLE_SAFETY_TIMEOUT_MS 1500 /* Revert to neutral if no command */
