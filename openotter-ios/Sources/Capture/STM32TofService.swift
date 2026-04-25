@@ -30,6 +30,7 @@ public final class STM32TofService: NSObject, ObservableObject {
                                             budgetUs: 0,
                                             frequencyHz: 10,
                                             integrationMs: 20)
+    var preferredConfigForTesting: TofConfig { preferredConfig }
 
     public override init() { super.init() }
 
@@ -47,6 +48,7 @@ public final class STM32TofService: NSObject, ObservableObject {
         if statusChar.properties.contains(.notify) {
             peripheral.setNotifyValue(true, for: statusChar)
         }
+        writePreferredConfig()
     }
 
     /// Drop characteristic refs on disconnect so we don't write to a dead session.
@@ -79,14 +81,26 @@ public final class STM32TofService: NSObject, ObservableObject {
                            frequencyHz: UInt8,
                            integrationMs: UInt16,
                            budgetMs: UInt16) {
+        preferredConfig = TofConfig(sensor: sensor,
+                                    layout: layout,
+                                    distMode: profile,
+                                    budgetUs: UInt32(budgetMs) * 1000,
+                                    frequencyHz: frequencyHz,
+                                    integrationMs: integrationMs)
+        writePreferredConfig()
+    }
+
+    private func writePreferredConfig() {
         guard let peripheral, let configChar else { return }
 
-        let payload = Self.makeConfigPayload(sensor: sensor,
-                                             layout: layout,
-                                             profile: profile,
-                                             frequencyHz: frequencyHz,
-                                             integrationMs: integrationMs,
-                                             budgetMs: budgetMs)
+        let payload = Self.makeConfigPayload(
+            sensor: preferredConfig.sensor,
+            layout: preferredConfig.layout,
+            profile: preferredConfig.distMode,
+            frequencyHz: preferredConfig.frequencyHz,
+            integrationMs: preferredConfig.integrationMs,
+            budgetMs: UInt16(min(UInt32(UInt16.max), preferredConfig.budgetUs / 1000))
+        )
 
         let writeType: CBCharacteristicWriteType =
             configChar.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse

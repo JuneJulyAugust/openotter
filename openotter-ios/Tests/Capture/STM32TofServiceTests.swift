@@ -28,6 +28,22 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertEqual([UInt8](payload), [2, 8, 1, 10, 20, 0, 0, 0])
     }
 
+    func testConfigSentBeforeAttachIsRemembered() {
+        let service = STM32TofService()
+
+        service.sendConfig(sensor: .vl53l5cx,
+                           layout: 8,
+                           profile: 1,
+                           frequencyHz: 1,
+                           integrationMs: 100,
+                           budgetMs: 0)
+
+        XCTAssertEqual(service.preferredConfigForTesting.sensor, .vl53l5cx)
+        XCTAssertEqual(service.preferredConfigForTesting.layout, 8)
+        XCTAssertEqual(service.preferredConfigForTesting.frequencyHz, 1)
+        XCTAssertEqual(service.preferredConfigForTesting.integrationMs, 100)
+    }
+
     func testParseV2FourByFourFrame() {
         let payload = makeV2Payload(layout: 4)
         let frame = STM32TofService.parseFrameV2(Data(payload))
