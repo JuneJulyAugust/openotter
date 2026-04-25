@@ -28,6 +28,8 @@
 #include "tof_l1.h"
 #include "tof_l5.h"
 #include "firmware_watchdog.h"
+#include "firmware_stack_guard.h"
+#include "firmware_panic.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -164,6 +166,12 @@ int main(void) {
    * BlueNRG stack and SVCCTL are already up. */
   BLE_Tof_Init();
 
+  /* Stamp the stack-bottom sentinel BEFORE the main loop starts pushing
+   * frames. If recursion or a deep call chain ever overwrites it, the
+   * check below catches the corruption before it manifests as something
+   * harder to triage. */
+  FwStackGuard_Init();
+
   /* Start the independent watchdog AFTER all init paths have run. From this
    * point on, any main-loop iteration that takes longer than ~2 s reboots
    * the chip — last-resort recovery from a hung BLE stack, blocked I²C
@@ -178,6 +186,14 @@ int main(void) {
      * back here (e.g. BLE_App_Process or TofL5_Process spins forever), the
      * IWDG fires within 2 s and resets the chip. */
     FwWatchdog_Refresh();
+
+    /* Cheap stack-overflow check (single mem read + compare). If the
+     * sentinel is gone, the stack region has been written past its
+     * configured bottom — panic-reboot now, before the corruption
+     * causes downstream chaos in code we can't reason about. */
+    if (!FwStackGuard_Check()) {
+      Firmware_Panic(FW_PANIC_STACK);
+    }
 
     BLE_App_Process();
     TofL1_Process();

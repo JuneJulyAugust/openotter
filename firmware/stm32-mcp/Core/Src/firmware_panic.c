@@ -15,6 +15,7 @@ char Firmware_PanicTag(Firmware_PanicReason_t reason) {
     case FW_PANIC_USAGE_FAULT: return 'U';
     case FW_PANIC_NMI:         return 'N';
     case FW_PANIC_ASSERT:      return 'A';
+    case FW_PANIC_STACK:       return 'S';
     case FW_PANIC_NONE:        /* fallthrough */
     default:                   return '?';
   }

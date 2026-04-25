@@ -19,6 +19,7 @@ static void test_known_reasons_map_to_distinct_tags(void) {
   expect_eq_char("usage fault", Firmware_PanicTag(FW_PANIC_USAGE_FAULT), 'U');
   expect_eq_char("nmi",         Firmware_PanicTag(FW_PANIC_NMI),         'N');
   expect_eq_char("assert",      Firmware_PanicTag(FW_PANIC_ASSERT),      'A');
+  expect_eq_char("stack",       Firmware_PanicTag(FW_PANIC_STACK),       'S');
 }
 
 static void test_none_and_unknown_map_to_sentinel(void) {
@@ -33,6 +34,7 @@ static void test_tags_are_unique(void) {
   Firmware_PanicReason_t reasons[] = {
     FW_PANIC_HARD_FAULT, FW_PANIC_MEM_MANAGE, FW_PANIC_BUS_FAULT,
     FW_PANIC_USAGE_FAULT, FW_PANIC_NMI, FW_PANIC_ASSERT,
+    FW_PANIC_STACK,
   };
   size_t n = sizeof(reasons) / sizeof(reasons[0]);
   for (size_t i = 0; i < n; ++i) {

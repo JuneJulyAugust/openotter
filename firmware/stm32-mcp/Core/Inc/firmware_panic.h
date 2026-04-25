@@ -40,6 +40,7 @@ typedef enum {
   FW_PANIC_USAGE_FAULT  = 4,
   FW_PANIC_NMI          = 5,
   FW_PANIC_ASSERT       = 6,
+  FW_PANIC_STACK        = 7, /* sentinel guard at stack bottom corrupted */
 } Firmware_PanicReason_t;
 
 /*

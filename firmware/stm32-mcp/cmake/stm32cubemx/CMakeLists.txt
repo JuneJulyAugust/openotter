@@ -53,6 +53,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5_debounce.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_panic.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_watchdog.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_stack_guard.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_it.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/stm32l4xx_hal_msp.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c
