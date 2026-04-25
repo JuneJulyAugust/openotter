@@ -44,3 +44,22 @@ otherwise.
 9. **BLE watchdog.** Disconnect the iPhone while reversing. PWM must go to
    neutral within `BLE_SAFETY_TIMEOUT_MS` (1.5 s). Reconnect; supervisor
    should resume from SAFE.
+
+---
+
+## Known Bug History
+
+### False `TOF_BLIND` brake with no obstacle (fixed in stm32-mcp-v1.1.0)
+
+**Symptom:** "Rear Emergency Brake — Sensor blind" fires during normal reverse
+with no obstacle present. The UART log shows L5 frames arriving (LED2 toggling)
+but the supervisor declares blind after a few frames.
+
+**Cause:** `rev_safety_l5.c` was copy-pasted from the VL53L1 path and used the
+VL53L1 valid-status whitelist `{0, 3, 6, 11}`. VL53L5CX `target_status` uses
+different code semantics: status 5 = range valid (the common healthy case), but
+it was rejected as invalid. After four such frames `REV_SAFETY_CAUSE_TOF_BLIND`
+latched.
+
+**Fix:** Whitelist updated to `{5, 6, 9, 10}` per ST UM2884 §5.5.6. Host
+regression tests added. See `09-ble-gatt-slot-bug-postmortem.md` §Secondary Bug.

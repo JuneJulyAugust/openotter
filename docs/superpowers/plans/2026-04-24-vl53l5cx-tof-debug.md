@@ -1,6 +1,6 @@
 # VL53L5CX ToF Debug Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add VL53L5CX 4x4/8x8 debug streaming over the existing ToF BLE service while keeping VL53L1CB code available and leaving reverse safety unchanged.
 
@@ -40,11 +40,11 @@
 - Create: `firmware/stm32-mcp/tests/host/test_tof_frame_codec.c`
 - Modify: `firmware/stm32-mcp/tests/host/Makefile`
 
-- [ ] **Step 1: Write failing host test**
+- [x] **Step 1: Write failing host test**
 
 Add `test_tof_frame_codec.c` with tests that expect a 4x4 frame to serialize to 80 bytes payload, a 8x8 frame to serialize to 272 bytes payload, and chunk data size to be 18 bytes.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -56,7 +56,7 @@ make test
 
 Expected: FAIL because `tof_frame_codec.h` does not exist.
 
-- [ ] **Step 3: Implement generic ToF types and codec**
+- [x] **Step 3: Implement generic ToF types and codec**
 
 Add:
 
@@ -86,7 +86,7 @@ Implement `TofFrameCodec_Serialize()` and `TofFrameCodec_MakeChunk()` with fixed
 #define TOF_FRAME_CHUNK_DATA 18u
 ```
 
-- [ ] **Step 4: Run host tests**
+- [x] **Step 4: Run host tests**
 
 Run:
 
@@ -104,7 +104,7 @@ Expected: all host tests pass.
 - Modify: `openotter-ios/Sources/Capture/STM32TofService.swift`
 - Create or modify: `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`
 
-- [ ] **Step 1: Write failing XCTest**
+- [x] **Step 1: Write failing XCTest**
 
 Add tests for:
 
@@ -113,7 +113,7 @@ Add tests for:
 - V2 8x8 frame parse returns 64 zones.
 - Out-of-order chunk is dropped.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -125,11 +125,11 @@ xcodebuild test -scheme OpenOtter -destination 'platform=iOS Simulator,name=iPho
 
 Expected: FAIL because V2 parser/config APIs do not exist.
 
-- [ ] **Step 3: Implement Swift V2 parse/reassembly**
+- [x] **Step 3: Implement Swift V2 parse/reassembly**
 
 Add `TofSensorType`, extend `TofConfig`, and update `STM32TofService` to support chunk header `[idx|last, seqLow, 18 payload bytes]`.
 
-- [ ] **Step 4: Run iOS tests**
+- [x] **Step 4: Run iOS tests**
 
 Run the same `xcodebuild test` command.
 
@@ -142,19 +142,19 @@ Expected: parser/config tests pass.
 - Modify: `firmware/stm32-mcp/Core/Inc/ble_tof.h`
 - Modify: `firmware/stm32-mcp/cmake/stm32cubemx/CMakeLists.txt`
 
-- [ ] **Step 1: Write failing host coverage if logic is pure**
+- [x] **Step 1: Write failing host coverage if logic is pure**
 
 If any config validation is extracted into a pure function, add it to `test_tof_frame_codec.c`. Otherwise rely on firmware build for this task.
 
-- [ ] **Step 2: Update BLE chunk sender**
+- [x] **Step 2: Update BLE chunk sender**
 
 Replace fixed 76-byte chunk assumptions with `TofFrameCodec_Serialize()` and `TofFrameCodec_MakeChunk()`.
 
-- [ ] **Step 3: Update config parser**
+- [x] **Step 3: Update config parser**
 
 Interpret FE61 byte 0 as `sensor_type`, byte 1 as `layout`, byte 2 as `profile`, byte 3 as `frequency_hz`, bytes 4..5 as `integration_ms`, bytes 6..7 as `budget_ms`.
 
-- [ ] **Step 4: Build firmware**
+- [x] **Step 4: Build firmware**
 
 Run:
 
@@ -174,19 +174,19 @@ Expected: firmware builds.
 - Modify: `firmware/stm32-mcp/Core/Inc/main.h`
 - Modify: `firmware/stm32-mcp/cmake/stm32cubemx/CMakeLists.txt`
 
-- [ ] **Step 1: Add host-testable config validation**
+- [x] **Step 1: Add host-testable config validation**
 
 Extend `test_tof_frame_codec.c` with validation expectations for L5 layouts 4/8 and rejected layout 3.
 
-- [ ] **Step 2: Implement L5 wrapper seam**
+- [x] **Step 2: Implement L5 wrapper seam**
 
 Add `TofL5_Init`, `TofL5_Configure`, `TofL5_Process`, `TofL5_GetLatestFrame`, `TofL5_HasNewFrame`, and `TofL5_ClearNewFrame`. Until ULD is imported, compile the backend as `TOF_L5_ERR_DRIVER_MISSING` without breaking firmware build.
 
-- [ ] **Step 3: Wire MSP01 pins**
+- [x] **Step 3: Wire MSP01 pins**
 
 Define PC3 interrupt and PC4 reset names. Toggle PC4 low/high before init. Do not enable reverse safety on L5.
 
-- [ ] **Step 4: Build firmware**
+- [x] **Step 4: Build firmware**
 
 Run:
 
@@ -204,19 +204,19 @@ Expected: firmware builds with missing-driver backend status.
 - Modify: `firmware/stm32-mcp/Core/Src/tof_l5.c`
 - Modify: `firmware/stm32-mcp/cmake/stm32cubemx/CMakeLists.txt`
 
-- [ ] **Step 1: Fetch official ULD package**
+- [x] **Step 1: Fetch official ULD package**
 
 Use the official STSW-IMG023 package from ST. If the direct package requires manual license acceptance, stop and ask the user to place the package under `firmware/stm32-mcp/Drivers/VL53L5CX/`.
 
-- [ ] **Step 2: Add STM32 HAL platform port**
+- [x] **Step 2: Add STM32 HAL platform port**
 
 Map ULD I2C read/write/wait primitives to `hi2c3` and HAL delays.
 
-- [ ] **Step 3: Replace missing-driver skeleton with ULD calls**
+- [x] **Step 3: Replace missing-driver skeleton with ULD calls**
 
 Use ULD init/config/start/check/get-data APIs and fill `Tof_Frame_t` zones.
 
-- [ ] **Step 4: Build firmware**
+- [x] **Step 4: Build firmware**
 
 Run:
 
@@ -234,15 +234,15 @@ Expected: firmware links with VL53L5CX driver.
 - Modify: `openotter-ios/Sources/Views/TofGridView.swift`
 - Modify: `openotter-ios/Sources/Capture/STM32ControlViewModel.swift`
 
-- [ ] **Step 1: Add UI tests if available**
+- [x] **Step 1: Add UI tests if available**
 
 If this project has snapshot/UI tests, add a 8x8 rendering test. Otherwise keep parser tests as coverage.
 
-- [ ] **Step 2: Add controls**
+- [x] **Step 2: Add controls**
 
 Expose resolution 4x4/8x8, frequency, integration, observed Hz, dropped chunks, and sensor type.
 
-- [ ] **Step 3: Check layout build**
+- [x] **Step 3: Check layout build**
 
 Run:
 
@@ -260,11 +260,11 @@ Expected: app builds.
 - Create: `firmware/stm32-mcp/docs/dev/08-vl53l5cx-tof-debug.md`
 - Modify: `firmware/stm32-mcp/docs/dev/README.md`
 
-- [ ] **Step 1: Document wiring and bring-up**
+- [x] **Step 1: Document wiring and bring-up**
 
 Include the 3V3 warning, PC0/PC1/PC3/PC4 mapping, FE60 V2 protocol, and hardware validation checklist.
 
-- [ ] **Step 2: Run final verification**
+- [x] **Step 2: Run final verification**
 
 Run:
 

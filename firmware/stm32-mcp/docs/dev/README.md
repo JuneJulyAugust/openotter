@@ -7,14 +7,17 @@ these documents cover *how to work on the code*.
 
 Read them in order the first time; after that each is self-contained.
 
-| #  | Document                                                 | What it covers                                                                                        |
-|----|----------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| 01 | [Toolchain and Build](01-toolchain-and-build.md)         | Installing STM32CubeCLT on macOS, PATH setup, `build.sh` subcommands and environment variables.       |
-| 02 | [Board Bringup](02-board-bringup.md)                     | Verifying the ST-Link probe, reading the on-board LEDs, BLE advertising check without the iOS app.    |
-| 03 | [Architecture](03-architecture.md)                       | Source tree layout, boot sequence, cooperative scheduler, IRQ priorities, TIM3 / PWM pin map.         |
-| 04 | [BLE Integration](04-ble-integration.md)                 | BlueNRG-MS stack on SPI3, GATT service definition, full connection flow, STM32CubeL4 source lineage.  |
-| 05 | [Extending the Firmware](05-extending-the-firmware.md)   | Adding IMU / magnetometer / ToF drivers, pose estimation pipeline, adding a second GATT service.      |
-| 06 | [VL53L1CB Multi-Zone ToF](06-vl53l1cb-multizone-tof.md)  | VL53L1-Satel wiring on I²C3, bare-driver layout, ROI math, GATT service 0xFE60, iOS grid viewer.      |
+| #  | Document                                                         | What it covers                                                                                              |
+|----|------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| 01 | [Toolchain and Build](01-toolchain-and-build.md)                 | Installing STM32CubeCLT on macOS, PATH setup, `build.sh` subcommands and environment variables.             |
+| 02 | [Board Bringup](02-board-bringup.md)                             | Verifying the ST-Link probe, reading the on-board LEDs, BLE advertising check without the iOS app.          |
+| 03 | [Architecture](03-architecture.md)                               | Source tree layout, boot sequence, cooperative scheduler, IRQ priorities, TIM3 / PWM pin map.               |
+| 04 | [BLE Integration](04-ble-integration.md)                         | BlueNRG-MS stack on SPI3, GATT service definition, full connection flow, STM32CubeL4 source lineage.        |
+| 05 | [Extending the Firmware](05-extending-the-firmware.md)           | Adding IMU / magnetometer / ToF drivers, pose estimation pipeline, adding a second GATT service.            |
+| 06 | [VL53L1CB Multi-Zone ToF](06-vl53l1cb-multizone-tof.md)          | VL53L1-Satel wiring on I²C3, bare-driver layout, ROI math, GATT service 0xFE60, iOS grid viewer.            |
+| 07 | [Reverse Safety Bringup](07-reverse-safety-bringup.md)           | Step-by-step checklist: mode writes, Drive/Debug switching, obstacle test, blind test, BLE watchdog.        |
+| 08 | [VL53L5CX ToF Debug](08-vl53l5cx-tof-debug.md)                  | MSP01 wiring, PC3/PC4 pins, V2 BLE chunk protocol, 4×4/8×8 streaming, iOS debug card.                      |
+| 09 | [BLE GATT Slot Bug Postmortem](09-ble-gatt-slot-bug-postmortem.md) | Root cause: FE44 undiscoverable due to Max_Attribute_Records=10; fix; VL53L5CX status code bug.           |
 
 ---
 

@@ -1,6 +1,6 @@
 # VL53L5CX Reverse Safety Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Use VL53L5CX 4x4 row 3 center zones for firmware reverse safety and stop full depth-map streaming in Self Driving view.
 
@@ -18,7 +18,7 @@
 - Create: `firmware/stm32-mcp/tests/host/test_rev_safety_l5.c`
 - Modify: `firmware/stm32-mcp/tests/host/Makefile`
 
-- [ ] **Step 1: Write failing host test**
+- [x] **Step 1: Write failing host test**
 
 Add tests that build `Tof_Frame_t` fixtures and assert selected-zone behavior:
 
@@ -35,7 +35,7 @@ static void test_uses_min_of_row3_center_zones(void) {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -46,7 +46,7 @@ make build/test_rev_safety_l5
 
 Expected: compile fails because `rev_safety_l5.h` does not exist.
 
-- [ ] **Step 3: Implement selector**
+- [x] **Step 3: Implement selector**
 
 Implement `RevSafetyL5_SelectReverseReading(const Tof_Frame_t *frame)`.
 
@@ -58,7 +58,7 @@ Rules:
 - Return minimum valid depth.
 - Return invalid if neither selected zone is valid.
 
-- [ ] **Step 4: Run host tests**
+- [x] **Step 4: Run host tests**
 
 Run:
 
@@ -78,11 +78,11 @@ Expected: all host tests pass.
 - Modify: `firmware/stm32-mcp/Core/Inc/rev_safety_tof.h`
 - Modify: `firmware/stm32-mcp/tests/host/test_rev_safety_tof.c`
 
-- [ ] **Step 1: Update L1 clear-distance test first**
+- [x] **Step 1: Update L1 clear-distance test first**
 
 Change `test_rev_safety_tof.c` expected clear depth to `4.0f`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -93,11 +93,11 @@ make build/test_rev_safety_tof && build/test_rev_safety_tof
 
 Expected: fails while constant is still `3.0f`.
 
-- [ ] **Step 3: Change clear distance**
+- [x] **Step 3: Change clear distance**
 
 Set `REV_SAFETY_TOF_CLEAR_DEPTH_M` to `4.0f`.
 
-- [ ] **Step 4: Enforce L5 safety config**
+- [x] **Step 4: Enforce L5 safety config**
 
 Change `BLE_Tof_EnforceSafetyConfig()` to configure:
 
@@ -114,11 +114,11 @@ Tof_Config_t cfg = {
 
 Call `TofL5_EnsureInitialized()` before `TofL5_Configure(&cfg)`.
 
-- [ ] **Step 5: Switch `BLE_App_Process` safety input**
+- [x] **Step 5: Switch `BLE_App_Process` safety input**
 
 Use `TofL5_GetLatestFrame()` and `RevSafetyL5_SelectReverseReading()` instead of `TofL1_GetLatestFrame()` center zone.
 
-- [ ] **Step 6: Run host tests**
+- [x] **Step 6: Run host tests**
 
 Run:
 
@@ -136,11 +136,11 @@ Expected: all host tests pass.
 - Modify: `firmware/stm32-mcp/Core/Src/ble_tof_policy.c`
 - Modify: `firmware/stm32-mcp/tests/host/test_ble_tof_policy.c`
 
-- [ ] **Step 1: Add policy test**
+- [x] **Step 1: Add policy test**
 
 Assert frame streaming is allowed only in Debug mode.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -151,11 +151,11 @@ make build/test_ble_tof_policy && build/test_ble_tof_policy
 
 Expected: fails because policy function is missing.
 
-- [ ] **Step 3: Add policy and apply in `BLE_Tof_Process`**
+- [x] **Step 3: Add policy and apply in `BLE_Tof_Process`**
 
 Add `BLE_Tof_FrameStreamAllowed(mode)` and return early from FE62 frame publish in Drive/Park while still refreshing FE63 status.
 
-- [ ] **Step 4: Run host tests**
+- [x] **Step 4: Run host tests**
 
 Run:
 
@@ -171,11 +171,11 @@ Expected: all host tests pass.
 **Files:**
 - Modify: `firmware/stm32-mcp/Core/Src/main.c`
 
-- [ ] **Step 1: Add main-loop heartbeat**
+- [x] **Step 1: Add main-loop heartbeat**
 
 Track `TofL5_GetLatestFrame()->seq`. If it changes, record tick. Toggle LED2 once per 1000 ms while frames are fresh. If no frame for more than 1500 ms, force LED2 low.
 
-- [ ] **Step 2: Run firmware compile check**
+- [x] **Step 2: Run firmware compile check**
 
 Run the repo firmware build command from existing dev docs or Makefile/CMake target available in the workspace.
 
@@ -187,11 +187,11 @@ Expected: firmware compiles.
 - Modify: `openotter-ios/Sources/Capture/SelfDrivingViewModel.swift` if needed
 - Modify: `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`
 
-- [ ] **Step 1: Keep self-driving in Drive mode only**
+- [x] **Step 1: Keep self-driving in Drive mode only**
 
 No FE61 ToF config is sent from `SelfDrivingViewModel`. Existing `STM32ControlViewModel` remains Debug and sends config.
 
-- [ ] **Step 2: Run iOS build**
+- [x] **Step 2: Run iOS build**
 
 Run:
 
@@ -207,7 +207,7 @@ Expected: build succeeds.
 **Files:**
 - All changed files
 
-- [ ] **Step 1: Run checks**
+- [x] **Step 1: Run checks**
 
 Run:
 
@@ -217,7 +217,7 @@ cd firmware/stm32-mcp/tests/host && make test
 cd ../../../openotter-ios && xcodebuild build -scheme openotter -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 Commit message:
 
