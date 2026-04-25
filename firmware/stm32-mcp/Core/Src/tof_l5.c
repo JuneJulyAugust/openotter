@@ -22,7 +22,7 @@ static uint8_t g_driver_dead;
 static uint32_t g_seq;
 static Tof_Config_t g_cfg = {
     .sensor_type = TOF_SENSOR_VL53L5CX,
-    .layout = 8,
+    .layout = 4,
     .profile = TOF_PROFILE_L5_CONTINUOUS,
     .frequency_hz = 10,
     .integration_ms = 20,
@@ -66,12 +66,15 @@ static uint16_t integration_for_config(const Tof_Config_t *cfg)
   return (period_ms > 2u) ? (uint16_t)(period_ms - 1u) : 2u;
 }
 
+/* ULD downloads ~85 KB of firmware in 32 KB single-shot chunks. At 100 kHz
+ * I2C plus sensor clock-stretching, one chunk can take several seconds, so
+ * the timeout must be generous; ST ULD reference uses HAL_MAX_DELAY. */
 static int32_t l5_i2c_write(uint16_t dev_addr, uint16_t reg_addr,
                             uint8_t *data, uint16_t size)
 {
   HAL_StatusTypeDef s = HAL_I2C_Mem_Write(&hi2c3, dev_addr, reg_addr,
                                           I2C_MEMADD_SIZE_16BIT, data, size,
-                                          1000);
+                                          HAL_MAX_DELAY);
   return (s == HAL_OK) ? 0 : -1;
 }
 
@@ -80,7 +83,7 @@ static int32_t l5_i2c_read(uint16_t dev_addr, uint16_t reg_addr,
 {
   HAL_StatusTypeDef s = HAL_I2C_Mem_Read(&hi2c3, dev_addr, reg_addr,
                                          I2C_MEMADD_SIZE_16BIT, data, size,
-                                         1000);
+                                         HAL_MAX_DELAY);
   return (s == HAL_OK) ? 0 : -1;
 }
 
@@ -116,9 +119,10 @@ static void configure_gpio(void)
 
 static void pulse_reset(void)
 {
-  HAL_GPIO_WritePin(ARD_A1_GPIO_Port, ARD_A1_Pin, GPIO_PIN_RESET);
-  HAL_Delay(2);
+  /* VL53L5CX I2C_RST is active high (UM2884): assert then release. Idle low. */
   HAL_GPIO_WritePin(ARD_A1_GPIO_Port, ARD_A1_Pin, GPIO_PIN_SET);
+  HAL_Delay(2);
+  HAL_GPIO_WritePin(ARD_A1_GPIO_Port, ARD_A1_Pin, GPIO_PIN_RESET);
   HAL_Delay(10);
 }
 

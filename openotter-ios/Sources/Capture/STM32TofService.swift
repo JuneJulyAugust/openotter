@@ -19,6 +19,8 @@ public final class STM32TofService: NSObject, ObservableObject {
     @Published public private(set) var lastError: UInt8 = 0
     @Published public private(set) var scanHz: UInt8 = 0
     @Published public private(set) var droppedFrameChunks: UInt32 = 0
+    @Published public private(set) var framesParsed: UInt32 = 0
+    @Published public private(set) var chunksReceived: UInt32 = 0
 
     private weak var peripheral: CBPeripheral?
     private weak var configChar: CBCharacteristic?
@@ -116,7 +118,9 @@ public final class STM32TofService: NSObject, ObservableObject {
     /// + 19 payload bytes. We parse only after the chunk with the last bit.
     private var rxBuf = [UInt8](repeating: 0, count: 76)
     private var rxNext: UInt8 = 0
-    private var rxV2Buf = [UInt8](repeating: 0, count: 272)
+    /// V2 reassembly buffer. Must be chunk-aligned: ceil(maxPayload / 18) × 18.
+    /// Max payload is 272 bytes (8×8 = 64 zones); ceil(272/18)=16 chunks × 18 = 288.
+    private var rxV2Buf = [UInt8](repeating: 0, count: 288)
     private var rxV2Next: UInt8 = 0
     private var rxV2SeqLow: UInt8 = 0
     private var rxMode: RxMode = .unknown
@@ -129,6 +133,7 @@ public final class STM32TofService: NSObject, ObservableObject {
 
     public func handleFrameNotification(_ data: Data) {
         guard data.count == 20 else { return }
+        chunksReceived &+= 1
         let bytes = [UInt8](data)
         let hdr   = bytes[0]
         let idx   = hdr & 0x7F
@@ -163,6 +168,7 @@ public final class STM32TofService: NSObject, ObservableObject {
 
         if last {
             if let frame = STM32TofService.parseFrame(Data(rxBuf)) {
+                framesParsed &+= 1
                 DispatchQueue.main.async {
                     self.latestFrame = frame
                 }
@@ -180,18 +186,19 @@ public final class STM32TofService: NSObject, ObservableObject {
         }
 
         let dst = Int(idx) * 18
-        guard dst + 18 <= rxV2Buf.count else {
+        let bytesToCopy = min(18, rxV2Buf.count - dst)
+        guard bytesToCopy > 0 else {
             rxV2Next = 0
             rxMode = .unknown
             droppedFrameChunks += 1
             return
         }
 
-        for i in 0..<18 { rxV2Buf[dst + i] = bytes[2 + i] }
+        for i in 0..<bytesToCopy { rxV2Buf[dst + i] = bytes[2 + i] }
         rxV2Next &+= 1
 
         if last {
-            let copied = dst + 18
+            let copied = dst + bytesToCopy
             let frameLen: Int
             if copied >= 14 {
                 frameLen = Int(UInt16(rxV2Buf[12]) | (UInt16(rxV2Buf[13]) << 8))
@@ -200,6 +207,7 @@ public final class STM32TofService: NSObject, ObservableObject {
             }
             if frameLen <= copied,
                let frame = Self.parseFrameV2(Data(rxV2Buf.prefix(frameLen))) {
+                framesParsed &+= 1
                 DispatchQueue.main.async {
                     self.latestFrame = frame
                 }
