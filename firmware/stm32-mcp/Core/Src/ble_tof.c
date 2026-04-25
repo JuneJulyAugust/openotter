@@ -83,6 +83,7 @@ typedef struct {
   /* Diagnostic counters reported via UART. */
   uint32_t l5_frames_seen;
   uint32_t chunks_pushed;
+  uint8_t  safety_config_pending;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
@@ -258,9 +259,15 @@ int BLE_Tof_Init(void)
 
   s_tof.last_status_tick      = HAL_GetTick();
   s_tof.last_rate_window_tick = HAL_GetTick();
+  s_tof.safety_config_pending = 1u;
   publish_status();
   log_str("BLE_Tof ready\r\n");
   return 0;
+}
+
+void BLE_Tof_RequestSafetyConfig(void)
+{
+  s_tof.safety_config_pending = 1u;
 }
 
 void BLE_Tof_Process(void)
@@ -268,6 +275,11 @@ void BLE_Tof_Process(void)
   if (!BLE_App_IsConnected()) return;
 
   uint32_t now = HAL_GetTick();
+
+  if (s_tof.safety_config_pending && BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
+    s_tof.safety_config_pending = 0u;
+    BLE_Tof_EnforceSafetyConfig();
+  }
 
   if (!BLE_Tof_FrameStreamAllowed((uint8_t)BLE_App_GetMode())) {
     uint32_t since_status = now - s_tof.last_status_tick;

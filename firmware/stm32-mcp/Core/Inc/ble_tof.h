@@ -57,7 +57,11 @@ int  BLE_Tof_Init(void);
  * Suppressed in Drive mode (frame notifications reserved for Debug mode). */
 void BLE_Tof_Process(void);
 
-/* Force the ToF back to the safety-critical config (3x3 LONG 30 ms).
+/* Request the safety-critical config on the next main-loop BLE_Tof_Process.
+ * Used from BLE event callbacks so VL53L5CX boot never blocks HCI handling. */
+void BLE_Tof_RequestSafetyConfig(void);
+
+/* Force the ToF back to the safety-critical config (VL53L5CX 4x4 30 Hz).
  * Call when the MCU transitions from Debug back to Drive mode. */
 void BLE_Tof_EnforceSafetyConfig(void);
 

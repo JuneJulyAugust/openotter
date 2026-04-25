@@ -404,7 +404,7 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
                 /* (Debug|Park)→Drive: re-apply safety config and clear any
                  * latch from the prior Drive session before the supervisor
                  * starts ticking again. */
-                BLE_Tof_EnforceSafetyConfig();
+                BLE_Tof_RequestSafetyConfig();
                 RevSafety_Disarm(s_rev_ctx);
                 publish_safe_safety_snapshot();
               } else {
@@ -449,7 +449,7 @@ void SVCCTL_App_Notification(void *pckt) {
     bleCtx.connectionHandle = 0;
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
-    BLE_Tof_EnforceSafetyConfig();
+    BLE_Tof_RequestSafetyConfig();
     RevSafety_Disarm(s_rev_ctx);
     publish_safe_safety_snapshot();
     uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
