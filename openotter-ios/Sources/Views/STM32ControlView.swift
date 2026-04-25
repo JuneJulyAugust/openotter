@@ -274,7 +274,7 @@ private struct TofDebugCard: View {
     }
 
     private var maxFrequencyHz: Double {
-        Double(TofConfig.maxL5FrequencyHz(layout: viewModel.tofConfig.layout))
+        Double(TofConfig.bleCapFrequencyHz(layout: viewModel.tofConfig.layout))
     }
 
     private var maxIntegrationMs: Double {
@@ -300,12 +300,6 @@ private struct TofDebugCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Mode", selection: modeBinding) {
-                Text("Drive").tag(OperatingMode.drive)
-                Text("Debug").tag(OperatingMode.debug)
-            }
-            .pickerStyle(.segmented)
-
             Picker("Layout", selection: layoutBinding) {
                 Text("4×4").tag(UInt8(4))
                 Text("8×8").tag(UInt8(8))
@@ -378,6 +372,21 @@ private struct TofDebugCard: View {
             }
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("DEBUG")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Text(verbatim: "chunks rx \(viewModel.tofChunksReceived)  parsed \(viewModel.tofFramesParsed)  dropped \(viewModel.tofDroppedFrameChunks)")
+                Text(verbatim: "state \(String(describing: viewModel.tofState))  err \(viewModel.tofLastError)  mode \(String(describing: viewModel.firmwareMode))")
+                Text(verbatim: "sensor \(String(describing: viewModel.tofConfig.sensor))  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
+            }
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(6)
+            .background(Color.gray.opacity(0.08))
+            .cornerRadius(6)
         }
         .padding(.vertical, 4)
         .onAppear {
@@ -397,11 +406,6 @@ private struct TofDebugCard: View {
     private var layoutBinding: Binding<UInt8> {
         Binding(get: { viewModel.tofConfig.layout },
                 set: { viewModel.setTofLayout($0) })
-    }
-
-    private var modeBinding: Binding<OperatingMode> {
-        Binding(get: { viewModel.firmwareMode },
-                set: { viewModel.setFirmwareMode($0) })
     }
 
 }

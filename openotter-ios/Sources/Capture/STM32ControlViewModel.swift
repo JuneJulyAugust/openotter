@@ -25,7 +25,10 @@ class STM32ControlViewModel: ObservableObject {
     @Published var tofState: TofState = .unknown
     @Published var tofScanHz: UInt8 = 0
     @Published var tofLastError: UInt8 = 0
-    @Published var firmwareMode: OperatingMode = .drive
+    @Published var tofDroppedFrameChunks: UInt32 = 0
+    @Published var tofFramesParsed: UInt32 = 0
+    @Published var tofChunksReceived: UInt32 = 0
+    @Published var firmwareMode: OperatingMode = .debug
     @Published var rearSafetyEvent: FirmwareSafetyEvent?
     @Published private var rearSafetyReceivedAt: Date?
     /// Defaults match firmware VL53L5CX debug stream: 4x4, profile 1, 10 Hz, 20 ms.
@@ -73,10 +76,9 @@ class STM32ControlViewModel: ObservableObject {
         setupSubscriptions()
         bleManager.start()   // idempotent — no-op if already connected
         escManager.start()   // idempotent — no-op if already connected
-        // Manual control unconditionally re-arms Drive: if the prior
-        // self-driving session left the firmware in Park, throttle commands
-        // would otherwise be silently dropped to neutral by the firmware.
-        setFirmwareMode(.drive)
+        // Bench bring-up: keep firmware in Debug so VL53L5CX FE62 frames
+        // stream regardless of mode. Reverse safety supervisor stays disarmed.
+        setFirmwareMode(.debug)
     }
 
     deinit {
@@ -129,7 +131,8 @@ class STM32ControlViewModel: ObservableObject {
     func setTofLayout(_ layout: UInt8) {
         tofConfig.layout = layout
         if tofConfig.sensor == .vl53l5cx {
-            tofConfig.frequencyHz = min(tofConfig.frequencyHz, TofConfig.maxL5FrequencyHz(layout: layout))
+            let cap = TofConfig.bleCapFrequencyHz(layout: layout)
+            tofConfig.frequencyHz = min(tofConfig.frequencyHz, cap)
             tofConfig.integrationMs = TofConfig.clampL5IntegrationMs(tofConfig.integrationMs,
                                                                      frequencyHz: tofConfig.frequencyHz)
         } else {
@@ -307,6 +310,18 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$lastError
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofLastError)
+
+        tofService.$droppedFrameChunks
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofDroppedFrameChunks)
+
+        tofService.$framesParsed
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofFramesParsed)
+
+        tofService.$chunksReceived
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofChunksReceived)
     }
 
     /// Maps a normalized [-1, +1] control value to a PWM pulse width [1000, 2000] µs.
