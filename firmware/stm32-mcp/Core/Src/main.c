@@ -30,6 +30,7 @@
 #include "firmware_watchdog.h"
 #include "firmware_stack_guard.h"
 #include "firmware_panic.h"
+#include "firmware_mpu.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -165,6 +166,17 @@ int main(void) {
   /* Register the ToF GATT service (FE60). Must follow BLE_App_Init so the
    * BlueNRG stack and SVCCTL are already up. */
   BLE_Tof_Init();
+
+  /* Configure the MPU's hardware no-access region at the stack bottom.
+   * Any push that crosses into this 32-byte band traps as MemManage
+   * on the offending instruction itself — caught instantly with a
+   * useful faulting PC, not on the next sentinel poll. Must run before
+   * the sentinel below: the sentinel sits ABOVE the MPU region inside
+   * still-usable stack and continues to act as a backup detector for
+   * the slower-growing patterns the MPU might miss across context
+   * switches. (None on this firmware, but the layered design hurts
+   * nothing.) */
+  FwMpu_Init();
 
   /* Stamp the stack-bottom sentinel BEFORE the main loop starts pushing
    * frames. If recursion or a deep call chain ever overwrites it, the
