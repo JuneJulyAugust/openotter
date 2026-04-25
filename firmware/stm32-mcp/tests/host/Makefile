@@ -6,7 +6,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 
-TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy
+TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l5_debounce
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test clean dirs
@@ -36,6 +36,18 @@ $(BUILD_DIR)/test_tof_l5_config: test_tof_l5_config.c ../../Core/Src/tof_l5_conf
 
 $(BUILD_DIR)/test_ble_tof_policy: test_ble_tof_policy.c ../../Core/Src/ble_tof_policy.c ../../Core/Inc/ble_tof_policy.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_ble_tof_policy.c ../../Core/Src/ble_tof_policy.c -o $@
+
+$(BUILD_DIR)/test_pwm_control: test_pwm_control.c ../../Core/Src/pwm_control.c ../../Core/Inc/pwm_control.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_pwm_control.c ../../Core/Src/pwm_control.c -o $@
+
+$(BUILD_DIR)/test_ble_command: test_ble_command.c ../../Core/Src/ble_command.c ../../Core/Inc/ble_command.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_ble_command.c ../../Core/Src/ble_command.c -o $@
+
+$(BUILD_DIR)/test_ble_gatt_layout: test_ble_gatt_layout.c ../../Core/Src/ble_gatt_layout.c ../../Core/Inc/ble_gatt_layout.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_ble_gatt_layout.c ../../Core/Src/ble_gatt_layout.c -o $@
+
+$(BUILD_DIR)/test_tof_l5_debounce: test_tof_l5_debounce.c ../../Core/Src/tof_l5_debounce.c ../../Core/Inc/tof_l5_debounce.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_tof_l5_debounce.c ../../Core/Src/tof_l5_debounce.c -o $@
 
 test: all
 	@set -e; for t in $(TESTS); do echo "=== $$t ==="; $(BUILD_DIR)/$$t; done
