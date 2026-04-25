@@ -6,7 +6,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 
-TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l5_debounce
+TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l5_debounce test_firmware_panic test_firmware_watchdog
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test clean dirs
@@ -48,6 +48,16 @@ $(BUILD_DIR)/test_ble_gatt_layout: test_ble_gatt_layout.c ../../Core/Src/ble_gat
 
 $(BUILD_DIR)/test_tof_l5_debounce: test_tof_l5_debounce.c ../../Core/Src/tof_l5_debounce.c ../../Core/Inc/tof_l5_debounce.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_l5_debounce.c ../../Core/Src/tof_l5_debounce.c -o $@
+
+# firmware_panic.c references TIM3/USART1 register names from stm32l4xx.h on
+# target builds; HOST_TEST disables those references for the host harness.
+$(BUILD_DIR)/test_firmware_panic: test_firmware_panic.c ../../Core/Src/firmware_panic.c ../../Core/Inc/firmware_panic.h ../../Core/Inc/pwm_control.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) -DHOST_TEST test_firmware_panic.c ../../Core/Src/firmware_panic.c -o $@
+
+# firmware_watchdog.c uses HAL IWDG types under target build. HOST_TEST
+# isolates the pure prescaler/reload math for host-side coverage.
+$(BUILD_DIR)/test_firmware_watchdog: test_firmware_watchdog.c ../../Core/Src/firmware_watchdog.c ../../Core/Inc/firmware_watchdog.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) -DHOST_TEST test_firmware_watchdog.c ../../Core/Src/firmware_watchdog.c -o $@
 
 test: all
 	@set -e; for t in $(TESTS); do echo "=== $$t ==="; $(BUILD_DIR)/$$t; done

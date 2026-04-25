@@ -20,6 +20,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32l4xx_it.h"
 #include "main.h"
+#include "firmware_panic.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 /* USER CODE END Includes */
@@ -67,65 +68,39 @@
  * @brief This function handles Non maskable interrupt.
  */
 void NMI_Handler(void) {
-  /* USER CODE BEGIN NonMaskableInt_IRQn 0 */
-
-  /* USER CODE END NonMaskableInt_IRQn 0 */
-  /* USER CODE BEGIN NonMaskableInt_IRQn 1 */
-  while (1) {
-  }
-  /* USER CODE END NonMaskableInt_IRQn 1 */
+  /* Force PWM neutral, log "PANIC:N" on UART1, then reset.
+   * Replaces the CubeMX default while(1) which would freeze the system
+   * with the last PWM value latched on TIM3 — physically dangerous for
+   * a vehicle with no operator override path. */
+  Firmware_Panic(FW_PANIC_NMI);
 }
 
 /**
  * @brief This function handles Hard fault interrupt.
  */
 void HardFault_Handler(void) {
-  /* USER CODE BEGIN HardFault_IRQn 0 */
-
-  /* USER CODE END HardFault_IRQn 0 */
-  while (1) {
-    /* USER CODE BEGIN W1_HardFault_IRQn 0 */
-    /* USER CODE END W1_HardFault_IRQn 0 */
-  }
+  Firmware_Panic(FW_PANIC_HARD_FAULT);
 }
 
 /**
  * @brief This function handles Memory management fault.
  */
 void MemManage_Handler(void) {
-  /* USER CODE BEGIN MemoryManagement_IRQn 0 */
-
-  /* USER CODE END MemoryManagement_IRQn 0 */
-  while (1) {
-    /* USER CODE BEGIN W1_MemoryManagement_IRQn 0 */
-    /* USER CODE END W1_MemoryManagement_IRQn 0 */
-  }
+  Firmware_Panic(FW_PANIC_MEM_MANAGE);
 }
 
 /**
  * @brief This function handles Prefetch fault, memory access fault.
  */
 void BusFault_Handler(void) {
-  /* USER CODE BEGIN BusFault_IRQn 0 */
-
-  /* USER CODE END BusFault_IRQn 0 */
-  while (1) {
-    /* USER CODE BEGIN W1_BusFault_IRQn 0 */
-    /* USER CODE END W1_BusFault_IRQn 0 */
-  }
+  Firmware_Panic(FW_PANIC_BUS_FAULT);
 }
 
 /**
  * @brief This function handles Undefined instruction or illegal state.
  */
 void UsageFault_Handler(void) {
-  /* USER CODE BEGIN UsageFault_IRQn 0 */
-
-  /* USER CODE END UsageFault_IRQn 0 */
-  while (1) {
-    /* USER CODE BEGIN W1_UsageFault_IRQn 0 */
-    /* USER CODE END W1_UsageFault_IRQn 0 */
-  }
+  Firmware_Panic(FW_PANIC_USAGE_FAULT);
 }
 
 /**

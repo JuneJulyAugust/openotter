@@ -27,6 +27,7 @@
 #include "stm32l4xx_ll_rcc.h"
 #include "tof_l1.h"
 #include "tof_l5.h"
+#include "firmware_watchdog.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -162,11 +163,22 @@ int main(void) {
   /* Register the ToF GATT service (FE60). Must follow BLE_App_Init so the
    * BlueNRG stack and SVCCTL are already up. */
   BLE_Tof_Init();
+
+  /* Start the independent watchdog AFTER all init paths have run. From this
+   * point on, any main-loop iteration that takes longer than ~2 s reboots
+   * the chip — last-resort recovery from a hung BLE stack, blocked I²C
+   * transaction, or any other stuck-loop bug. */
+  FwWatchdog_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
+    /* Refresh the watchdog at the top of every iteration. If we never get
+     * back here (e.g. BLE_App_Process or TofL5_Process spins forever), the
+     * IWDG fires within 2 s and resets the chip. */
+    FwWatchdog_Refresh();
+
     BLE_App_Process();
     TofL1_Process();
     TofL5_Process();
