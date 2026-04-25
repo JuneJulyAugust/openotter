@@ -118,10 +118,10 @@ public final class STM32TofService: NSObject, ObservableObject {
     private func applyDebugStreamingState() {
         guard let peripheral else { return }
         if let frameChar, frameChar.properties.contains(.notify) {
-            peripheral.setNotifyValue(debugStreamingEnabled, for: frameChar)
+            peripheral.setNotifyValue(true, for: frameChar)
         }
         if let statusChar, statusChar.properties.contains(.notify) {
-            peripheral.setNotifyValue(debugStreamingEnabled, for: statusChar)
+            peripheral.setNotifyValue(true, for: statusChar)
         }
         if debugStreamingEnabled {
             writePreferredConfig()

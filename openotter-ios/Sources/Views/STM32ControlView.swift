@@ -194,6 +194,12 @@ struct STM32ControlView: View {
                 }
             }
         }
+        .onAppear {
+            viewModel.setFirmwareMode(.debug)
+        }
+        .onDisappear {
+            viewModel.setFirmwareMode(.drive)
+        }
     }
 
     // MARK: - Computed Properties
