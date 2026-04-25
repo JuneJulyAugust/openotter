@@ -34,7 +34,10 @@
 #include "tof_l5.h"
 #include "ble_tof.h"
 
+#include <stdio.h>
 #include <string.h>
+
+extern UART_HandleTypeDef huart1;
 
 /* Private types -------------------------------------------------------------*/
 
@@ -244,13 +247,21 @@ static void BLE_InitGATTService(void) {
   SVCCTL_RegisterSvcHandler(BLE_EventHandler);
 
   /*
-   * Add Custom Control Service
-   * Max_Attribute_Records = 1 (service) + 2 (cmd char) + 2 (status char)
-   *                       + 1 (CCCD for notify) + 2 (safety char) + 2 (mode char) = 10
+   * Add Custom Control Service.
+   * Max_Attribute_Records exact accounting (BlueNRG-MS):
+   *   1  service declaration
+   * + 2  FE41 cmd     (decl + value, write/wwr — no CCCD)
+   * + 3  FE42 status  (decl + value + CCCD, notify+read)
+   * + 3  FE43 safety  (decl + value + CCCD, notify+read)
+   * + 2  FE44 mode    (decl + value, write/wwr/read — no CCCD)
+   * = 11 records.
+   * Under-allocation silently fails the LAST add_char with
+   * BLE_STATUS_INSUFFICIENT_RESOURCES, leaving the iOS client unable to
+   * discover that characteristic.
    */
   uuid = OPENOTTER_CONTROL_SVC_UUID;
   ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
-                          10, &bleCtx.svcHandle);
+                          11, &bleCtx.svcHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     /* Service creation failed — halt */
     return;
@@ -269,6 +280,11 @@ static void BLE_InitGATTService(void) {
                           10,
                           0,
                           &bleCtx.cmdCharHandle);
+  if (ret != BLE_STATUS_SUCCESS) {
+    char buf[64]; int n = snprintf(buf, sizeof(buf),
+        "BLE_App: add_char FE41 fail 0x%02X\r\n", (unsigned)ret);
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
 
   /*
    * Add Status Characteristic (Notify)
@@ -280,6 +296,11 @@ static void BLE_InitGATTService(void) {
                           CHAR_PROP_NOTIFY | CHAR_PROP_READ,
                           ATTR_PERMISSION_NONE, GATT_NOTIFY_ATTRIBUTE_WRITE, 10,
                           0, &bleCtx.statusCharHandle);
+  if (ret != BLE_STATUS_SUCCESS) {
+    char buf[64]; int n = snprintf(buf, sizeof(buf),
+        "BLE_App: add_char FE42 fail 0x%02X\r\n", (unsigned)ret);
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
 
   /*
    * Add Safety Characteristic (Notify + Read) — see
@@ -295,7 +316,11 @@ static void BLE_InitGATTService(void) {
                           10,
                           0,
                           &bleCtx.safetyCharHandle);
-  (void)ret;
+  if (ret != BLE_STATUS_SUCCESS) {
+    char buf[64]; int n = snprintf(buf, sizeof(buf),
+        "BLE_App: add_char FE43 fail 0x%02X\r\n", (unsigned)ret);
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
 
   /* Seed a SAFE payload so a post-connect read returns sane bytes. */
   BLE_SafetyEventPayload_t init = {0};
@@ -317,11 +342,13 @@ static void BLE_InitGATTService(void) {
                           10,
                           0,
                           &bleCtx.modeCharHandle);
-  (void)ret;
+  if (ret != BLE_STATUS_SUCCESS) {
+    char buf[64]; int n = snprintf(buf, sizeof(buf),
+        "BLE_App: add_char FE44 fail 0x%02X\r\n", (unsigned)ret);
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
   aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
                              &drive);
-
-  (void)ret; /* Suppress unused warning in release */
 }
 
 static void BLE_StartAdvertising(void) {

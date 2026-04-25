@@ -117,11 +117,24 @@ public final class STM32TofService: NSObject, ObservableObject {
 
     private func applyDebugStreamingState() {
         guard let peripheral else { return }
+        let frameProps = frameChar?.properties.rawValue ?? 0
+        let statusProps = statusChar?.properties.rawValue ?? 0
+        let configProps = configChar?.properties.rawValue ?? 0
+        NSLog("[TOF] applyDebugStreamingState enabled=\(debugStreamingEnabled) "
+              + "frameProps=0x\(String(frameProps, radix: 16)) "
+              + "statusProps=0x\(String(statusProps, radix: 16)) "
+              + "configProps=0x\(String(configProps, radix: 16))")
         if let frameChar, frameChar.properties.contains(.notify) {
             peripheral.setNotifyValue(true, for: frameChar)
+            NSLog("[TOF] setNotifyValue(true) requested for FE62 frame")
+        } else {
+            NSLog("[TOF] FE62 frame char missing or lacks .notify")
         }
         if let statusChar, statusChar.properties.contains(.notify) {
             peripheral.setNotifyValue(true, for: statusChar)
+            NSLog("[TOF] setNotifyValue(true) requested for FE63 status")
+        } else {
+            NSLog("[TOF] FE63 status char missing or lacks .notify")
         }
         if debugStreamingEnabled {
             writePreferredConfig()
@@ -169,6 +182,10 @@ public final class STM32TofService: NSObject, ObservableObject {
     public func handleFrameNotification(_ data: Data) {
         guard data.count >= 2 else { return }
         chunksReceived &+= 1
+        if chunksReceived <= 3 || chunksReceived & 0x3F == 0 {
+            NSLog("[TOF] FE62 chunk #\(chunksReceived) len=\(data.count) "
+                  + "hdr=0x\(String(data[0], radix: 16)) seqLow=0x\(String(data[1], radix: 16))")
+        }
         var bytes = [UInt8](data)
         if bytes.count < 20 {
             bytes.append(contentsOf: [UInt8](repeating: 0, count: 20 - bytes.count))

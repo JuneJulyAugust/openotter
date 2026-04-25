@@ -83,6 +83,8 @@ typedef struct {
   /* Diagnostic counters reported via UART. */
   uint32_t l5_frames_seen;
   uint32_t chunks_pushed;
+  uint32_t chunks_failed;
+  uint32_t snapshots_taken;
   uint8_t  safety_config_pending;
 } BLE_TofContext_t;
 
@@ -95,6 +97,18 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
 static void log_str(const char *s)
 {
   HAL_UART_Transmit(&huart1, (const uint8_t *)s, (uint16_t)strlen(s), 100);
+}
+
+static void log_fmt(const char *fmt, ...)
+{
+  char buf[160];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (n > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
 }
 
 
@@ -165,6 +179,7 @@ static void snapshot_l5_if_ready(void)
   s_tof.pending_chunk_count = TofFrameCodec_ChunkCount(payload_len);
   s_tof.pending_protocol    = TOF_PENDING_V2;
   s_tof.pending_chunk       = 1;
+  s_tof.snapshots_taken++;
   TofL5_ClearNewFrame();
 }
 
@@ -313,6 +328,7 @@ void BLE_Tof_Process(void)
          batch < 4u) {
     tBleStatus ret = publish_pending_chunk();
     if (ret != BLE_STATUS_SUCCESS) {
+      s_tof.chunks_failed++;
       break; /* TX buffer full — retry next iteration, not a failure */
     }
     s_tof.chunks_pushed++;
@@ -344,6 +360,20 @@ void BLE_Tof_Process(void)
     s_tof.last_rate_window_seq  = seq;
     s_tof.last_status_tick      = now;
     publish_status();
+    /* Safe to log here — we only reach this branch when pending_chunk == 0
+     * (gate above) and have just stolen one TX slot for status. The
+     * UART blocks ~3-7 ms; chunk drain has nothing in flight to starve. */
+    log_fmt("L5 dbg: seen=%lu snap=%lu push=%lu fail=%lu mode=%u "
+            "sensor=%u dbgseq=%lu pubseq=%lu hz=%u\r\n",
+            (unsigned long)s_tof.l5_frames_seen,
+            (unsigned long)s_tof.snapshots_taken,
+            (unsigned long)s_tof.chunks_pushed,
+            (unsigned long)s_tof.chunks_failed,
+            (unsigned)BLE_App_GetMode(),
+            (unsigned)s_tof.debug_sensor,
+            (unsigned long)seq,
+            (unsigned long)s_tof.last_published_seq,
+            (unsigned)s_tof.scan_hz);
   }
 }
 

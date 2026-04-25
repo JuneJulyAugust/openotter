@@ -348,6 +348,23 @@ extension STM32BleManager: CBPeripheralDelegate {
         rssi = RSSI.intValue
     }
 
+    public func peripheral(_ peripheral: CBPeripheral,
+                           didUpdateNotificationStateFor characteristic: CBCharacteristic,
+                           error: Error?) {
+        let errStr = error.map { "\($0)" } ?? "nil"
+        NSLog("[TOF] CCCD update \(characteristic.uuid) "
+              + "isNotifying=\(characteristic.isNotifying) error=\(errStr)")
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral,
+                           didWriteValueFor characteristic: CBCharacteristic,
+                           error: Error?) {
+        if characteristic.uuid == tofConfigCharUUID || characteristic.uuid == modeCharUUID {
+            let errStr = error.map { "\($0)" } ?? "nil"
+            NSLog("[TOF] write ack \(characteristic.uuid) error=\(errStr)")
+        }
+    }
+
     fileprivate func publishSafetyEvent(_ event: FirmwareSafetyEvent?) {
         if Thread.isMainThread {
             lastSafetyEvent = event
