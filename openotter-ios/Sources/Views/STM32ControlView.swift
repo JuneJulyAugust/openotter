@@ -310,10 +310,14 @@ private struct TofDebugCard: View {
                 Text("Rate")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Slider(value: $frequencyHz, in: 1...maxFrequencyHz, step: 1)
-                    .onChange(of: frequencyHz) { new in
-                        viewModel.setTofFrequencyHz(UInt8(new))
-                    }
+                if maxFrequencyHz > 1 {
+                    Slider(value: $frequencyHz, in: 1...maxFrequencyHz, step: 1)
+                        .onChange(of: frequencyHz) { new in
+                            viewModel.setTofFrequencyHz(UInt8(new))
+                        }
+                } else {
+                    Spacer()
+                }
                 Text("\(Int(frequencyHz)) Hz")
                     .font(.caption.monospaced())
                     .frame(width: 60, alignment: .trailing)

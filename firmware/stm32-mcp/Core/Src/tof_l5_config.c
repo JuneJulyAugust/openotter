@@ -27,7 +27,7 @@ int TofL5_ValidateConfig(const Tof_Config_t *cfg)
       return TOF_STATUS_BAD_CONFIG;
     }
     uint32_t period_ms = 1000u / cfg->frequency_hz;
-    if (period_ms == 0 || cfg->integration_ms > period_ms) {
+    if (period_ms <= 5u || cfg->integration_ms > (period_ms - 5u)) {
       return TOF_STATUS_BAD_CONFIG;
     }
   }

@@ -83,7 +83,6 @@ typedef struct {
   /* Diagnostic counters reported via UART. */
   uint32_t l5_frames_seen;
   uint32_t chunks_pushed;
-  uint32_t chunks_failed;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
@@ -97,17 +96,6 @@ static void log_str(const char *s)
   HAL_UART_Transmit(&huart1, (const uint8_t *)s, (uint16_t)strlen(s), 100);
 }
 
-static void log_fmt(const char *fmt, ...)
-{
-  char buf[128];
-  va_list ap;
-  va_start(ap, fmt);
-  int n = vsnprintf(buf, sizeof(buf), fmt, ap);
-  va_end(ap);
-  if (n > 0) {
-    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
-  }
-}
 
 static void publish_status(void)
 {
@@ -296,15 +284,15 @@ void BLE_Tof_Process(void)
 
   /* Drain pending chunks, metered to avoid overflowing the BlueNRG-MS
    * TX notification buffer (~4 slots). Remaining chunks are pushed in
-   * subsequent main-loop iterations. */
+   * subsequent main-loop iterations. A TX-buffer-full return is not a
+   * data loss — the chunk will be retried next call. */
   uint8_t batch = 0;
   while (s_tof.pending_chunk > 0 &&
          s_tof.pending_chunk <= s_tof.pending_chunk_count &&
          batch < 4u) {
     tBleStatus ret = publish_pending_chunk();
     if (ret != BLE_STATUS_SUCCESS) {
-      s_tof.chunks_failed++;
-      break;
+      break; /* TX buffer full — retry next iteration, not a failure */
     }
     s_tof.chunks_pushed++;
     s_tof.pending_chunk++;
@@ -315,6 +303,11 @@ void BLE_Tof_Process(void)
     s_tof.pending_chunk = 0;
     s_tof.pending_protocol = TOF_PENDING_NONE;
   }
+
+  /* Defer status update and UART log while chunks are in flight.
+   * publish_status steals a TX buffer slot from chunk drain, and
+   * log_fmt blocks the main loop for ~7ms preventing chunk retries. */
+  if (s_tof.pending_chunk != 0) return;
 
   /* Recompute scan rate over a 1 s sliding window and push status. */
   uint32_t since_status = now - s_tof.last_status_tick;
@@ -330,15 +323,6 @@ void BLE_Tof_Process(void)
     s_tof.last_rate_window_seq  = seq;
     s_tof.last_status_tick      = now;
     publish_status();
-    log_fmt("L5 dbg: seen=%lu chunks=%lu fail=%lu mode=%u sensor=%u "
-            "pend=%u/%u\r\n",
-            (unsigned long)s_tof.l5_frames_seen,
-            (unsigned long)s_tof.chunks_pushed,
-            (unsigned long)s_tof.chunks_failed,
-            (unsigned)BLE_App_GetMode(),
-            (unsigned)s_tof.debug_sensor,
-            (unsigned)s_tof.pending_chunk,
-            (unsigned)s_tof.pending_chunk_count);
   }
 }
 

@@ -141,7 +141,8 @@ public struct TofConfig: Equatable, Sendable {
 
     public static func maxL5IntegrationMs(frequencyHz: UInt8) -> UInt16 {
         let hz = max(1, UInt16(frequencyHz))
-        return max(2, 1000 / hz)
+        let period = 1000 / hz
+        return max(2, period > 5 ? period - 5 : 2)
     }
 
     public static func clampL5IntegrationMs(_ requestedMs: UInt16,

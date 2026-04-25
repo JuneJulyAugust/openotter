@@ -20,6 +20,9 @@ static uint8_t g_initialized;
 static uint8_t g_streaming;
 static uint8_t g_driver_dead;
 static uint32_t g_seq;
+static uint32_t g_last_configure_tick;
+
+#define TOF_L5_RECONFIGURE_DEBOUNCE_MS  500u
 static Tof_Config_t g_cfg = {
     .sensor_type = TOF_SENSOR_VL53L5CX,
     .layout = 4,
@@ -96,8 +99,13 @@ static int stop_stream(void)
 {
   if (!g_streaming) return TOF_STATUS_OK;
   uint8_t s = vl53l5cx_stop_ranging(&g_dev);
+  if (s != VL53L5CX_STATUS_OK) {
+    log_fmt("VL53L5 stop failed status=%u\r\n", (unsigned)s);
+    g_streaming = 0;
+    return TOF_STATUS_IO;
+  }
   g_streaming = 0;
-  return (s == VL53L5CX_STATUS_OK) ? TOF_STATUS_OK : TOF_STATUS_IO;
+  return TOF_STATUS_OK;
 }
 
 static void configure_gpio(void)
@@ -162,6 +170,15 @@ int TofL5_Init(void)
   return rc;
 }
 
+static uint8_t config_matches(const Tof_Config_t *a, const Tof_Config_t *b)
+{
+  return a->sensor_type   == b->sensor_type
+      && a->layout        == b->layout
+      && a->profile       == b->profile
+      && a->frequency_hz  == b->frequency_hz
+      && a->integration_ms == b->integration_ms;
+}
+
 int TofL5_Configure(const Tof_Config_t *cfg)
 {
   int rc = TofL5_ValidateConfig(cfg);
@@ -169,7 +186,26 @@ int TofL5_Configure(const Tof_Config_t *cfg)
   if (g_driver_dead) return TOF_STATUS_DRIVER_DEAD;
   if (!g_initialized) return TOF_STATUS_NO_SENSOR;
 
-  (void)stop_stream();
+  /* Skip if the requested config matches what is already active. */
+  if (g_streaming && config_matches(cfg, &g_cfg)) {
+    return TOF_STATUS_OK;
+  }
+
+  /* Debounce: reject reconfigure if the last one was < 500ms ago.
+   * Rapid I2C stop/start cycles can corrupt VL53L5CX sensor state. */
+  uint32_t now = HAL_GetTick();
+  if (g_last_configure_tick != 0 &&
+      (now - g_last_configure_tick) < TOF_L5_RECONFIGURE_DEBOUNCE_MS) {
+    return TOF_STATUS_OK; /* silently accepted, will apply next time */
+  }
+
+  rc = stop_stream();
+  if (rc != TOF_STATUS_OK) {
+    return rc;
+  }
+
+  /* Small delay after stop to let the sensor settle before reconfigure. */
+  HAL_Delay(2);
 
   uint8_t s = vl53l5cx_set_resolution(&g_dev, resolution_for_layout(cfg->layout));
   s |= vl53l5cx_set_ranging_mode(&g_dev, VL53L5CX_RANGING_MODE_AUTONOMOUS);
@@ -189,6 +225,7 @@ int TofL5_Configure(const Tof_Config_t *cfg)
   g_streaming = 1u;
   g_seq = 0;
   g_cfg = *cfg;
+  g_last_configure_tick = now;
   if (g_cfg.integration_ms < 2u) {
     g_cfg.integration_ms = integration_for_config(&g_cfg);
   }
