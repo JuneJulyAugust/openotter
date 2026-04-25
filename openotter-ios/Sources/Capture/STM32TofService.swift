@@ -167,9 +167,12 @@ public final class STM32TofService: NSObject, ObservableObject {
     }
 
     public func handleFrameNotification(_ data: Data) {
-        guard data.count == 20 else { return }
+        guard data.count >= 2 else { return }
         chunksReceived &+= 1
-        let bytes = [UInt8](data)
+        var bytes = [UInt8](data)
+        if bytes.count < 20 {
+            bytes.append(contentsOf: [UInt8](repeating: 0, count: 20 - bytes.count))
+        }
         let hdr   = bytes[0]
         let idx   = hdr & 0x7F
         let last  = (hdr & 0x80) != 0
