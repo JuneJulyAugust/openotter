@@ -45,14 +45,12 @@ static void test_treats_no_target_as_clear_path(void) {
   RevSafetyTofReading_t reading = RevSafety_ClassifyTofReading(0u, 14u);
   expect_class("range_invalid zero means clear",
                reading.tof_class, REV_SAFETY_TOF_CLEAR);
-  expect_near("range_invalid zero depth",
-              reading.depth_m, REV_SAFETY_TOF_CLEAR_DEPTH_M, 1e-6f);
+  expect_near("range_invalid zero depth", reading.depth_m, 4.0f, 1e-6f);
 
   reading = RevSafety_ClassifyTofReading(0u, 255u);
   expect_class("none zero means clear",
                reading.tof_class, REV_SAFETY_TOF_CLEAR);
-  expect_near("none zero depth",
-              reading.depth_m, REV_SAFETY_TOF_CLEAR_DEPTH_M, 1e-6f);
+  expect_near("none zero depth", reading.depth_m, 4.0f, 1e-6f);
 }
 
 static void test_preserves_true_sensor_faults_as_invalid(void) {

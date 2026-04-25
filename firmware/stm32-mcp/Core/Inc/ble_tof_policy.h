@@ -13,6 +13,7 @@ extern "C" {
 #define BLE_TOF_MODE_PARK  2u
 
 int BLE_Tof_ConfigWriteAllowed(uint8_t mode, uint8_t sensor_type);
+int BLE_Tof_FrameStreamAllowed(uint8_t mode);
 
 #ifdef __cplusplus
 }

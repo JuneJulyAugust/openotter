@@ -21,6 +21,19 @@ static void test_accepts_4x4_and_8x8_configs(void)
   assert(TofL5_ValidateConfig(&cfg) == TOF_STATUS_OK);
 }
 
+static void test_accepts_reverse_safety_config(void)
+{
+  Tof_Config_t cfg = {
+      .sensor_type = TOF_SENSOR_VL53L5CX,
+      .layout = 4,
+      .profile = TOF_PROFILE_L5_CONTINUOUS,
+      .frequency_hz = 30,
+      .integration_ms = 20,
+      .budget_ms = 0,
+  };
+  assert(TofL5_ValidateConfig(&cfg) == TOF_STATUS_OK);
+}
+
 static void test_rejects_bad_layout_sensor_and_rate(void)
 {
   Tof_Config_t cfg = {
@@ -68,6 +81,7 @@ static void test_rejects_timing_that_cannot_fit_rate(void)
 int main(void)
 {
   test_accepts_4x4_and_8x8_configs();
+  test_accepts_reverse_safety_config();
   test_rejects_bad_layout_sensor_and_rate();
   test_rejects_timing_that_cannot_fit_rate();
   return 0;

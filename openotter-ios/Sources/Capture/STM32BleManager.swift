@@ -93,6 +93,7 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
     /// state on the mode-edge and broadcasts a SAFE snapshot itself.
     public func setOperatingMode(_ mode: OperatingMode) {
         requestedOperatingMode = mode
+        STM32TofService.shared.setDebugStreamingEnabled(mode == .debug)
         let visibleEvent = safetyEventGate.setOperatingMode(mode)
         publishSafetyEvent(visibleEvent)
 

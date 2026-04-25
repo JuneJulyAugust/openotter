@@ -19,12 +19,12 @@ typedef struct {
   float               depth_m;
 } RevSafetyTofReading_t;
 
-#define REV_SAFETY_TOF_CLEAR_DEPTH_M 3.0f
+#define REV_SAFETY_TOF_CLEAR_DEPTH_M 4.0f
 
 /* Classify a serialized center-zone reading from TofL1_Frame_t for the
  * reverse-safety supervisor:
  *   - range-valid statuses become VALID with their measured depth
- *   - zero-range "no target" statuses become CLEAR with a synthetic far depth
+ *   - zero-range "no target" statuses become CLEAR with a synthetic 4 m depth
  *   - true sensor faults remain INVALID and feed the blind-frame counter
  */
 RevSafetyTofReading_t RevSafety_ClassifyTofReading(uint16_t range_mm,

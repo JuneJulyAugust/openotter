@@ -180,6 +180,25 @@ int main(void) {
       HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
       last_toggle = HAL_GetTick();
     }
+
+    /* Toggle LED2 (PB14) at 1 Hz while VL53L5CX frames are arriving. */
+    static uint32_t last_l5_seq = 0;
+    static uint32_t last_l5_frame_tick = 0;
+    static uint32_t last_l5_led_toggle = 0;
+    uint32_t now = HAL_GetTick();
+    const Tof_Frame_t *l5_frame = TofL5_GetLatestFrame();
+    if (l5_frame && l5_frame->seq != 0u && l5_frame->seq != last_l5_seq) {
+      last_l5_seq = l5_frame->seq;
+      last_l5_frame_tick = now;
+    }
+    if (last_l5_frame_tick != 0u && (now - last_l5_frame_tick) <= 1500u) {
+      if ((now - last_l5_led_toggle) >= 1000u) {
+        HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+        last_l5_led_toggle = now;
+      }
+    } else {
+      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

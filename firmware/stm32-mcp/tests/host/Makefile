@@ -6,7 +6,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 
-TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_tof_frame_codec test_tof_l5_config test_ble_tof_policy
+TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test clean dirs
@@ -24,6 +24,9 @@ $(BUILD_DIR)/test_rev_safety: test_rev_safety.c ../../Core/Src/rev_safety.c ../.
 
 $(BUILD_DIR)/test_rev_safety_tof: test_rev_safety_tof.c ../../Core/Src/rev_safety_tof.c ../../Core/Inc/rev_safety_tof.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_tof.c ../../Core/Src/rev_safety_tof.c -o $@
+
+$(BUILD_DIR)/test_rev_safety_l5: test_rev_safety_l5.c ../../Core/Src/rev_safety_l5.c ../../Core/Src/rev_safety_tof.c ../../Core/Inc/rev_safety_l5.h ../../Core/Inc/rev_safety_tof.h ../../Core/Inc/tof_types.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_l5.c ../../Core/Src/rev_safety_l5.c ../../Core/Src/rev_safety_tof.c -o $@
 
 $(BUILD_DIR)/test_tof_frame_codec: test_tof_frame_codec.c ../../Core/Src/tof_frame_codec.c ../../Core/Inc/tof_frame_codec.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_frame_codec.c ../../Core/Src/tof_frame_codec.c -o $@

@@ -269,6 +269,15 @@ void BLE_Tof_Process(void)
 
   uint32_t now = HAL_GetTick();
 
+  if (!BLE_Tof_FrameStreamAllowed((uint8_t)BLE_App_GetMode())) {
+    uint32_t since_status = now - s_tof.last_status_tick;
+    if (since_status >= STATUS_REFRESH_MS) {
+      s_tof.last_status_tick = now;
+      publish_status();
+    }
+    return;
+  }
+
   uint8_t had_new_l5 = TofL5_HasNewFrame();
 
   /* If no chunk transmission in flight, snapshot the latest frame. */
@@ -424,9 +433,26 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
 
 void BLE_Tof_EnforceSafetyConfig(void)
 {
-  int rc = TofL1_Configure(TOF_LAYOUT_3x3, TOF_DIST_LONG, 30000u);
-  s_tof.last_error = (rc == TOF_L1_OK) ? 0 : (uint8_t)rc;
-  s_tof.state      = (rc == TOF_L1_ERR_DRIVER_DEAD) ? 2 : 1;
+  Tof_Config_t cfg = {
+      .sensor_type = TOF_SENSOR_VL53L5CX,
+      .layout = 4,
+      .profile = TOF_PROFILE_L5_CONTINUOUS,
+      .frequency_hz = 30,
+      .integration_ms = 20,
+      .budget_ms = 0,
+  };
+
+  int rc = TofL5_EnsureInitialized();
+  if (rc == TOF_STATUS_OK) {
+    rc = TofL5_Configure(&cfg);
+  }
+  if (rc == TOF_STATUS_OK) {
+    s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
+  }
+  s_tof.last_error = (rc == TOF_STATUS_OK) ? 0 : (uint8_t)rc;
+  s_tof.state      = (rc == TOF_STATUS_DRIVER_DEAD ||
+                      rc == TOF_STATUS_NO_SENSOR ||
+                      rc == TOF_STATUS_BOOT_FAILED) ? 2 : 1;
   reset_stream_state();
   publish_status();
 }

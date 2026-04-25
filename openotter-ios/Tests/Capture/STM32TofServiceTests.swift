@@ -44,6 +44,20 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertEqual(service.preferredConfigForTesting.integrationMs, 100)
     }
 
+    func testDebugStreamingDefaultsDisabled() {
+        let service = STM32TofService()
+
+        XCTAssertFalse(service.debugStreamingEnabledForTesting)
+    }
+
+    func testDebugStreamingCanBeEnabledForControlView() {
+        let service = STM32TofService()
+
+        service.setDebugStreamingEnabled(true)
+
+        XCTAssertTrue(service.debugStreamingEnabledForTesting)
+    }
+
     func testParseV2FourByFourFrame() {
         let payload = makeV2Payload(layout: 4)
         let frame = STM32TofService.parseFrameV2(Data(payload))

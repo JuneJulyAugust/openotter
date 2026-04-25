@@ -23,7 +23,10 @@ public final class STM32TofService: NSObject, ObservableObject {
     @Published public private(set) var chunksReceived: UInt32 = 0
 
     private weak var peripheral: CBPeripheral?
+    private weak var frameChar: CBCharacteristic?
     private weak var configChar: CBCharacteristic?
+    private weak var statusChar: CBCharacteristic?
+    private var debugStreamingEnabled = false
     private var preferredConfig = TofConfig(sensor: .vl53l5cx,
                                             layout: 4,
                                             distMode: 1,
@@ -31,6 +34,7 @@ public final class STM32TofService: NSObject, ObservableObject {
                                             frequencyHz: 10,
                                             integrationMs: 20)
     var preferredConfigForTesting: TofConfig { preferredConfig }
+    var debugStreamingEnabledForTesting: Bool { debugStreamingEnabled }
 
     public override init() { super.init() }
 
@@ -40,21 +44,19 @@ public final class STM32TofService: NSObject, ObservableObject {
                        configChar: CBCharacteristic,
                        statusChar: CBCharacteristic) {
         self.peripheral = peripheral
+        self.frameChar = frameChar
         self.configChar = configChar
+        self.statusChar = statusChar
 
-        if frameChar.properties.contains(.notify) {
-            peripheral.setNotifyValue(true, for: frameChar)
-        }
-        if statusChar.properties.contains(.notify) {
-            peripheral.setNotifyValue(true, for: statusChar)
-        }
-        writePreferredConfig()
+        applyDebugStreamingState()
     }
 
     /// Drop characteristic refs on disconnect so we don't write to a dead session.
     public func detach() {
         peripheral = nil
+        frameChar = nil
         configChar = nil
+        statusChar = nil
         DispatchQueue.main.async {
             self.latestFrame = nil
             self.state = .unknown
@@ -62,6 +64,11 @@ public final class STM32TofService: NSObject, ObservableObject {
             self.scanHz = 0
             self.droppedFrameChunks = 0
         }
+    }
+
+    public func setDebugStreamingEnabled(_ enabled: Bool) {
+        debugStreamingEnabled = enabled
+        applyDebugStreamingState()
     }
 
     /// Send an 8-byte FE61 config write.
@@ -91,6 +98,7 @@ public final class STM32TofService: NSObject, ObservableObject {
     }
 
     private func writePreferredConfig() {
+        guard debugStreamingEnabled else { return }
         guard let peripheral, let configChar else { return }
 
         let payload = Self.makeConfigPayload(
@@ -105,6 +113,19 @@ public final class STM32TofService: NSObject, ObservableObject {
         let writeType: CBCharacteristicWriteType =
             configChar.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
         peripheral.writeValue(payload, for: configChar, type: writeType)
+    }
+
+    private func applyDebugStreamingState() {
+        guard let peripheral else { return }
+        if let frameChar, frameChar.properties.contains(.notify) {
+            peripheral.setNotifyValue(debugStreamingEnabled, for: frameChar)
+        }
+        if let statusChar, statusChar.properties.contains(.notify) {
+            peripheral.setNotifyValue(debugStreamingEnabled, for: statusChar)
+        }
+        if debugStreamingEnabled {
+            writePreferredConfig()
+        }
     }
 
     public static func makeConfigPayload(sensor: TofSensorType,

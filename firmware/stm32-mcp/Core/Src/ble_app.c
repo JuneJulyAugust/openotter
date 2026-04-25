@@ -29,8 +29,9 @@
 #include "ble_lib.h"
 #include "blesvc.h"
 #include "rev_safety.h"
+#include "rev_safety_l5.h"
 #include "rev_safety_tof.h"
-#include "tof_l1.h"
+#include "tof_l5.h"
 #include "ble_tof.h"
 
 #include <string.h>
@@ -165,7 +166,7 @@ void BLE_App_Process(void) {
    *    handler, not every tick. */
   RevSafetyEvent_t ev = {0};
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-    const TofL1_Frame_t *f = TofL1_GetLatestFrame();
+    const Tof_Frame_t *f = TofL5_GetLatestFrame();
     bool new_frame = (f && f->seq != s_last_tof_seq);
     s_last_tof_seq = f ? f->seq : s_last_tof_seq;
 
@@ -173,15 +174,12 @@ void BLE_App_Process(void) {
     in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
     in.throttle_us  = bleCtx.desiredThrottleUs;
     in.frame_is_new = new_frame;
-    if (f && f->num_zones >= 5) {
-      /* Center zone in 3x3 is index 4 (top-to-bottom, left-to-right). */
-      const TofL1_Zone_t *z = &f->zones[4];
-      RevSafetyTofReading_t reading =
-          RevSafety_ClassifyTofReading(z->range_mm, z->status);
+    if (f) {
+      RevSafetyTofReading_t reading = RevSafetyL5_SelectReverseReading(f);
       in.zone_valid  = (reading.tof_class != REV_SAFETY_TOF_INVALID);
       in.raw_depth_m = reading.depth_m;
     }
-    in.driver_dead = TofL1_IsDriverDead() ? true : false;
+    in.driver_dead = TofL5_IsDriverDead() ? true : false;
     in.now_ms      = now;
     RevSafety_Tick(s_rev_ctx, &in, &ev);
   }
