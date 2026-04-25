@@ -27,3 +27,13 @@ ninja_log
 
 # Host tests
 tests/host/build/
+
+# Vendor dependencies — not tracked in git.
+# Run scripts/fetch-deps.sh to populate these.
+# See Drivers/README.md and BLE/README.md for download instructions.
+Drivers/CMSIS/
+Drivers/STM32L4xx_HAL_Driver/
+Drivers/VL53L1CB/
+Drivers/VL53L5CX/
+BLE/*
+!BLE/README.md
