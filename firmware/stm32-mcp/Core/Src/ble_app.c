@@ -35,6 +35,7 @@
 #include "ble_tof.h"
 #include "ble_command.h"
 #include "ble_gatt_layout.h"
+#include "ble_attr_dispatch.h"
 #include "pwm_control.h"
 
 #include <stdio.h>
@@ -408,8 +409,13 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
       evt_gatt_attr_modified *attr_mod =
           (evt_gatt_attr_modified *)blue_evt->data;
 
-      /* Check if this is a write to our Command characteristic value */
-      if (attr_mod->attr_handle == (bleCtx.cmdCharHandle + 1)) {
+      /* Check if this is a write to our Command characteristic value.
+       * BleAttrDispatch_IsValueWrite rejects matches when the char handle
+       * is 0 — guarding against the FE44 misroute class where a failed
+       * aci_gatt_add_char would leave a stale handle == 0 matching
+       * attribute 1 (the GATT service declaration). */
+      if (BleAttrDispatch_IsValueWrite(attr_mod->attr_handle,
+                                       bleCtx.cmdCharHandle)) {
         return_value = SVCCTL_EvtAck;
 
         BleCommand_t cmd;
@@ -424,7 +430,8 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
         }
       }
 
-      if (attr_mod->attr_handle == (bleCtx.modeCharHandle + 1)) {
+      if (BleAttrDispatch_IsValueWrite(attr_mod->attr_handle,
+                                       bleCtx.modeCharHandle)) {
         return_value = SVCCTL_EvtAck;
         if (attr_mod->data_length >= 1) {
           uint8_t v = attr_mod->att_data[0];

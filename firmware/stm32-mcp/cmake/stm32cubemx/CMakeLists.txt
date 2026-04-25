@@ -49,6 +49,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/pwm_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_command.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_gatt_layout.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_attr_dispatch.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5_debounce.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_panic.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_watchdog.c

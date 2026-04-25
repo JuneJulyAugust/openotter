@@ -16,6 +16,7 @@
 #include "ble_tof.h"
 
 #include "ble_app.h"
+#include "ble_attr_dispatch.h"
 #include "ble_tof_policy.h"
 #include "common.h"
 #include "tl_types.h"
@@ -379,7 +380,11 @@ void BLE_Tof_Process(void)
 
 static void apply_config_write(const uint8_t *data, uint16_t len)
 {
-  if (len < sizeof(BLE_TofConfigPayload_t)) {
+  /* Reject NULL data outright. The BlueNRG stack is documented to pass a
+   * valid pointer, but a single defensive guard here is cheaper than the
+   * eventual hard fault if that contract ever breaks (e.g. a future stack
+   * version, a corrupted attribute write packet). */
+  if (data == NULL || len < sizeof(BLE_TofConfigPayload_t)) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
     s_tof.state      = 2;
     publish_status();
@@ -466,7 +471,8 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
   if (blue_evt->ecode != EVT_BLUE_GATT_ATTRIBUTE_MODIFIED) return ack;
 
   evt_gatt_attr_modified *attr_mod = (evt_gatt_attr_modified *)blue_evt->data;
-  if (attr_mod->attr_handle == (uint16_t)(s_tof.config_char_handle + 1)) {
+  if (BleAttrDispatch_IsValueWrite(attr_mod->attr_handle,
+                                   s_tof.config_char_handle)) {
     ack = SVCCTL_EvtAck;
     apply_config_write(attr_mod->att_data, attr_mod->data_length);
   }
