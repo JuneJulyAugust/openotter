@@ -29,6 +29,8 @@
 #include "tof_l5.h"
 #include "tof_types.h"
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 extern UART_HandleTypeDef huart1;
@@ -77,6 +79,11 @@ typedef struct {
   uint32_t pending_seq;
   BLE_TofPendingProtocol_t pending_protocol;
   uint8_t  pending_buf[TOF_FRAME_MAX_PAYLOAD];
+
+  /* Diagnostic counters reported via UART. */
+  uint32_t l5_frames_seen;
+  uint32_t chunks_pushed;
+  uint32_t chunks_failed;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
@@ -88,6 +95,18 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
 static void log_str(const char *s)
 {
   HAL_UART_Transmit(&huart1, (const uint8_t *)s, (uint16_t)strlen(s), 100);
+}
+
+static void log_fmt(const char *fmt, ...)
+{
+  char buf[128];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (n > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
 }
 
 static void publish_status(void)
@@ -252,9 +271,6 @@ int BLE_Tof_Init(void)
   s_tof.last_status_tick      = HAL_GetTick();
   s_tof.last_rate_window_tick = HAL_GetTick();
   publish_status();
-  if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
-    BLE_Tof_EnforceSafetyConfig();
-  }
   log_str("BLE_Tof ready\r\n");
   return 0;
 }
@@ -262,9 +278,10 @@ int BLE_Tof_Init(void)
 void BLE_Tof_Process(void)
 {
   if (!BLE_App_IsConnected()) return;
-  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) return;
 
   uint32_t now = HAL_GetTick();
+
+  uint8_t had_new_l5 = TofL5_HasNewFrame();
 
   /* If no chunk transmission in flight, snapshot the latest frame. */
   if (s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
@@ -273,14 +290,25 @@ void BLE_Tof_Process(void)
     snapshot_l1_if_ready();
   }
 
-  /* Drain pending chunks.
-   * Stop on BLE_STATUS_INSUFFICIENT_RESOURCES — TX buffers are full; resume
-   * next loop iteration. The scratch buf is preserved across iterations. */
+  if (had_new_l5 && s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
+    s_tof.l5_frames_seen++;
+  }
+
+  /* Drain pending chunks, metered to avoid overflowing the BlueNRG-MS
+   * TX notification buffer (~4 slots). Remaining chunks are pushed in
+   * subsequent main-loop iterations. */
+  uint8_t batch = 0;
   while (s_tof.pending_chunk > 0 &&
-         s_tof.pending_chunk <= s_tof.pending_chunk_count) {
+         s_tof.pending_chunk <= s_tof.pending_chunk_count &&
+         batch < 4u) {
     tBleStatus ret = publish_pending_chunk();
-    if (ret != BLE_STATUS_SUCCESS) break;
+    if (ret != BLE_STATUS_SUCCESS) {
+      s_tof.chunks_failed++;
+      break;
+    }
+    s_tof.chunks_pushed++;
     s_tof.pending_chunk++;
+    batch++;
   }
   if (s_tof.pending_chunk > s_tof.pending_chunk_count) {
     s_tof.last_published_seq = s_tof.pending_seq;
@@ -302,6 +330,15 @@ void BLE_Tof_Process(void)
     s_tof.last_rate_window_seq  = seq;
     s_tof.last_status_tick      = now;
     publish_status();
+    log_fmt("L5 dbg: seen=%lu chunks=%lu fail=%lu mode=%u sensor=%u "
+            "pend=%u/%u\r\n",
+            (unsigned long)s_tof.l5_frames_seen,
+            (unsigned long)s_tof.chunks_pushed,
+            (unsigned long)s_tof.chunks_failed,
+            (unsigned)BLE_App_GetMode(),
+            (unsigned)s_tof.debug_sensor,
+            (unsigned)s_tof.pending_chunk,
+            (unsigned)s_tof.pending_chunk_count);
   }
 }
 

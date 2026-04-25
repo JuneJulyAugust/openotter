@@ -133,8 +133,7 @@ class STM32ControlViewModel: ObservableObject {
         if tofConfig.sensor == .vl53l5cx {
             let cap = TofConfig.bleCapFrequencyHz(layout: layout)
             tofConfig.frequencyHz = min(tofConfig.frequencyHz, cap)
-            tofConfig.integrationMs = TofConfig.clampL5IntegrationMs(tofConfig.integrationMs,
-                                                                     frequencyHz: tofConfig.frequencyHz)
+            tofConfig.integrationMs = TofConfig.defaultL5IntegrationMs(layout: layout)
         } else {
             tofConfig.budgetUs = TofConfig.clampBudget(tofConfig.budgetUs,
                                                        layout: layout,

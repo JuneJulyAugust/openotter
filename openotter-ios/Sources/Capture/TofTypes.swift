@@ -132,11 +132,11 @@ public struct TofConfig: Equatable, Sendable {
 
     /// Maximum frequency that keeps 8x8 BLE chunk throughput manageable.
     /// 8x8 frames require 16 chunks each. At 10 Hz that is 160 notifications/sec,
-    /// which overflows the BlueNRG-MS TX buffer (36% drop rate observed).
-    /// Capping at 4 Hz gives 64 notifications/sec — well within budget.
+    /// which overflows the BlueNRG-MS TX buffer.
+    /// At 1 Hz it is 16 notifications/sec — comfortably within budget.
     /// 4x4 frames need only 5 chunks; 10 Hz = 50 notifications/sec, no cap needed.
     public static func bleCapFrequencyHz(layout: UInt8) -> UInt8 {
-        layout == 8 ? 4 : 10
+        layout == 8 ? 1 : 10
     }
 
     public static func maxL5IntegrationMs(frequencyHz: UInt8) -> UInt16 {
@@ -148,6 +148,13 @@ public struct TofConfig: Equatable, Sendable {
                                             frequencyHz: UInt8) -> UInt16 {
         let hi = maxL5IntegrationMs(frequencyHz: frequencyHz)
         return min(max(requestedMs, 2), hi)
+    }
+
+    /// Sensible integration-time default per layout. 8x8 spreads the photon
+    /// budget over 64 zones; at 20ms most zones return no-target. 100ms gives
+    /// each zone adequate signal while fitting within a 1 Hz period (1000ms).
+    public static func defaultL5IntegrationMs(layout: UInt8) -> UInt16 {
+        layout == 8 ? 100 : 20
     }
 }
 
