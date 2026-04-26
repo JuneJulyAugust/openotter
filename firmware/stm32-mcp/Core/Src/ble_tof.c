@@ -326,11 +326,17 @@ void BLE_Tof_Process(void)
         (s_tof.safety_config_retry_tick == 0u ||
          tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
     if (retry_due) {
+      log_fmt("BLE_Tof safety_config fire mode=%u tick=%lu\r\n",
+              (unsigned)BLE_App_GetMode(), (unsigned long)now);
       if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
         /* Drive: apply the full safety config (driver init + 4x4 30 Hz).
          * Clears pending only on success; failure schedules a retry. */
         s_tof.safety_config_pending = 0u;
         BLE_Tof_EnforceSafetyConfig();
+        log_fmt("BLE_Tof enforce_done ready=%u err=%u tick=%lu\r\n",
+                (unsigned)s_tof.safety_config_ready,
+                (unsigned)s_tof.last_error,
+                (unsigned long)HAL_GetTick());
         if (!s_tof.safety_config_ready) {
           s_tof.safety_config_pending = 1u;
           s_tof.safety_config_retry_tick =

@@ -150,7 +150,10 @@ int TofL5_Init(void)
 {
   if (g_initialized) return TOF_STATUS_OK;
 
+  log_fmt("VL53L5 init phase=gpio tick=%lu\r\n",
+          (unsigned long)HAL_GetTick());
   configure_gpio();
+  log_fmt("VL53L5 init phase=pulse_reset\r\n");
   pulse_reset();
   stamp_empty_frame();
 
@@ -168,24 +171,31 @@ int TofL5_Init(void)
    * g_dev.platform populated) so the firmware download lands on an idle
    * sensor. Cold boot returns an error here (sensor unconfigured) — that
    * is fine, we ignore the result. */
+  log_fmt("VL53L5 init phase=stop_ranging\r\n");
   uint8_t pre_stop = vl53l5cx_stop_ranging(&g_dev);
   HAL_Delay(5);
 
+  log_fmt("VL53L5 init phase=is_alive\r\n");
   uint8_t alive = 0;
   uint8_t s = vl53l5cx_is_alive(&g_dev, &alive);
-  log_fmt("VL53L5 pre-stop=%u alive_rd=%u alive=%u\r\n",
-          (unsigned)pre_stop, (unsigned)s, (unsigned)alive);
+  log_fmt("VL53L5 pre-stop=%u alive_rd=%u alive=%u tick=%lu\r\n",
+          (unsigned)pre_stop, (unsigned)s, (unsigned)alive,
+          (unsigned long)HAL_GetTick());
   if (s != VL53L5CX_STATUS_OK || alive == 0u) {
     log_fmt("VL53L5 probe: no sensor addr=0x%02X\r\n",
             TOF_L5_DEFAULT_I2C_ADDR_8BIT);
     return TOF_STATUS_NO_SENSOR;
   }
 
+  log_fmt("VL53L5 init phase=fw_download tick=%lu\r\n",
+          (unsigned long)HAL_GetTick());
   s = vl53l5cx_init(&g_dev);
   if (s != VL53L5CX_STATUS_OK) {
     log_fmt("VL53L5 init failed status=%u\r\n", (unsigned)s);
     return TOF_STATUS_BOOT_FAILED;
   }
+  log_fmt("VL53L5 init phase=fw_done tick=%lu\r\n",
+          (unsigned long)HAL_GetTick());
 
   g_initialized = 1u;
   int rc = TofL5_Configure(&g_cfg);

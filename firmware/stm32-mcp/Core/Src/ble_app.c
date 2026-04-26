@@ -449,6 +449,14 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
               v == OPENOTTER_MODE_PARK) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
+            {
+              char b[80];
+              int n = snprintf(b, sizeof(b),
+                  "BLE mode_write prev=%u new=%u tick=%lu\r\n",
+                  (unsigned)prev, (unsigned)v,
+                  (unsigned long)HAL_GetTick());
+              HAL_UART_Transmit(&huart1, (uint8_t *)b, (uint16_t)n, 100);
+            }
             if (prev != bleCtx.mode) {
               if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
                 /* (Debug|Park)→Drive: re-apply safety config and clear any
@@ -495,6 +503,15 @@ void SVCCTL_App_Notification(void *pckt) {
 
   switch (event_pckt->evt) {
   case EVT_DISCONN_COMPLETE: {
+    evt_disconn_complete *disc = (evt_disconn_complete *)event_pckt->data;
+    {
+      char b[80];
+      int n = snprintf(b, sizeof(b),
+          "BLE disconnect handle=0x%04X reason=0x%02X tick=%lu\r\n",
+          (unsigned)disc->handle, (unsigned)disc->reason,
+          (unsigned long)HAL_GetTick());
+      HAL_UART_Transmit(&huart1, (uint8_t *)b, (uint16_t)n, 100);
+    }
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
@@ -520,6 +537,13 @@ void SVCCTL_App_Notification(void *pckt) {
       bleCtx.isConnected = 1;
       bleCtx.lastCommandTick = HAL_GetTick();
       bleCtx.safetyTriggered = 0;
+      {
+        char b[80];
+        int n = snprintf(b, sizeof(b),
+            "BLE connect handle=0x%04X tick=%lu\r\n",
+            (unsigned)conn->handle, (unsigned long)HAL_GetTick());
+        HAL_UART_Transmit(&huart1, (uint8_t *)b, (uint16_t)n, 100);
+      }
     }
     break;
   }

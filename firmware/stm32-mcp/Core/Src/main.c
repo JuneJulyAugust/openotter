@@ -85,6 +85,41 @@ static void MX_USB_OTG_FS_PCD_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
+
+static uint32_t s_boot_reset_flags;
+
+static void boot_log_str(const char *s)
+{
+  HAL_UART_Transmit(&huart1, (const uint8_t *)s, (uint16_t)strlen(s), 100);
+}
+
+static void boot_log_fmt(const char *fmt, ...)
+{
+  char buf[160];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (n > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
+}
+
+static void boot_log_reset_cause(uint32_t flags)
+{
+  boot_log_fmt("BOOT reset_csr=0x%08lX cause=%s%s%s%s%s%s%s\r\n",
+      (unsigned long)flags,
+      (flags & RCC_CSR_LPWRRSTF) ? "LPWR " : "",
+      (flags & RCC_CSR_WWDGRSTF) ? "WWDG " : "",
+      (flags & RCC_CSR_IWDGRSTF) ? "IWDG " : "",
+      (flags & RCC_CSR_SFTRSTF)  ? "SFT "  : "",
+      (flags & RCC_CSR_BORRSTF)  ? "BOR "  : "",
+      (flags & RCC_CSR_PINRSTF)  ? "PIN "  : "",
+      (flags & RCC_CSR_OBLRSTF)  ? "OBL "  : "");
+}
 /* USER CODE END 0 */
 
 /**
@@ -105,6 +140,10 @@ int main(void) {
 
   /* USER CODE BEGIN Init */
   __HAL_RCC_PWR_CLK_ENABLE();
+
+  /* Snapshot reset cause flags BEFORE __HAL_RCC_CLEAR_RESET_FLAGS so the
+   * boot log can print why we just rebooted. */
+  s_boot_reset_flags = RCC->CSR;
 
   /*
    * Reset the RTC backup domain on pin-reset so stale RTC wakeup state
@@ -140,6 +179,12 @@ int main(void) {
   MX_USART3_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+  /* First UART line of every boot. Establishes log baseline + tells us
+   * exactly why we just rebooted (NRST button, IWDG, software, BOR, etc). */
+  boot_log_str("\r\n=== OpenOtter STM32 boot ===\r\n");
+  boot_log_reset_cause(s_boot_reset_flags);
+  boot_log_fmt("BOOT phase=peripherals_done tick=%lu\r\n",
+               (unsigned long)HAL_GetTick());
   /* LD1 (PA5) heartbeat LED */
   {
     GPIO_InitTypeDef led = {0};
@@ -158,14 +203,19 @@ int main(void) {
    * initialized lazily from the BLE debug config path so a cold MSP01 power-up
    * cannot block BLE advertising or the heartbeat LED before the main loop.
    */
+  boot_log_str("BOOT phase=tof_l1_init\r\n");
   TofL1_Init();
 
   /* Initialize BLE stack and custom GATT service */
+  boot_log_str("BOOT phase=ble_app_init\r\n");
   BLE_App_Init(&htim3);
 
   /* Register the ToF GATT service (FE60). Must follow BLE_App_Init so the
    * BlueNRG stack and SVCCTL are already up. */
+  boot_log_str("BOOT phase=ble_tof_init\r\n");
   BLE_Tof_Init();
+  boot_log_fmt("BOOT phase=services_ready tick=%lu\r\n",
+               (unsigned long)HAL_GetTick());
 
   /* Stamp the stack-bottom sentinel BEFORE the main loop starts pushing
    * frames. If recursion or a deep call chain ever overwrites it, the
@@ -185,15 +235,34 @@ int main(void) {
    * window reboots the chip — last-resort recovery from a hung BLE stack,
    * blocked I²C transaction, or any other stuck-loop bug. */
   FwWatchdog_Init();
+  boot_log_fmt("BOOT phase=main_loop_enter tick=%lu\r\n",
+               (unsigned long)HAL_GetTick());
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t loop_iter = 0;
+  uint32_t last_loop_log_tick = 0;
   while (1) {
     /* Refresh the watchdog at the top of every iteration. If we never get
      * back here (e.g. BLE_App_Process or TofL5_Process spins forever), the
      * IWDG fires after its configured window and resets the chip. */
     FwWatchdog_Refresh();
+    loop_iter++;
+
+    /* 1 Hz main-loop heartbeat. If the loop ever freezes after a successful
+     * boot, the absence of this line in the UART log isolates the freeze to
+     * one of the four Process() calls below (or whatever was running between
+     * the last heartbeat and the freeze). Cheap: one HAL_GetTick + one
+     * subtract per iteration. */
+    {
+      uint32_t now_hb = HAL_GetTick();
+      if ((now_hb - last_loop_log_tick) >= 1000u) {
+        boot_log_fmt("LOOP iter=%lu tick=%lu\r\n",
+                     (unsigned long)loop_iter, (unsigned long)now_hb);
+        last_loop_log_tick = now_hb;
+      }
+    }
 
     /* Cheap stack-overflow check (single mem read + compare). If the
      * sentinel is gone, the stack region has been written past its

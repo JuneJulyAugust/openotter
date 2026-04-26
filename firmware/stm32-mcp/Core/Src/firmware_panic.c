@@ -55,6 +55,64 @@ static void uart1_putc_direct(char c) {
   /* timed out — give up; reset is coming anyway */
 }
 
+static void uart1_puts_direct(const char *s) {
+  while (*s) uart1_putc_direct(*s++);
+}
+
+static void uart1_put_hex32(uint32_t v) {
+  static const char hex[] = "0123456789ABCDEF";
+  for (int i = 7; i >= 0; --i) {
+    uart1_putc_direct(hex[(v >> (i * 4)) & 0xFu]);
+  }
+}
+
+static void uart1_put_kv(const char *key, uint32_t v) {
+  uart1_putc_direct(' ');
+  uart1_puts_direct(key);
+  uart1_putc_direct('=');
+  uart1_put_hex32(v);
+}
+
+/* Log Cortex-M4 fault status registers + the relevant slice of the stacked
+ * exception frame. These pinpoint the faulting instruction and operand
+ * without a debugger attached. */
+static void log_fault_context(void) {
+  uint32_t cfsr  = SCB->CFSR;
+  uint32_t hfsr  = SCB->HFSR;
+  uint32_t mmfar = SCB->MMFAR;
+  uint32_t bfar  = SCB->BFAR;
+
+  /* MSP at fault entry. PSP isn't useful here: the BLE middleware does not
+   * use PSP, so kernel and app share MSP. The hardware-stacked frame is
+   * therefore at the current MSP. */
+  uint32_t msp = __get_MSP();
+  uint32_t *frame = (uint32_t *)msp;
+  uint32_t r0 = frame[0];
+  uint32_t r1 = frame[1];
+  uint32_t r2 = frame[2];
+  uint32_t r3 = frame[3];
+  uint32_t r12 = frame[4];
+  uint32_t lr  = frame[5];
+  uint32_t pc  = frame[6];
+  uint32_t psr = frame[7];
+
+  uart1_puts_direct("FAULT");
+  uart1_put_kv("CFSR", cfsr);
+  uart1_put_kv("HFSR", hfsr);
+  uart1_put_kv("MMFAR", mmfar);
+  uart1_put_kv("BFAR", bfar);
+  uart1_put_kv("PC", pc);
+  uart1_put_kv("LR", lr);
+  uart1_put_kv("R0", r0);
+  uart1_put_kv("R1", r1);
+  uart1_put_kv("R2", r2);
+  uart1_put_kv("R3", r3);
+  uart1_put_kv("R12", r12);
+  uart1_put_kv("PSR", psr);
+  uart1_put_kv("MSP", msp);
+  uart1_puts_direct("\r\n");
+}
+
 void Firmware_Panic(Firmware_PanicReason_t reason) {
   __disable_irq();
 
@@ -63,17 +121,16 @@ void Firmware_Panic(Firmware_PanicReason_t reason) {
 
   /* Step 2: emit the reason tag so a serial monitor can see why we rebooted.
    * Frame as "PANIC:X\r\n" so it stands out in the UART log. */
-  uart1_putc_direct('P');
-  uart1_putc_direct('A');
-  uart1_putc_direct('N');
-  uart1_putc_direct('I');
-  uart1_putc_direct('C');
-  uart1_putc_direct(':');
+  uart1_puts_direct("PANIC:");
   uart1_putc_direct(Firmware_PanicTag(reason));
-  uart1_putc_direct('\r');
-  uart1_putc_direct('\n');
+  uart1_puts_direct("\r\n");
 
-  /* Step 3: reset. The vector table reload + clean BLE re-advertise gives
+  /* Step 3: dump fault registers + stacked frame. Useful for HardFault,
+   * MemManage, BusFault, UsageFault. NMI/STACK/ASSERT also benefit because
+   * SCB->CFSR is harmless to print. */
+  log_fault_context();
+
+  /* Step 4: reset. The vector table reload + clean BLE re-advertise gives
    * the iOS client a fresh session within a couple of seconds. */
   NVIC_SystemReset();
 
