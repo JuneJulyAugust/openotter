@@ -167,27 +167,23 @@ int main(void) {
    * BlueNRG stack and SVCCTL are already up. */
   BLE_Tof_Init();
 
-  /* Configure the MPU's hardware no-access region at the stack bottom.
-   * Any push that crosses into this 32-byte band traps as MemManage
-   * on the offending instruction itself — caught instantly with a
-   * useful faulting PC, not on the next sentinel poll. Must run before
-   * the sentinel below: the sentinel sits ABOVE the MPU region inside
-   * still-usable stack and continues to act as a backup detector for
-   * the slower-growing patterns the MPU might miss across context
-   * switches. (None on this firmware, but the layered design hurts
-   * nothing.) */
-  FwMpu_Init();
-
   /* Stamp the stack-bottom sentinel BEFORE the main loop starts pushing
    * frames. If recursion or a deep call chain ever overwrites it, the
    * check below catches the corruption before it manifests as something
    * harder to triage. */
   FwStackGuard_Init();
 
-  /* Start the independent watchdog AFTER all init paths have run. From this
-   * point on, any main-loop iteration that takes longer than ~2 s reboots
-   * the chip — last-resort recovery from a hung BLE stack, blocked I²C
-   * transaction, or any other stuck-loop bug. */
+  /* Configure the MPU's hardware no-access region immediately below the
+   * stack sentinel. Any push past the configured stack bottom traps as
+   * MemManage on the offending instruction; the sentinel remains readable
+   * for the cheap main-loop backup check below. */
+  FwMpu_Init();
+
+  /* Start the independent watchdog after fast startup init paths have run.
+   * The window is sized to tolerate lazy VL53L5CX boot from the main loop.
+   * From this point on, any main-loop iteration that exceeds the watchdog
+   * window reboots the chip — last-resort recovery from a hung BLE stack,
+   * blocked I²C transaction, or any other stuck-loop bug. */
   FwWatchdog_Init();
   /* USER CODE END 2 */
 
@@ -196,7 +192,7 @@ int main(void) {
   while (1) {
     /* Refresh the watchdog at the top of every iteration. If we never get
      * back here (e.g. BLE_App_Process or TofL5_Process spins forever), the
-     * IWDG fires within 2 s and resets the chip. */
+     * IWDG fires after its configured window and resets the chip. */
     FwWatchdog_Refresh();
 
     /* Cheap stack-overflow check (single mem read + compare). If the

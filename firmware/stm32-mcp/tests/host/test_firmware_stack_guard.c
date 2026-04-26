@@ -16,10 +16,10 @@ static void expect_eq_ptr(const char *label, uintptr_t got, uintptr_t want) {
 
 static void test_normal_address_subtraction(void) {
   /* Typical STM32L4 layout: RAM ends at 0x20018000 (96 KB at 0x20000000).
-   * Stack size 1 KB → bottom at 0x20017C00. */
-  expect_eq_ptr("96 KB RAM, 1 KB stack",
-                FwStackGuard_BottomAddress(0x20018000u, 0x400u),
-                0x20017C00u);
+   * Stack size 8 KB → bottom at 0x20016000. */
+  expect_eq_ptr("96 KB RAM, 8 KB stack",
+                FwStackGuard_BottomAddress(0x20018000u, 0x2000u),
+                0x20016000u);
 }
 
 static void test_zero_estack_returns_zero(void) {

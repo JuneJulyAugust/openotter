@@ -33,19 +33,32 @@ bool FwMpu_IsAligned(uintptr_t addr, uint32_t size_bytes) {
   return (addr & (size_bytes - 1u)) == 0u;
 }
 
+uintptr_t FwMpu_HardwareGuardAddress(uintptr_t estack_addr,
+                                     uintptr_t stack_size) {
+  if (estack_addr == 0u || stack_size == 0u) return 0u;
+  if (stack_size > estack_addr) return 0u;
+
+  uintptr_t stack_bottom = estack_addr - stack_size;
+  if (stack_bottom < FW_MPU_STACK_GUARD_SIZE) return 0u;
+  return stack_bottom - FW_MPU_STACK_GUARD_SIZE;
+}
+
 #ifndef HOST_TEST
 
 extern uint32_t _estack;
 extern uint32_t _Min_Stack_Size;
 
 void FwMpu_Init(void) {
-  /* Place the no-access guard at the bottom of the configured stack
-   * region. Stack grows down from _estack toward this address; any push
-   * that crosses into the guard triggers MemManage. */
-  uintptr_t guard_addr =
-      (uintptr_t)&_estack - (uintptr_t)&_Min_Stack_Size;
+  /* Place the no-access guard immediately below the sentinel word at the
+   * configured stack bottom. Stack grows down from _estack; a push past the
+   * sentinel crosses into this region and triggers MemManage. */
+  uintptr_t guard_addr = FwMpu_HardwareGuardAddress(
+      (uintptr_t)&_estack, (uintptr_t)&_Min_Stack_Size);
+  if (guard_addr == 0u) {
+    return;
+  }
 
-  /* The 1 KB stack region (0x400) at top of RAM lands on a 32-byte
+  /* The stack region at top of RAM lands the guard on a 32-byte
    * boundary, so the natural alignment requirement is satisfied. We
    * still verify in code; if alignment is off, skip MPU setup rather
    * than enable an incorrectly placed region. */

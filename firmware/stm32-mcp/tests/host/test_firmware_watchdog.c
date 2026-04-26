@@ -73,7 +73,7 @@ static void test_pick_prescaler_returns_zero_when_unrepresentable(void) {
 }
 
 static void test_default_timeout_is_in_safe_range(void) {
-  /* The default 2 s must always be representable on the real LSI clock,
+  /* The default timeout must always be representable on the real LSI clock,
    * otherwise FwWatchdog_Init silently falls back to the longest period
    * and the watchdog meaning shifts. */
   uint16_t p = FwWatchdog_PickPrescaler(FW_WATCHDOG_DEFAULT_TIMEOUT_MS,
@@ -85,18 +85,28 @@ static void test_default_timeout_is_in_safe_range(void) {
   expect_in_range("default timeout reload", r, 1u, 4095u);
 }
 
+static void test_default_timeout_covers_l5_boot_i2c_window(void) {
+  /* VL53L5CX firmware download can issue a single blocking I2C transfer with
+   * a 15 s timeout. The watchdog must not reset during that legal operation. */
+  expect_in_range("default timeout >= 20 s",
+                  FW_WATCHDOG_DEFAULT_TIMEOUT_MS,
+                  20000u,
+                  32760u);
+}
+
 static void test_round_trip_actual_timeout_close_to_requested(void) {
   /* The round-trip computed timeout (using the picked reload + prescaler)
-   * should match the requested 2 s within ±50 ms — i.e. better than 3 %
-   * margin. Catches off-by-one mistakes in the divider math. */
-  uint32_t want_ms = 2000u;
+   * should match the configured default within ±50 ms. Catches off-by-one
+   * mistakes in the divider math. */
+  uint32_t want_ms = FW_WATCHDOG_DEFAULT_TIMEOUT_MS;
   uint16_t prescaler = FwWatchdog_PickPrescaler(want_ms, FW_WATCHDOG_LSI_HZ);
   uint16_t reload    = FwWatchdog_ComputeReload(want_ms, FW_WATCHDOG_LSI_HZ,
                                                 prescaler);
   /* actual_ms = reload * prescaler * 1000 / lsi_hz */
   uint32_t actual_ms = (uint32_t)(((uint64_t)reload * prescaler * 1000u) /
                                   FW_WATCHDOG_LSI_HZ);
-  expect_in_range("actual ms vs 2000 ± 50", actual_ms, 1950u, 2050u);
+  expect_in_range("actual ms vs default ± 50",
+                  actual_ms, want_ms - 50u, want_ms + 50u);
 }
 
 int main(void) {
@@ -108,6 +118,7 @@ int main(void) {
   test_pick_prescaler_handles_short_timeout();
   test_pick_prescaler_returns_zero_when_unrepresentable();
   test_default_timeout_is_in_safe_range();
+  test_default_timeout_covers_l5_boot_i2c_window();
   test_round_trip_actual_timeout_close_to_requested();
   if (g_fails == 0) {
     printf("firmware_watchdog tests: OK\n");

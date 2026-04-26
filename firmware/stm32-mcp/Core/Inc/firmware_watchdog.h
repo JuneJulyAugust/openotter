@@ -8,10 +8,12 @@
  * stack hung, I²C blocked, ToF driver spinning), the IWDG fires within
  * the configured timeout and reboots into a clean state.
  *
- * Timeout sizing: ~2 seconds gives enough slack for the slowest documented
+ * Timeout sizing: ~20 seconds gives enough slack for the slowest documented
  * blocking operation (VL53L5CX firmware download — bounded to 15 s of
- * I²C work but happens during cold boot before the loop is ticking, so
- * not a refresh concern). Normal main-loop iterations are sub-millisecond.
+ * I²C work and may be triggered lazily from the main loop when Drive-mode
+ * safety config is first applied). Normal steady-state loop iterations are
+ * sub-millisecond, so this remains a last-resort recovery path rather than
+ * a loop-health monitor.
  *
  * Refresh policy: refresh once per main-loop iteration. If the loop stops
  * iterating, the IWDG resets.
@@ -33,9 +35,9 @@ extern "C" {
 /* LSI nominal frequency on STM32L4 = 32 kHz. */
 #define FW_WATCHDOG_LSI_HZ          32000u
 
-/* Default timeout. 2 s is comfortably above any normal loop iteration
- * (< 1 ms) and well below any operator-perceptible "vehicle is stuck". */
-#define FW_WATCHDOG_DEFAULT_TIMEOUT_MS  2000u
+/* Default timeout. Must exceed the VL53L5CX driver's largest blocking I2C
+ * transaction timeout (15 s) so legal sensor boot does not reset-loop. */
+#define FW_WATCHDOG_DEFAULT_TIMEOUT_MS  20000u
 
 /*
  * Pure helper: compute the IWDG reload value for a given timeout in

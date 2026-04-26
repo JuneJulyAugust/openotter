@@ -54,6 +54,19 @@ uint8_t FwMpu_EncodeSize(uint32_t size_bytes);
  */
 bool FwMpu_IsAligned(uintptr_t addr, uint32_t size_bytes);
 
+/*
+ * Compute the hardware no-access guard address for the stack layout.
+ *
+ * The sentinel lives at `estack_addr - stack_size`; the MPU guard sits
+ * immediately below it so sentinel init/check can still read and write
+ * the magic word while an overflow past the configured stack bottom
+ * traps in hardware.
+ *
+ * Returns 0 if the inputs would underflow.
+ */
+uintptr_t FwMpu_HardwareGuardAddress(uintptr_t estack_addr,
+                                     uintptr_t stack_size);
+
 #ifndef HOST_TEST
 /*
  * Configure an MPU region as no-access at the stack bottom, then enable
@@ -61,14 +74,9 @@ bool FwMpu_IsAligned(uintptr_t addr, uint32_t size_bytes);
  * guard region is delivered as MemManage rather than escalating directly
  * to HardFault.
  *
- * Call once near the start of main(), AFTER FwStackGuard_Init() (so
- * stamping the sentinel at the bottom of the stack still works — the
- * sentinel is at the lowest address of the still-usable stack, the MPU
- * region sits BELOW that as a hard tripwire).
- *
- * Wait — to keep the design simple, this implementation places the MPU
- * region at the TOP of the no-go zone and shrinks the usable stack
- * accordingly. See firmware_mpu.c for the exact layout.
+ * Call once near the start of main(), after the linker-provided symbols are
+ * available. The MPU guard sits below the sentinel word, so either call order
+ * relative to FwStackGuard_Init() is safe.
  */
 void FwMpu_Init(void);
 #endif

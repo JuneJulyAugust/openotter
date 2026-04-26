@@ -56,8 +56,8 @@ static void test_default_guard_size_constant(void) {
 
 static void test_alignment_check_matches_size(void) {
   /* 32-byte region needs 32-byte alignment (low 5 bits zero). */
-  expect_eq_bool("0x20017C00 aligned to 32",
-                 FwMpu_IsAligned(0x20017C00u, 32u), true);
+  expect_eq_bool("0x20016000 aligned to 32",
+                 FwMpu_IsAligned(0x20016000u, 32u), true);
   expect_eq_bool("0x20017C20 aligned to 32",
                  FwMpu_IsAligned(0x20017C20u, 32u), true);
   expect_eq_bool("0x20017C01 aligned to 32",
@@ -74,16 +74,33 @@ static void test_alignment_rejects_invalid_size(void) {
 }
 
 /* Regression: the actual stack-bottom address used by FwMpu_Init() in
- * the typical STM32L475 layout (96 KB RAM at 0x20000000, 1 KB stack at
+ * the typical STM32L475 layout (96 KB RAM at 0x20000000, 8 KB stack at
  * top) must satisfy the MPU's natural-alignment requirement. If a future
  * linker-script edit reduces _Min_Stack_Size to a non-32-byte multiple,
  * this assertion-by-test catches it on the host before the MPU is
  * silently skipped on the target. */
 static void test_real_stack_bottom_is_aligned(void) {
   uintptr_t estack = 0x20018000u;     /* end of 96 KB RAM */
-  uintptr_t stack_size = 0x400u;      /* current _Min_Stack_Size */
+  uintptr_t stack_size = 0x2000u;     /* current _Min_Stack_Size */
   uintptr_t guard_addr = estack - stack_size;
-  expect_eq_bool("0x20017C00 aligned to 32",
+  expect_eq_bool("0x20016000 aligned to 32",
+                 FwMpu_IsAligned(guard_addr, FW_MPU_STACK_GUARD_SIZE),
+                 true);
+}
+
+static void test_hardware_guard_sits_below_sentinel(void) {
+  uintptr_t estack = 0x20018000u;     /* end of 96 KB RAM */
+  uintptr_t stack_size = 0x2000u;     /* current _Min_Stack_Size */
+  uintptr_t sentinel_addr = estack - stack_size;
+  uintptr_t guard_addr = FwMpu_HardwareGuardAddress(estack, stack_size);
+
+  expect_eq_u("hardware guard below sentinel",
+              (uint32_t)guard_addr,
+              (uint32_t)(sentinel_addr - FW_MPU_STACK_GUARD_SIZE));
+  expect_eq_bool("hardware guard does not overlap sentinel",
+                 guard_addr + FW_MPU_STACK_GUARD_SIZE <= sentinel_addr,
+                 true);
+  expect_eq_bool("hardware guard aligned",
                  FwMpu_IsAligned(guard_addr, FW_MPU_STACK_GUARD_SIZE),
                  true);
 }
@@ -96,6 +113,7 @@ int main(void) {
   test_alignment_check_matches_size();
   test_alignment_rejects_invalid_size();
   test_real_stack_bottom_is_aligned();
+  test_hardware_guard_sits_below_sentinel();
   if (g_fails == 0) {
     printf("firmware_mpu tests: OK\n");
     return 0;
