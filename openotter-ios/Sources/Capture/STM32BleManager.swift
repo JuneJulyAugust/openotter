@@ -2,15 +2,10 @@ import Foundation
 import CoreBluetooth
 import Combine
 
-public enum STM32BleStatus: String {
-    case disconnected = "Disconnected"
-    case scanning = "Scanning"
-    case connecting = "Connecting"
-    case discovering = "Discovering"
-    case connected = "Connected"
-    case unauthorized = "Unauthorized"
-    case poweredOff = "Bluetooth Off"
-}
+/// Backwards-compatible alias. `BleConnectionStatus` is the canonical
+/// type shared across all BLE managers. Existing call sites that
+/// reference `STM32BleStatus` keep compiling without change.
+public typealias STM32BleStatus = BleConnectionStatus
 
 /// Manages CoreBluetooth connection to the STM32 OPENOTTER-MCP BLE peripheral.
 /// Sends steering + throttle commands as packed int16_t pairs (4 bytes).

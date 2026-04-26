@@ -2,15 +2,10 @@ import Foundation
 import CoreBluetooth
 import Combine
 
-public enum ESCBleStatus: String {
-    case disconnected = "Disconnected"
-    case scanning = "Scanning"
-    case connecting = "Connecting"
-    case discovering = "Discovering"
-    case connected = "Connected"
-    case unauthorized = "Unauthorized"
-    case poweredOff = "Bluetooth Off"
-}
+/// Backwards-compatible alias. `BleConnectionStatus` is the canonical
+/// type shared across all BLE managers. Existing call sites that
+/// reference `ESCBleStatus` keep compiling without change.
+public typealias ESCBleStatus = BleConnectionStatus
 
 public struct ESCTelemetry {
     public let rpm: Int
@@ -169,6 +164,21 @@ extension ESCBleManager: CBCentralManagerDelegate {
         cancelTimers()
         scan() // Re-scan
     }
+
+    /// Recover from a connection attempt that failed mid-handshake. Without
+    /// this delegate, `status` would stay `.connecting` forever and
+    /// `start()` would refuse to re-scan because of the `status == .disconnected`
+    /// guard. Mirror the disconnect path: clear state, then re-scan.
+    public func centralManager(_ central: CBCentralManager,
+                               didFailToConnect peripheral: CBPeripheral,
+                               error: Error?) {
+        self.peripheral = nil
+        self.writeChar = nil
+        self.notifyChar = nil
+        cancelTimers()
+        status = .disconnected
+        scan()
+    }
 }
 
 extension ESCBleManager: CBPeripheralDelegate {
@@ -201,7 +211,7 @@ extension ESCBleManager: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic.uuid == targetNotify, let data = characteristic.value else { return }
 
-        if let packet = TelemetryPacket(data) {
+        if let packet = ESCTelemetryPacket(data) {
             messageCount += 1
             let freq = updateFrequency()
 
@@ -225,53 +235,5 @@ extension ESCBleManager: CBPeripheralDelegate {
     }
 }
 
-// Internal packet parsing logic ported from esc_app.swift
-private struct TelemetryPacket {
-    let escTemperatureC: Double
-    let motorTemperatureC: Double
-    let voltageV: Double
-    let rpm: Int
-
-    init?(_ data: Data, poleCount: Int = 4) {
-        let bytes = [UInt8](data)
-        guard bytes.count == 79 else { return nil }
-        guard bytes[0] == 0x02, bytes[1] == 0x4A, bytes[2] == 0x04, bytes[3] == 0x01 else { return nil }
-
-        let payload = Array(bytes[2..<(bytes.count - 3)])
-        let expectedChecksum = (UInt16(bytes[bytes.count - 3]) << 8) | UInt16(bytes[bytes.count - 2])
-        guard Self.crc16Xmodem(payload) == expectedChecksum else { return nil }
-
-        escTemperatureC = Double(Self.signed16BE(bytes[3], bytes[4])) / 10.0
-        motorTemperatureC = Double(Self.signed16BE(bytes[5], bytes[6])) / 10.0
-
-        let erpmRaw = Self.signed32BE(bytes[25], bytes[26], bytes[27], bytes[28])
-        rpm = Int((Double(erpmRaw) * 2.0) / Double(poleCount))
-
-        let voltageRaw = (UInt16(bytes[29]) << 8) | UInt16(bytes[30])
-        voltageV = Double(voltageRaw) / 10.0
-    }
-
-    private static func signed16BE(_ high: UInt8, _ low: UInt8) -> Int {
-        Int(Int16(bitPattern: (UInt16(high) << 8) | UInt16(low)))
-    }
-
-    private static func signed32BE(_ b0: UInt8, _ b1: UInt8, _ b2: UInt8, _ b3: UInt8) -> Int {
-        let value = (UInt32(b0) << 24) | (UInt32(b1) << 16) | (UInt32(b2) << 8) | UInt32(b3)
-        return Int(Int32(bitPattern: value))
-    }
-
-    private static func crc16Xmodem(_ bytes: [UInt8]) -> UInt16 {
-        var crc: UInt16 = 0
-        for byte in bytes {
-            crc ^= UInt16(byte) << 8
-            for _ in 0..<8 {
-                if crc & 0x8000 != 0 {
-                    crc = (crc &<< 1) ^ 0x1021
-                } else {
-                    crc = crc &<< 1
-                }
-            }
-        }
-        return crc
-    }
-}
+// Telemetry packet decoding lives in ESCTelemetryPacket.swift; CRC-16
+// XMODEM lives in Crc16Xmodem.swift. Both are unit-tested.

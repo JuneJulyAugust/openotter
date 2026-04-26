@@ -186,8 +186,8 @@ final class SelfDrivingViewModel: ObservableObject {
     }
 
     private func sendActuatorCommands(steering: Float, throttle: Float, velocity: Double? = nil) {
-        let sPWM = toPulseWidth(steering)
-        let tPWM = toPulseWidth(throttle)
+        let sPWM = PwmMapping.toPulseWidth(steering)
+        let tPWM = PwmMapping.toPulseWidth(throttle)
         let speed = velocity ?? self.escManager.telemetry?.speedMps ?? self.poseModel.arkitSpeedMps
         let v_mm_s = Int16(max(-32000.0, min(32000.0, speed * 1000.0)))
         stm32Manager.sendCommand(steeringMicros: sPWM,
@@ -198,8 +198,8 @@ final class SelfDrivingViewModel: ObservableObject {
     private func resetActuators() {
         steering = 0
         throttle = 0
-        stm32Manager.sendCommand(steeringMicros: 1500,
-                                 throttleMicros: 1500,
+        stm32Manager.sendCommand(steeringMicros: PwmMapping.neutralUs,
+                                 throttleMicros: PwmMapping.neutralUs,
                                  velocityMmPerSec: 0)
     }
 
@@ -223,10 +223,8 @@ final class SelfDrivingViewModel: ObservableObject {
         keepaliveTimer = nil
     }
 
-    private func toPulseWidth(_ normalized: Float) -> Int16 {
-        let clamped = max(-1.0, min(1.0, normalized))
-        return Int16(1500.0 + clamped * 500.0)
-    }
+    // PWM normalization moved to `PwmMapping.toPulseWidth(_:)` so iOS
+    // and firmware share the single source of truth for PWM bounds.
 }
 
 // MARK: - Car Status Provider

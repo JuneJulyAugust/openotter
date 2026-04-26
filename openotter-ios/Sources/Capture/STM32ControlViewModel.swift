@@ -63,12 +63,9 @@ class STM32ControlViewModel: ObservableObject {
     /// Must be well under the firmware's BLE_SAFETY_TIMEOUT_MS (1500ms).
     private static let keepaliveInterval: TimeInterval = 0.5
 
-    // MARK: - PWM Constants (must match firmware ble_app.h)
-
-    /// PWM range: 1000µs (min) to 2000µs (max), 1500µs = neutral
-    private static let pwmMin: Int16 = 1000
-    private static let pwmMax: Int16 = 2000
-    private static let pwmNeutral: Int16 = 1500
+    // PWM range constants now live in PwmMapping (Sources/Util/), shared
+    // with SelfDrivingViewModel and pinned to firmware/pwm_control.h via
+    // a unit test. References use PwmMapping.minUs / maxUs / neutralUs.
 
     // MARK: - Init
 
@@ -215,8 +212,8 @@ class STM32ControlViewModel: ObservableObject {
     private func sendNow() {
         debounceTimer?.invalidate()
         debounceTimer = nil
-        let steeringUs = Self.toPulseWidth(steering)
-        let throttleUs = Self.toPulseWidth(throttle)
+        let steeringUs = PwmMapping.toPulseWidth(steering)
+        let throttleUs = PwmMapping.toPulseWidth(throttle)
         let velocityMmPerSec = Int16(max(-32_000.0, min(32_000.0, currentSignedVelocityMps() * 1000.0)))
         bleManager.sendCommand(steeringMicros: steeringUs,
                                throttleMicros: throttleUs,
@@ -245,8 +242,8 @@ class STM32ControlViewModel: ObservableObject {
             repeats: true
         ) { [weak self] _ in
             guard let self, self.status == .connected else { return }
-            let steeringUs = Self.toPulseWidth(self.steering)
-            let throttleUs = Self.toPulseWidth(self.throttle)
+            let steeringUs = PwmMapping.toPulseWidth(self.steering)
+            let throttleUs = PwmMapping.toPulseWidth(self.throttle)
             let velocityMmPerSec = Int16(max(-32_000.0,
                                              min(32_000.0,
                                                  self.currentSignedVelocityMps() * 1000.0)))
@@ -324,12 +321,7 @@ class STM32ControlViewModel: ObservableObject {
             .assign(to: &$tofChunksReceived)
     }
 
-    /// Maps a normalized [-1, +1] control value to a PWM pulse width [1000, 2000] µs.
-    private static func toPulseWidth(_ normalized: Float) -> Int16 {
-        let clamped = max(-1.0, min(1.0, normalized))
-        let us = Float(pwmNeutral) + clamped * Float(pwmMax - pwmNeutral)
-        return Int16(us)
-    }
+    // PWM mapping moved to `PwmMapping.toPulseWidth(_:)` (Sources/Util/).
 
     func rearSafetyPresentation(now: Date = Date()) -> RearSafetyPresentation? {
         guard let rearSafetyEvent, let rearSafetyReceivedAt else { return nil }
