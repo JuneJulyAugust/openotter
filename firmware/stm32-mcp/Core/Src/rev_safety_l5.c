@@ -24,8 +24,20 @@ static int l5_status_is_valid(uint8_t status) {
   return status == 5u || status == 6u || status == 9u || status == 10u;
 }
 
+#define REV_SAFETY_L5_CLEAR_MIN_MM 4000u
+
 static int zone_is_valid(const Tof_Zone_t *zone) {
   return zone && zone->range_mm > 0u && l5_status_is_valid(zone->status);
+}
+
+static int zone_is_clear(const Tof_Zone_t *zone) {
+  if (!zone) return 0;
+  if (zone->range_mm == 0u && zone->flags == 0u) return 1;
+  return zone->status == 2u && zone->range_mm >= REV_SAFETY_L5_CLEAR_MIN_MM;
+}
+
+static int zone_is_near_invalid(const Tof_Zone_t *zone) {
+  return zone && !zone_is_valid(zone) && !zone_is_clear(zone);
 }
 
 RevSafetyTofReading_t RevSafetyL5_SelectReverseReading(const Tof_Frame_t *frame) {
@@ -49,6 +61,10 @@ RevSafetyTofReading_t RevSafetyL5_SelectReverseReading(const Tof_Frame_t *frame)
   if (min_mm > 0u) {
     out.tof_class = REV_SAFETY_TOF_VALID;
     out.depth_m = (float)min_mm / 1000.0f;
+  } else if ((zone_is_clear(a) || zone_is_clear(b)) &&
+             !zone_is_near_invalid(a) && !zone_is_near_invalid(b)) {
+    out.tof_class = REV_SAFETY_TOF_CLEAR;
+    out.depth_m = REV_SAFETY_TOF_CLEAR_DEPTH_M;
   }
   return out;
 }

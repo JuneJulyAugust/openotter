@@ -61,6 +61,10 @@ void BLE_Tof_Process(void);
  * Used from BLE event callbacks so VL53L5CX boot never blocks HCI handling. */
 void BLE_Tof_RequestSafetyConfig(void);
 
+/* True only after the Drive-mode VL53L5CX safety config has been applied
+ * successfully. Drive throttle is held neutral until this becomes true. */
+int  BLE_Tof_SafetyConfigReady(void);
+
 /* Force the ToF back to the safety-critical config (VL53L5CX 4x4 30 Hz).
  * Call when the MCU transitions from Debug back to Drive mode. */
 void BLE_Tof_EnforceSafetyConfig(void);

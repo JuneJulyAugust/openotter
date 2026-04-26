@@ -63,6 +63,28 @@ public struct ZoneReading: Equatable, Sendable {
     }
 }
 
+public enum VL53L5CXZoneClass: Equatable, Sendable {
+    case invalid
+    case clear
+    case valid
+}
+
+public extension ZoneReading {
+    /// Mirrors firmware reverse-safety handling for VL53L5CX zones.
+    /// Status 2 at/above the useful range, or a zero-range no-target cell,
+    /// means clear space rather than an obstacle or blind sensor.
+    var vl53l5cxClass: VL53L5CXZoneClass {
+        switch status.rawValue {
+        case 5, 6, 9, 10:
+            return rangeMm > 0 ? .valid : .invalid
+        case 2 where rangeMm >= 4000:
+            return .clear
+        default:
+            return rangeMm == 0 && flags == 0 ? .clear : .invalid
+        }
+    }
+}
+
 public struct TofConfig: Equatable, Sendable {
     public var sensor: TofSensorType
     /// Zones per side: 1, 3, or 4.

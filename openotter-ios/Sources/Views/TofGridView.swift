@@ -32,13 +32,15 @@ private struct TofCell: View {
             /* Always render the heat color. Previously we greyed out cells
              * with non-OK status, but the VL53L1 routinely flips to
              * SIG/PHA/? between scans and the resulting flash made the
-             * grid unreadable. Status is carried by the border style and
-             * the small status label below the range number instead. */
+             * grid unreadable. VL53L5CX also reports status 2 for far
+             * no-target cells, which should look clear, not like a near
+             * obstacle. Status is carried by the border style and the small
+             * status label below the range number instead. */
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(hue: hue, saturation: 0.85, brightness: 0.9))
 
             VStack(spacing: 2) {
-                Text("\(reading.rangeMm)")
+                Text("\(displayRangeMm)")
                     .font(.system(.caption, design: .monospaced).bold())
                     .foregroundColor(.white)
                     .shadow(color: .black.opacity(0.45), radius: 1, x: 0, y: 0)
@@ -66,14 +68,18 @@ private struct TofCell: View {
 
     private var isUsable: Bool {
         if sensor == .vl53l5cx {
-            return reading.status.rawValue == 5 || reading.status.rawValue == 9
+            return reading.vl53l5cxClass != .invalid
         }
         return reading.status.isUsable
     }
 
     private var statusLabel: String {
         if sensor == .vl53l5cx {
-            return isUsable ? "OK" : "\(reading.status.rawValue)"
+            switch reading.vl53l5cxClass {
+            case .valid: return "OK"
+            case .clear: return "CLR"
+            case .invalid: return "\(reading.status.rawValue)"
+            }
         }
         return reading.status.shortLabel
     }
@@ -94,9 +100,16 @@ private struct TofCell: View {
 
     private var hue: Double {
         let cap = max(maxRangeMm, 1)
-        let r = min(reading.rangeMm, cap)
+        let r = min(displayRangeMm, cap)
         // 0 mm → red (0.0); maxRangeMm → blue (~0.66).
         return Double(r) / Double(cap) * 0.66
+    }
+
+    private var displayRangeMm: UInt16 {
+        if sensor == .vl53l5cx && reading.vl53l5cxClass == .clear {
+            return maxRangeMm
+        }
+        return reading.rangeMm
     }
 
     private var borderColor: Color {

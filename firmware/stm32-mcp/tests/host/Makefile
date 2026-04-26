@@ -6,7 +6,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 
-TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l5_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
+TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy test_ble_drive_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l5_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test clean dirs
@@ -36,6 +36,9 @@ $(BUILD_DIR)/test_tof_l5_config: test_tof_l5_config.c ../../Core/Src/tof_l5_conf
 
 $(BUILD_DIR)/test_ble_tof_policy: test_ble_tof_policy.c ../../Core/Src/ble_tof_policy.c ../../Core/Inc/ble_tof_policy.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_ble_tof_policy.c ../../Core/Src/ble_tof_policy.c -o $@
+
+$(BUILD_DIR)/test_ble_drive_policy: test_ble_drive_policy.c ../../Core/Src/ble_drive_policy.c ../../Core/Inc/ble_drive_policy.h ../../Core/Inc/ble_tof_policy.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_ble_drive_policy.c ../../Core/Src/ble_drive_policy.c -o $@
 
 $(BUILD_DIR)/test_pwm_control: test_pwm_control.c ../../Core/Src/pwm_control.c ../../Core/Inc/pwm_control.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_pwm_control.c ../../Core/Src/pwm_control.c -o $@

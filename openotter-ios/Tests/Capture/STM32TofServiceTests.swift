@@ -58,6 +58,24 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertTrue(service.debugStreamingEnabledForTesting)
     }
 
+    func testVL53L5CXFarStatus2ClassifiesAsClear() {
+        XCTAssertEqual(ZoneReading(rangeMm: 4300,
+                                   status: VL53L1RangeStatus(raw: 2),
+                                   flags: 1).vl53l5cxClass,
+                       .clear)
+        XCTAssertEqual(ZoneReading(rangeMm: 0,
+                                   status: VL53L1RangeStatus(raw: 2),
+                                   flags: 0).vl53l5cxClass,
+                       .clear)
+    }
+
+    func testVL53L5CXNearStatus2StaysInvalid() {
+        XCTAssertEqual(ZoneReading(rangeMm: 1000,
+                                   status: VL53L1RangeStatus(raw: 2),
+                                   flags: 1).vl53l5cxClass,
+                       .invalid)
+    }
+
     func testParseV2FourByFourFrame() {
         let payload = makeV2Payload(layout: 4)
         let frame = STM32TofService.parseFrameV2(Data(payload))

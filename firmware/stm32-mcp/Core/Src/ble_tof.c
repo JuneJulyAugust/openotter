@@ -87,13 +87,24 @@ typedef struct {
   uint32_t chunks_failed;
   uint32_t snapshots_taken;
   uint8_t  safety_config_pending;
+  uint8_t  safety_config_ready;
+  uint8_t  was_connected;
+  uint32_t connected_tick;
+  uint32_t safety_config_retry_tick;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
 
-#define STATUS_REFRESH_MS  1000u
+#define STATUS_REFRESH_MS               1000u
+#define SAFETY_CONFIG_CONNECT_GRACE_MS  1000u
+#define SAFETY_CONFIG_RETRY_MS          3000u
 
 static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
+
+static int tick_reached(uint32_t now, uint32_t target)
+{
+  return (int32_t)(now - target) >= 0;
+}
 
 static void log_str(const char *s)
 {
@@ -276,6 +287,10 @@ int BLE_Tof_Init(void)
   s_tof.last_status_tick      = HAL_GetTick();
   s_tof.last_rate_window_tick = HAL_GetTick();
   s_tof.safety_config_pending = 1u;
+  s_tof.safety_config_ready   = 0u;
+  s_tof.was_connected         = 0u;
+  s_tof.connected_tick        = 0u;
+  s_tof.safety_config_retry_tick = 0u;
   publish_status();
   log_str("BLE_Tof ready\r\n");
   return 0;
@@ -284,18 +299,46 @@ int BLE_Tof_Init(void)
 void BLE_Tof_RequestSafetyConfig(void)
 {
   s_tof.safety_config_pending = 1u;
+  s_tof.safety_config_ready = 0u;
+  s_tof.safety_config_retry_tick = 0u;
+}
+
+int BLE_Tof_SafetyConfigReady(void)
+{
+  return s_tof.safety_config_ready != 0u &&
+         s_tof.safety_config_pending == 0u;
 }
 
 void BLE_Tof_Process(void)
 {
   uint32_t now = HAL_GetTick();
 
-  if (s_tof.safety_config_pending && BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
-    s_tof.safety_config_pending = 0u;
-    BLE_Tof_EnforceSafetyConfig();
+  if (!BLE_App_IsConnected()) {
+    s_tof.was_connected = 0u;
+    return;
   }
 
-  if (!BLE_App_IsConnected()) return;
+  if (!s_tof.was_connected) {
+    s_tof.was_connected = 1u;
+    s_tof.connected_tick = now;
+  }
+
+  if (s_tof.safety_config_pending && BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
+    uint8_t discovery_grace_done =
+        ((now - s_tof.connected_tick) >= SAFETY_CONFIG_CONNECT_GRACE_MS) ? 1u : 0u;
+    uint8_t retry_due =
+        (s_tof.safety_config_retry_tick == 0u ||
+         tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
+    if (discovery_grace_done && retry_due) {
+      s_tof.safety_config_pending = 0u;
+      BLE_Tof_EnforceSafetyConfig();
+      if (!s_tof.safety_config_ready) {
+        s_tof.safety_config_pending = 1u;
+        s_tof.safety_config_retry_tick =
+            HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
+      }
+    }
+  }
 
   if (!BLE_Tof_FrameStreamAllowed((uint8_t)BLE_App_GetMode())) {
     uint32_t since_status = now - s_tof.last_status_tick;
@@ -497,6 +540,7 @@ void BLE_Tof_EnforceSafetyConfig(void)
   if (rc == TOF_STATUS_OK) {
     s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
   }
+  s_tof.safety_config_ready = (rc == TOF_STATUS_OK) ? 1u : 0u;
   s_tof.last_error = (rc == TOF_STATUS_OK) ? 0 : (uint8_t)rc;
   s_tof.state      = (rc == TOF_STATUS_DRIVER_DEAD ||
                       rc == TOF_STATUS_NO_SENSOR ||

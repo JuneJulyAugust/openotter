@@ -147,6 +147,36 @@ static void test_l5_marginal_valid_codes(void) {
   }
 }
 
+static void test_l5_far_status2_is_clear_not_blind(void) {
+  Tof_Frame_t f = make_l5_4x4();
+  f.zones[9].range_mm = 0u;
+  f.zones[9].status = 2u;
+  f.zones[9].flags = 0u;          /* no target detected */
+  f.zones[10].range_mm = 4300u;
+  f.zones[10].status = 2u;        /* target phase at/out of range */
+  f.zones[10].flags = 1u;
+
+  RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
+
+  expect_class("far status2 clear", r.tof_class, REV_SAFETY_TOF_CLEAR);
+  expect_near("far status2 depth", r.depth_m, REV_SAFETY_TOF_CLEAR_DEPTH_M,
+              1e-6f);
+}
+
+static void test_l5_near_status2_stays_invalid(void) {
+  Tof_Frame_t f = make_l5_4x4();
+  f.zones[9].range_mm = 1000u;
+  f.zones[9].status = 2u;
+  f.zones[9].flags = 1u;
+  f.zones[10].range_mm = 0u;
+  f.zones[10].status = 2u;
+  f.zones[10].flags = 0u;
+
+  RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
+
+  expect_class("near status2 invalid", r.tof_class, REV_SAFETY_TOF_INVALID);
+}
+
 int main(void) {
   test_uses_min_of_row3_center_zones();
   test_uses_single_valid_selected_zone();
@@ -154,6 +184,8 @@ int main(void) {
   test_rejects_non_4x4_l5_frame();
   test_l1_valid_codes_are_invalid_on_l5();
   test_l5_marginal_valid_codes();
+  test_l5_far_status2_is_clear_not_blind();
+  test_l5_near_status2_stays_invalid();
   if (g_fails == 0) {
     printf("rev_safety_l5 tests: OK\n");
     return 0;

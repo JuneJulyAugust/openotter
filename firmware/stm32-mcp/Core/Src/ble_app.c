@@ -34,6 +34,7 @@
 #include "tof_l5.h"
 #include "ble_tof.h"
 #include "ble_command.h"
+#include "ble_drive_policy.h"
 #include "ble_gatt_layout.h"
 #include "ble_attr_dispatch.h"
 #include "pwm_control.h"
@@ -171,6 +172,7 @@ void BLE_App_Process(void) {
    *    supervisor is explicitly disarmed on the mode-edge in the event
    *    handler, not every tick. */
   RevSafetyEvent_t ev = {0};
+  bool drive_safety_ready = BLE_Tof_SafetyConfigReady() ? true : false;
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
     const Tof_Frame_t *f = TofL5_GetLatestFrame();
     bool new_frame = (f && f->seq != s_last_tof_seq);
@@ -178,7 +180,9 @@ void BLE_App_Process(void) {
 
     RevSafetyInput_t in = {0};
     in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
-    in.throttle_us  = bleCtx.desiredThrottleUs;
+    in.throttle_us  = drive_safety_ready
+        ? bleCtx.desiredThrottleUs
+        : (int16_t)PWM_NEUTRAL_US;
     in.frame_is_new = new_frame;
     if (f) {
       RevSafetyTofReading_t reading = RevSafetyL5_SelectReverseReading(f);
@@ -193,22 +197,26 @@ void BLE_App_Process(void) {
   /* 2. Compute final throttle (arbitration per spec §3.5). */
   int16_t steering_us = bleCtx.desiredSteeringUs;
   int16_t throttle_us = bleCtx.desiredThrottleUs;
+  int16_t neutral = (int16_t)PWM_NEUTRAL_US;
 
   if (bleCtx.mode == OPENOTTER_MODE_PARK) {
     /* Park is hard-neutral: any commanded throttle is dropped on the floor.
      * Steering still passes through so the operator can re-aim wheels. The
      * supervisor was disarmed on the mode-edge and is not run above, so no
      * BRAKE notifications can fire from this state. */
-    throttle_us = (int16_t)PWM_NEUTRAL_US;
+    throttle_us = neutral;
+  } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE &&
+             !BLE_DrivePolicy_ThrottleAllowed((uint8_t)bleCtx.mode,
+                                              drive_safety_ready)) {
+    throttle_us = neutral;
   } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE &&
              RevSafety_IsBraking(s_rev_ctx)) {
     /* Per-direction clamp: block reverse, let forward through. */
-    int16_t neutral = (int16_t)PWM_NEUTRAL_US;
     if (throttle_us < neutral) throttle_us = neutral;
   }
 
   if (watchdog_trip) {
-    throttle_us = (int16_t)PWM_NEUTRAL_US;
+    throttle_us = neutral;
     bleCtx.safetyTriggered = 1;
   }
 
