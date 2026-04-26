@@ -7,6 +7,34 @@ import Combine
 /// reference `STM32BleStatus` keep compiling without change.
 public typealias STM32BleStatus = BleConnectionStatus
 
+enum STM32ModeTransitionAction: Equatable {
+    case setDebugStreamingEnabled(Bool)
+    case armDebugStreamingAfterModeWriteAck
+    case writeMode(OperatingMode)
+}
+
+struct STM32ModeTransitionPolicy {
+    static func startActions(for mode: OperatingMode) -> [STM32ModeTransitionAction] {
+        switch mode {
+        case .debug:
+            return [.armDebugStreamingAfterModeWriteAck,
+                    .writeMode(.debug)]
+        case .drive:
+            return [.setDebugStreamingEnabled(false),
+                    .writeMode(.drive)]
+        case .park:
+            return [.setDebugStreamingEnabled(false),
+                    .writeMode(.park)]
+        }
+    }
+
+    static func shouldEnableDebugStreamingAfterModeAck(pendingEnable: Bool,
+                                                       requestedMode: OperatingMode,
+                                                       writeSucceeded: Bool) -> Bool {
+        pendingEnable && requestedMode == .debug && writeSucceeded
+    }
+}
+
 /// Manages CoreBluetooth connection to the STM32 OPENOTTER-MCP BLE peripheral.
 /// Sends steering + throttle commands as packed int16_t pairs (4 bytes).
 public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving {
@@ -55,6 +83,7 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
     private var tofStatusChar: CBCharacteristic?
     private var safetyEventGate = FirmwareSafetyEventGate()
     private var requestedOperatingMode: OperatingMode = .drive
+    private var enableDebugStreamingAfterModeAck = false
 
     private let targetDeviceName = "OPENOTTER-MCP"
 
@@ -88,19 +117,59 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
     /// state on the mode-edge and broadcasts a SAFE snapshot itself.
     public func setOperatingMode(_ mode: OperatingMode) {
         requestedOperatingMode = mode
-        STM32TofService.shared.setDebugStreamingEnabled(mode == .debug)
         let visibleEvent = safetyEventGate.setOperatingMode(mode)
         publishSafetyEvent(visibleEvent)
 
-        writeMode(mode)
+        applyOperatingModeTransition(mode)
     }
 
-    private func writeMode(_ mode: OperatingMode) {
-        guard let modeChar, let peripheral else { return }
-        let writeType: CBCharacteristicWriteType =
-            modeChar.properties.contains(.write)
-                ? .withResponse : .withoutResponse
+    private func applyOperatingModeTransition(_ mode: OperatingMode) {
+        for action in STM32ModeTransitionPolicy.startActions(for: mode) {
+            switch action {
+            case .setDebugStreamingEnabled(let enabled):
+                if !enabled {
+                    enableDebugStreamingAfterModeAck = false
+                }
+                STM32TofService.shared.setDebugStreamingEnabled(enabled)
+            case .armDebugStreamingAfterModeWriteAck:
+                enableDebugStreamingAfterModeAck = true
+            case .writeMode(let mode):
+                let result = writeMode(mode)
+                if mode == .debug,
+                   enableDebugStreamingAfterModeAck,
+                   result == .queuedWithoutResponse {
+                    enableDebugStreamingAfterModeAck = false
+                    STM32TofService.shared.setDebugStreamingEnabled(true)
+                }
+            }
+        }
+    }
+
+    private enum ModeWriteResult: Equatable {
+        case unavailable
+        case queuedWithResponse
+        case queuedWithoutResponse
+    }
+
+    @discardableResult
+    private func writeMode(_ mode: OperatingMode) -> ModeWriteResult {
+        guard let modeChar, let peripheral else { return .unavailable }
+        let usesResponse = modeChar.properties.contains(.write)
+        let writeType: CBCharacteristicWriteType = usesResponse ? .withResponse : .withoutResponse
         peripheral.writeValue(Data([mode.wireValue]), for: modeChar, type: writeType)
+        return usesResponse ? .queuedWithResponse : .queuedWithoutResponse
+    }
+
+    private func handleModeWriteAck(succeeded: Bool) {
+        if STM32ModeTransitionPolicy.shouldEnableDebugStreamingAfterModeAck(
+            pendingEnable: enableDebugStreamingAfterModeAck,
+            requestedMode: requestedOperatingMode,
+            writeSucceeded: succeeded) {
+            enableDebugStreamingAfterModeAck = false
+            STM32TofService.shared.setDebugStreamingEnabled(true)
+        } else if !succeeded || requestedOperatingMode != .debug {
+            enableDebugStreamingAfterModeAck = false
+        }
     }
 
     /// Send steering, throttle (pulse widths in µs) and measured velocity
@@ -139,8 +208,10 @@ public class STM32BleManager: NSObject, ObservableObject, OperatingModeReceiving
         tofConfigChar = nil
         tofFrameChar = nil
         tofStatusChar = nil
+        enableDebugStreamingAfterModeAck = false
         safetyEventGate.resetConnection()
         publishSafetyEvent(safetyEventGate.lastSafetyEvent)
+        STM32TofService.shared.setDebugStreamingEnabled(false)
         STM32TofService.shared.detach()
         status = .disconnected
     }
@@ -267,7 +338,7 @@ extension STM32BleManager: CBPeripheralDelegate {
                 case modeCharUUID:
                     modeChar = char
                     _ = safetyEventGate.setOperatingMode(requestedOperatingMode)
-                    writeMode(requestedOperatingMode)
+                    applyOperatingModeTransition(requestedOperatingMode)
                 default:
                     break
                 }
@@ -357,6 +428,9 @@ extension STM32BleManager: CBPeripheralDelegate {
         if characteristic.uuid == tofConfigCharUUID || characteristic.uuid == modeCharUUID {
             let errStr = error.map { "\($0)" } ?? "nil"
             NSLog("[TOF] write ack \(characteristic.uuid) error=\(errStr)")
+        }
+        if characteristic.uuid == modeCharUUID {
+            handleModeWriteAck(succeeded: error == nil)
         }
     }
 
