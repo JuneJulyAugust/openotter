@@ -44,6 +44,24 @@
 
 extern UART_HandleTypeDef huart1;
 
+#include <stdarg.h>
+static void app_log_fmt(const char *fmt, ...) {
+  char prefix[16];
+  int pn = snprintf(prefix, sizeof(prefix), "[%lu] ",
+                    (unsigned long)HAL_GetTick());
+  if (pn > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)prefix, (uint16_t)pn, 100);
+  }
+  char buf[160];
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (n > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
+}
+
 /* Private types -------------------------------------------------------------*/
 
 /** BLE Application context */
@@ -298,9 +316,7 @@ static void BLE_InitGATTService(void) {
                           0,
                           &bleCtx.cmdCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
-    char buf[64]; int n = snprintf(buf, sizeof(buf),
-        "BLE_App: add_char FE41 fail 0x%02X\r\n", (unsigned)ret);
-    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+    app_log_fmt("BLE_App: add_char FE41 fail 0x%02X\r\n", (unsigned)ret);
   }
 
   /*
@@ -314,9 +330,7 @@ static void BLE_InitGATTService(void) {
                           ATTR_PERMISSION_NONE, GATT_NOTIFY_ATTRIBUTE_WRITE, 10,
                           0, &bleCtx.statusCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
-    char buf[64]; int n = snprintf(buf, sizeof(buf),
-        "BLE_App: add_char FE42 fail 0x%02X\r\n", (unsigned)ret);
-    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+    app_log_fmt("BLE_App: add_char FE42 fail 0x%02X\r\n", (unsigned)ret);
   }
 
   /*
@@ -334,9 +348,7 @@ static void BLE_InitGATTService(void) {
                           0,
                           &bleCtx.safetyCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
-    char buf[64]; int n = snprintf(buf, sizeof(buf),
-        "BLE_App: add_char FE43 fail 0x%02X\r\n", (unsigned)ret);
-    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+    app_log_fmt("BLE_App: add_char FE43 fail 0x%02X\r\n", (unsigned)ret);
   }
 
   /* Seed a SAFE payload so a post-connect read returns sane bytes. */
@@ -360,9 +372,7 @@ static void BLE_InitGATTService(void) {
                           0,
                           &bleCtx.modeCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
-    char buf[64]; int n = snprintf(buf, sizeof(buf),
-        "BLE_App: add_char FE44 fail 0x%02X\r\n", (unsigned)ret);
-    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+    app_log_fmt("BLE_App: add_char FE44 fail 0x%02X\r\n", (unsigned)ret);
   }
   aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
                              &drive);
@@ -449,14 +459,8 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
               v == OPENOTTER_MODE_PARK) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
-            {
-              char b[80];
-              int n = snprintf(b, sizeof(b),
-                  "BLE mode_write prev=%u new=%u tick=%lu\r\n",
-                  (unsigned)prev, (unsigned)v,
-                  (unsigned long)HAL_GetTick());
-              HAL_UART_Transmit(&huart1, (uint8_t *)b, (uint16_t)n, 100);
-            }
+            app_log_fmt("BLE mode_write prev=%u new=%u\r\n",
+                        (unsigned)prev, (unsigned)v);
             if (prev != bleCtx.mode) {
               if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
                 /* (Debug|Park)→Drive: re-apply safety config and clear any
@@ -504,14 +508,8 @@ void SVCCTL_App_Notification(void *pckt) {
   switch (event_pckt->evt) {
   case EVT_DISCONN_COMPLETE: {
     evt_disconn_complete *disc = (evt_disconn_complete *)event_pckt->data;
-    {
-      char b[80];
-      int n = snprintf(b, sizeof(b),
-          "BLE disconnect handle=0x%04X reason=0x%02X tick=%lu\r\n",
-          (unsigned)disc->handle, (unsigned)disc->reason,
-          (unsigned long)HAL_GetTick());
-      HAL_UART_Transmit(&huart1, (uint8_t *)b, (uint16_t)n, 100);
-    }
+    app_log_fmt("BLE disconnect handle=0x%04X reason=0x%02X\r\n",
+                (unsigned)disc->handle, (unsigned)disc->reason);
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
@@ -537,13 +535,7 @@ void SVCCTL_App_Notification(void *pckt) {
       bleCtx.isConnected = 1;
       bleCtx.lastCommandTick = HAL_GetTick();
       bleCtx.safetyTriggered = 0;
-      {
-        char b[80];
-        int n = snprintf(b, sizeof(b),
-            "BLE connect handle=0x%04X tick=%lu\r\n",
-            (unsigned)conn->handle, (unsigned long)HAL_GetTick());
-        HAL_UART_Transmit(&huart1, (uint8_t *)b, (uint16_t)n, 100);
-      }
+      app_log_fmt("BLE connect handle=0x%04X\r\n", (unsigned)conn->handle);
     }
     break;
   }

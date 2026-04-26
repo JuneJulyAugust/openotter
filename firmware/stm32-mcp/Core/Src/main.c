@@ -91,8 +91,19 @@ static void MX_USB_OTG_FS_PCD_Init(void);
 
 static uint32_t s_boot_reset_flags;
 
+static void boot_log_prefix(void)
+{
+  char buf[16];
+  int n = snprintf(buf, sizeof(buf), "[%lu] ",
+                   (unsigned long)HAL_GetTick());
+  if (n > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
+}
+
 static void boot_log_str(const char *s)
 {
+  boot_log_prefix();
   HAL_UART_Transmit(&huart1, (const uint8_t *)s, (uint16_t)strlen(s), 100);
 }
 
@@ -104,6 +115,7 @@ static void boot_log_fmt(const char *fmt, ...)
   int n = vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
   if (n > 0) {
+    boot_log_prefix();
     HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
   }
 }

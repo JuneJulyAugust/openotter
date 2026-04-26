@@ -35,6 +35,16 @@ static Tof_Config_t g_cfg = {
     .budget_ms = 0,
 };
 
+static void log_prefix(void)
+{
+  char buf[16];
+  int n = snprintf(buf, sizeof(buf), "[%lu] ",
+                   (unsigned long)HAL_GetTick());
+  if (n > 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
+}
+
 static void log_fmt(const char *fmt, ...)
 {
   char buf[96];
@@ -43,6 +53,7 @@ static void log_fmt(const char *fmt, ...)
   int n = vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
   if (n > 0) {
+    log_prefix();
     HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
   }
 }
