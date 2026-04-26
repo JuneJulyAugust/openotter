@@ -8,6 +8,7 @@
 
 #include "main.h"
 #include "stm32l4xx_hal.h"
+#include "firmware_watchdog.h"
 #include "vl53l5cx_api.h"
 
 extern UART_HandleTypeDef huart1;
@@ -95,9 +96,17 @@ static uint32_t i2c_timeout_for_size(uint16_t size)
              : timeout;
 }
 
+/* The VL53L5CX firmware download issues hundreds of multi-KB I2C writes,
+ * each with up to a 15 s HAL timeout. Without refreshing the IWDG inside
+ * these platform callbacks the 20 s watchdog can fire mid-init. Refreshing
+ * at op start gives every blocking HAL_I2C_Mem_* call a fresh 20 s window;
+ * inside the ULD's WaitMs spin loop, GetTick is called every iteration, so
+ * refreshing there keeps the watchdog alive across long polls (e.g. the
+ * up-to-5 s stop_ranging poll). */
 static int32_t l5_i2c_write(uint16_t dev_addr, uint16_t reg_addr,
                             uint8_t *data, uint16_t size)
 {
+  FwWatchdog_Refresh();
   HAL_StatusTypeDef s = HAL_I2C_Mem_Write(&hi2c3, dev_addr, reg_addr,
                                           I2C_MEMADD_SIZE_16BIT, data, size,
                                           i2c_timeout_for_size(size));
@@ -107,6 +116,7 @@ static int32_t l5_i2c_write(uint16_t dev_addr, uint16_t reg_addr,
 static int32_t l5_i2c_read(uint16_t dev_addr, uint16_t reg_addr,
                            uint8_t *data, uint16_t size)
 {
+  FwWatchdog_Refresh();
   HAL_StatusTypeDef s = HAL_I2C_Mem_Read(&hi2c3, dev_addr, reg_addr,
                                          I2C_MEMADD_SIZE_16BIT, data, size,
                                          i2c_timeout_for_size(size));
@@ -115,6 +125,7 @@ static int32_t l5_i2c_read(uint16_t dev_addr, uint16_t reg_addr,
 
 static int32_t l5_get_tick(void)
 {
+  FwWatchdog_Refresh();
   return (int32_t)HAL_GetTick();
 }
 
