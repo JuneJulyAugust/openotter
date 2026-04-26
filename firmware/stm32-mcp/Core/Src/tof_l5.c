@@ -160,8 +160,21 @@ int TofL5_Init(void)
   g_dev.platform.Read = l5_i2c_read;
   g_dev.platform.GetTick = l5_get_tick;
 
+  /* ARD_A1 (I2C_RST) only resets the I2C interface state machine, NOT the
+   * sensor's ranging engine. After an STM32 NRST while the sensor was
+   * streaming, ranging continues and the next vl53l5cx_init firmware
+   * download races against active ranging interrupts inside the sensor.
+   * Issue a best-effort stop_ranging via the platform layer (only needs
+   * g_dev.platform populated) so the firmware download lands on an idle
+   * sensor. Cold boot returns an error here (sensor unconfigured) — that
+   * is fine, we ignore the result. */
+  uint8_t pre_stop = vl53l5cx_stop_ranging(&g_dev);
+  HAL_Delay(5);
+
   uint8_t alive = 0;
   uint8_t s = vl53l5cx_is_alive(&g_dev, &alive);
+  log_fmt("VL53L5 pre-stop=%u alive_rd=%u alive=%u\r\n",
+          (unsigned)pre_stop, (unsigned)s, (unsigned)alive);
   if (s != VL53L5CX_STATUS_OK || alive == 0u) {
     log_fmt("VL53L5 probe: no sensor addr=0x%02X\r\n",
             TOF_L5_DEFAULT_I2C_ADDR_8BIT);
