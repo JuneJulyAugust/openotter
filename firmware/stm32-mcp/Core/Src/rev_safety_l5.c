@@ -61,10 +61,21 @@ RevSafetyTofReading_t RevSafetyL5_SelectReverseReading(const Tof_Frame_t *frame)
   if (min_mm > 0u) {
     out.tof_class = REV_SAFETY_TOF_VALID;
     out.depth_m = (float)min_mm / 1000.0f;
-  } else if ((zone_is_clear(a) || zone_is_clear(b)) &&
-             !zone_is_near_invalid(a) && !zone_is_near_invalid(b)) {
+  } else if (zone_is_clear(a) && zone_is_clear(b)) {
+    /* Both selected zones confirmed no near target — safe to report CLEAR
+     * and let the supervisor smoothe its depth toward the synthetic 4 m
+     * value. */
     out.tof_class = REV_SAFETY_TOF_CLEAR;
     out.depth_m = REV_SAFETY_TOF_CLEAR_DEPTH_M;
+  } else if ((zone_is_clear(a) || zone_is_clear(b)) &&
+             (zone_is_near_invalid(a) || zone_is_near_invalid(b))) {
+    /* Mixed: one zone is solidly clear, the other saw a target but could
+     * not measure phase (status 2 with flags > 0, or any non-whitelisted
+     * status with non-zero range). Do NOT report CLEAR — the uncertain
+     * zone may be observing a real obstacle the supervisor must not
+     * average away. Do NOT report INVALID either, or the blind-frame
+     * counter would trip TOF_BLIND on benign single-zone flicker. */
+    out.tof_class = REV_SAFETY_TOF_PARTIAL;
   }
   return out;
 }

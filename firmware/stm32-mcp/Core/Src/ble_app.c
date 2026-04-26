@@ -186,8 +186,10 @@ void BLE_App_Process(void) {
     in.frame_is_new = new_frame;
     if (f) {
       RevSafetyTofReading_t reading = RevSafetyL5_SelectReverseReading(f);
-      in.zone_valid  = (reading.tof_class != REV_SAFETY_TOF_INVALID);
-      in.raw_depth_m = reading.depth_m;
+      in.zone_valid       = (reading.tof_class == REV_SAFETY_TOF_VALID ||
+                             reading.tof_class == REV_SAFETY_TOF_CLEAR);
+      in.frame_is_partial = (reading.tof_class == REV_SAFETY_TOF_PARTIAL);
+      in.raw_depth_m      = reading.depth_m;
     }
     in.driver_dead = TofL5_IsDriverDead() ? true : false;
     in.now_ms      = now;

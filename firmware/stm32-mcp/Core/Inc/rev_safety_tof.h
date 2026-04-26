@@ -12,6 +12,14 @@ typedef enum {
   REV_SAFETY_TOF_INVALID = 0,
   REV_SAFETY_TOF_CLEAR   = 1,
   REV_SAFETY_TOF_VALID   = 2,
+  /* Mixed read: one selected zone gave usable info (valid range or solidly
+   * clear at >= max range), the other reported "target present but phase
+   * could not be measured". The frame is not blind (sensor is alive and
+   * scanning) but it is not safe to update the smoothed depth either,
+   * because the uncertain zone may be observing a real obstacle. The
+   * supervisor must hold its previous reading: do not update smoothed,
+   * do not advance the blind-frame counter, do not reset valid_streak. */
+  REV_SAFETY_TOF_PARTIAL = 3,
 } RevSafetyTofClass_t;
 
 typedef struct {

@@ -78,11 +78,21 @@ static void test_uses_single_valid_selected_zone(void) {
 }
 
 static void test_rejects_invalid_selected_zones(void) {
+  /* Both selected zones gave usable info to neither pipeline:
+   *   zone 9  — undocumented status 14 with non-zero range and flags=1
+   *             ("target seen, status not in any valid set"): near_invalid.
+   *   zone 10 — status 4 with non-zero range and flags=1
+   *             ("target consistency failed"):                 near_invalid.
+   * Two near_invalid zones means the frame is genuinely blind and must
+   * trip the supervisor's blind-frame counter. This is distinct from the
+   * mixed PARTIAL case where one zone gave usable info. */
   Tof_Frame_t f = make_l5_4x4();
-  f.zones[9].range_mm = 0u;
+  f.zones[9].range_mm = 500u;
   f.zones[9].status = 14u;
+  f.zones[9].flags = 1u;
   f.zones[10].range_mm = 600u;
   f.zones[10].status = 4u;
+  f.zones[10].flags = 1u;
 
   RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
 
@@ -163,7 +173,12 @@ static void test_l5_far_status2_is_clear_not_blind(void) {
               1e-6f);
 }
 
-static void test_l5_near_status2_stays_invalid(void) {
+static void test_l5_near_status2_with_clear_other_is_partial(void) {
+  /* One selected zone observes a target it cannot phase-measure (status 2,
+   * range_mm > 0, flags > 0); the other reports no target. The frame must
+   * surface as PARTIAL so the supervisor holds its previous depth instead
+   * of either averaging the uncertain zone toward "clear" or burning a
+   * blind-frame slot on benign single-zone flicker. */
   Tof_Frame_t f = make_l5_4x4();
   f.zones[9].range_mm = 1000u;
   f.zones[9].status = 2u;
@@ -174,7 +189,44 @@ static void test_l5_near_status2_stays_invalid(void) {
 
   RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
 
-  expect_class("near status2 invalid", r.tof_class, REV_SAFETY_TOF_INVALID);
+  expect_class("near status2 + clear -> partial",
+               r.tof_class, REV_SAFETY_TOF_PARTIAL);
+}
+
+static void test_l5_both_zones_near_invalid_stays_invalid(void) {
+  /* Both selected zones are near_invalid (no usable distance in either).
+   * The frame is genuinely blind and must trip the blind-frame counter. */
+  Tof_Frame_t f = make_l5_4x4();
+  f.zones[9].range_mm = 0u;
+  f.zones[9].status = 2u;
+  f.zones[9].flags = 1u;
+  f.zones[10].range_mm = 800u;
+  f.zones[10].status = 2u;
+  f.zones[10].flags = 1u;
+
+  RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
+
+  expect_class("both near_invalid -> invalid",
+               r.tof_class, REV_SAFETY_TOF_INVALID);
+}
+
+static void test_l5_far_status2_with_near_invalid_other_is_partial(void) {
+  /* Mirror of the bench case in the screenshots: one zone solidly clear at
+   * >= 4 m, the other shows status 2 with range_mm > 0 and flags > 0
+   * (target present, phase unmeasurable). Must surface PARTIAL, not CLEAR
+   * — the uncertain zone may be observing a real near obstacle. */
+  Tof_Frame_t f = make_l5_4x4();
+  f.zones[9].range_mm = 4200u;
+  f.zones[9].status = 2u;
+  f.zones[9].flags = 0u;
+  f.zones[10].range_mm = 600u;
+  f.zones[10].status = 2u;
+  f.zones[10].flags = 1u;
+
+  RevSafetyTofReading_t r = RevSafetyL5_SelectReverseReading(&f);
+
+  expect_class("far clear + near_invalid -> partial",
+               r.tof_class, REV_SAFETY_TOF_PARTIAL);
 }
 
 int main(void) {
@@ -185,7 +237,9 @@ int main(void) {
   test_l1_valid_codes_are_invalid_on_l5();
   test_l5_marginal_valid_codes();
   test_l5_far_status2_is_clear_not_blind();
-  test_l5_near_status2_stays_invalid();
+  test_l5_near_status2_with_clear_other_is_partial();
+  test_l5_both_zones_near_invalid_stays_invalid();
+  test_l5_far_status2_with_near_invalid_other_is_partial();
   if (g_fails == 0) {
     printf("rev_safety_l5 tests: OK\n");
     return 0;

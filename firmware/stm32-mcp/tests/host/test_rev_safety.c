@@ -325,6 +325,114 @@ static void test_driver_dead_latches_until_reboot(void) {
   expect_cause("driver_dead clear cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
 }
 
+static void test_partial_frame_holds_smoothed_and_blind_counter(void) {
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  cfg.tof_blind_frames = 2;
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  /* Prime smoothed depth and arm the supervisor with a real obstacle
+   * reading at 0.30 m, reversing at 1 m/s (critical ~0.87 m -> BRAKE
+   * after EMA pulls smoothed below threshold). */
+  RevSafetyInput_t in = make_input(-1.0f, 1400, 0.30f, true, 100);
+  RevSafety_Tick(ctx, &in, &ev);
+  in.now_ms = 200;
+  RevSafety_Tick(ctx, &in, &ev);
+  in.now_ms = 300;
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("primed BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("primed cause obstacle", ev.cause, REV_SAFETY_CAUSE_OBSTACLE);
+  float smoothed_at_brake = ev.smoothed_depth_m;
+
+  /* Many partial frames: zone_valid=false, frame_is_partial=true. Must
+   * NOT update smoothed (would otherwise drift toward whatever raw_depth
+   * carries) and must NOT trip the blind counter (already braking, but
+   * verifies counter behavior). */
+  for (uint32_t t = 400; t <= 2000; t += 100) {
+    RevSafetyInput_t p = {0};
+    p.velocity_mps     = -1.0f;
+    p.throttle_us      = 1400;
+    p.raw_depth_m      = 99.0f;        /* must be ignored */
+    p.zone_valid       = false;
+    p.frame_is_partial = true;
+    p.frame_is_new     = true;
+    p.now_ms           = t;
+    RevSafety_Tick(ctx, &p, &ev);
+  }
+  expect_near("partial holds smoothed",
+              ev.smoothed_depth_m, smoothed_at_brake, 1e-6f);
+  expect_state("partial keeps BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("partial keeps OBSTACLE", ev.cause, REV_SAFETY_CAUSE_OBSTACLE);
+}
+
+static void test_partial_does_not_replace_blind_counter(void) {
+  /* Sequence: 1 invalid -> 1 partial -> 1 invalid. Without the partial
+   * exception this would still be 2 consecutive invalids and trip
+   * TOF_BLIND. With the partial exception the partial frame is neither
+   * "valid" (would reset the counter) nor "invalid" (would advance it):
+   * it preserves the current count, so the next invalid is the second
+   * and trips. The test pins that semantics. */
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  cfg.tof_blind_frames = 2;
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  RevSafetyInput_t in = make_input(-0.5f, 1400, 2.0f, true, 100);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("primed SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+
+  /* First invalid: count = 1, still SAFE (threshold 2). */
+  in = make_input(-0.5f, 1400, 0.0f, false, 200);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("after 1 invalid SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+
+  /* Partial frame in between: count must stay at 1. */
+  RevSafetyInput_t p = {0};
+  p.velocity_mps     = -0.5f;
+  p.throttle_us      = 1400;
+  p.zone_valid       = false;
+  p.frame_is_partial = true;
+  p.frame_is_new     = true;
+  p.now_ms           = 300;
+  RevSafety_Tick(ctx, &p, &ev);
+  expect_state("after partial SAFE", ev.state, REV_SAFETY_STATE_SAFE);
+
+  /* Second invalid: count = 2 -> BRAKE TOF_BLIND. */
+  in = make_input(-0.5f, 1400, 0.0f, false, 400);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_state("second invalid BRAKE", ev.state, REV_SAFETY_STATE_BRAKE);
+  expect_cause("second invalid cause", ev.cause, REV_SAFETY_CAUSE_TOF_BLIND);
+}
+
+static void test_partial_run_does_not_trip_frame_gap(void) {
+  /* PARTIAL frames are not VALID, but the sensor is alive and scanning,
+   * so they must refresh last_valid_frame_ms to keep FRAME_GAP from
+   * firing during a sustained partial run. */
+  RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
+  cfg.frame_gap_ms = 200;
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  RevSafetyInput_t in = make_input(-0.5f, 1400, 2.0f, true, 100);
+  RevSafety_Tick(ctx, &in, &ev);
+
+  /* Sustained partial frames every 50 ms for well past frame_gap_ms. */
+  for (uint32_t t = 150; t <= 2000; t += 50) {
+    RevSafetyInput_t p = {0};
+    p.velocity_mps     = -0.5f;
+    p.throttle_us      = 1400;
+    p.zone_valid       = false;
+    p.frame_is_partial = true;
+    p.frame_is_new     = true;
+    p.now_ms           = t;
+    RevSafety_Tick(ctx, &p, &ev);
+  }
+  expect_state("partial run no FRAME_GAP", ev.state, REV_SAFETY_STATE_SAFE);
+}
+
 int main(void) {
   test_critical_distance_reverse_table();
   test_critical_distance_zero_speed();
@@ -338,6 +446,9 @@ int main(void) {
   test_driver_dead_brakes();
   test_safe_transition_zeroes_snapshot_fields();
   test_driver_dead_latches_until_reboot();
+  test_partial_frame_holds_smoothed_and_blind_counter();
+  test_partial_does_not_replace_blind_counter();
+  test_partial_run_does_not_trip_frame_gap();
   if (g_fails == 0) {
     printf("rev_safety tests: OK\n");
     return 0;

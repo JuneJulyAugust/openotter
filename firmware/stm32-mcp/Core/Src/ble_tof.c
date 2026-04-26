@@ -88,15 +88,17 @@ typedef struct {
   uint32_t snapshots_taken;
   uint8_t  safety_config_pending;
   uint8_t  safety_config_ready;
-  uint8_t  was_connected;
-  uint32_t connected_tick;
   uint32_t safety_config_retry_tick;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
 
 #define STATUS_REFRESH_MS               1000u
-#define SAFETY_CONFIG_CONNECT_GRACE_MS  1000u
+/* Boot-time grace before the first VL53L5CX init runs. Keeps the multi-second
+ * blocking firmware download out of the earliest startup window where the
+ * BLE stack is still settling. Independent of BLE connection state — the
+ * sensor must come up whether or not the iOS app ever connects. */
+#define SAFETY_CONFIG_BOOT_GRACE_MS     1000u
 #define SAFETY_CONFIG_RETRY_MS          3000u
 
 static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
@@ -288,9 +290,10 @@ int BLE_Tof_Init(void)
   s_tof.last_rate_window_tick = HAL_GetTick();
   s_tof.safety_config_pending = 1u;
   s_tof.safety_config_ready   = 0u;
-  s_tof.was_connected         = 0u;
-  s_tof.connected_tick        = 0u;
-  s_tof.safety_config_retry_tick = 0u;
+  /* Defer the first init by the boot grace so it does not collide with
+   * the BLE stack's own startup. After this initial delay the L5 driver
+   * comes up regardless of BLE connection state. */
+  s_tof.safety_config_retry_tick = HAL_GetTick() + SAFETY_CONFIG_BOOT_GRACE_MS;
   publish_status();
   log_str("BLE_Tof ready\r\n");
   return 0;
@@ -313,32 +316,40 @@ void BLE_Tof_Process(void)
 {
   uint32_t now = HAL_GetTick();
 
-  if (!BLE_App_IsConnected()) {
-    s_tof.was_connected = 0u;
-    return;
-  }
-
-  if (!s_tof.was_connected) {
-    s_tof.was_connected = 1u;
-    s_tof.connected_tick = now;
-  }
-
-  if (s_tof.safety_config_pending && BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
-    uint8_t discovery_grace_done =
-        ((now - s_tof.connected_tick) >= SAFETY_CONFIG_CONNECT_GRACE_MS) ? 1u : 0u;
+  /* L5 driver init / safety config — runs regardless of BLE connection
+   * state so the reverse-safety sensor (and the LED2 frame heartbeat)
+   * comes up at boot whether or not the iOS app ever connects. The boot
+   * grace lives on safety_config_retry_tick (seeded in Init); subsequent
+   * retries also use that field. */
+  if (s_tof.safety_config_pending) {
     uint8_t retry_due =
         (s_tof.safety_config_retry_tick == 0u ||
          tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
-    if (discovery_grace_done && retry_due) {
-      s_tof.safety_config_pending = 0u;
-      BLE_Tof_EnforceSafetyConfig();
-      if (!s_tof.safety_config_ready) {
-        s_tof.safety_config_pending = 1u;
+    if (retry_due) {
+      if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
+        /* Drive: apply the full safety config (driver init + 4x4 30 Hz).
+         * Clears pending only on success; failure schedules a retry. */
+        s_tof.safety_config_pending = 0u;
+        BLE_Tof_EnforceSafetyConfig();
+        if (!s_tof.safety_config_ready) {
+          s_tof.safety_config_pending = 1u;
+          s_tof.safety_config_retry_tick =
+              HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
+        }
+      } else {
+        /* Debug/Park: only pre-init the VL53L5CX driver so the lazy init
+         * path inside apply_config_write does not block the BLE event
+         * handler with the multi-second sensor firmware download. Leave
+         * safety_config_pending = 1 so the next Drive-mode edge re-applies
+         * the safety config; throttle remains gated until then. */
+        (void)TofL5_EnsureInitialized();
         s_tof.safety_config_retry_tick =
             HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
       }
     }
   }
+
+  if (!BLE_App_IsConnected()) return;
 
   if (!BLE_Tof_FrameStreamAllowed((uint8_t)BLE_App_GetMode())) {
     uint32_t since_status = now - s_tof.last_status_tick;

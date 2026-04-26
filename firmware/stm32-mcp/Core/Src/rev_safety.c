@@ -184,6 +184,14 @@ void RevSafety_Tick(struct RevSafetyCtx *ctx,
     ctx->invalid_frame_count = 0;
     if (ctx->valid_streak < 0xFF) ctx->valid_streak++;
     ctx->last_valid_frame_ms = in->now_ms;
+  } else if (in->frame_is_new && in->frame_is_partial) {
+    /* One selected zone gave usable info, the other could not measure
+     * phase. Hold previous reading: do not update smoothed depth (the
+     * uncertain zone may be observing a real obstacle), do not advance
+     * the blind counter (sensor is alive and scanning), do not reset
+     * valid_streak. Just refresh last_valid_frame_ms so a partial run
+     * does not trigger FRAME_GAP. */
+    ctx->last_valid_frame_ms = in->now_ms;
   } else if (in->frame_is_new && !in->zone_valid) {
     if (ctx->invalid_frame_count < 0xFF) ctx->invalid_frame_count++;
     ctx->valid_streak = 0;

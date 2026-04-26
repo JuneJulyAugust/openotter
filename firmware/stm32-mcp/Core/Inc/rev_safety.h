@@ -41,8 +41,12 @@ typedef struct {
   float        velocity_mps;       /* signed; negative = reversing */
   int16_t      throttle_us;        /* commanded throttle pulse width */
   float        raw_depth_m;        /* center-zone range in meters; ignored if !zone_valid */
-  bool         zone_valid;         /* true when VL53L1 status == 0 */
+  bool         zone_valid;         /* true on VALID/CLEAR readings */
   bool         frame_is_new;       /* true when a new seq arrived this tick */
+  bool         frame_is_partial;   /* true when one selected zone could not
+                                      measure phase but the other gave data;
+                                      hold previous reading without touching
+                                      smoothed depth or blind counters */
   bool         driver_dead;        /* TofL1_ERR_DRIVER_DEAD latched */
   uint32_t     now_ms;             /* HAL_GetTick() or test clock */
 } RevSafetyInput_t;
