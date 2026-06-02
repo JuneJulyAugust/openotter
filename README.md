@@ -85,6 +85,9 @@ For deeper setup details, start with the component READMEs above.
 
 GitHub Actions runs the checks that can be proven in cloud CI:
 
+Workflows run on pull requests and on pushes to `main`. Feature branch pushes
+do not run a second copy of the same PR checks.
+
 | Workflow | Runs | Coverage |
 | --- | --- | --- |
 | Firmware Host Tests | HAL-free STM32 C unit tests on Ubuntu | `gcovr` text, XML, and HTML artifacts |

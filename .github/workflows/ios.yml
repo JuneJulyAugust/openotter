@@ -2,6 +2,8 @@ name: iOS Tests
 
 on:
   push:
+    branches:
+      - main
     paths:
       - ".github/workflows/ios.yml"
       - "openotter-ios/**"
@@ -21,6 +23,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -41,12 +45,17 @@ jobs:
         run: |
           mkdir -p .build/TestResults
           if [ -d .build/TestResults/openotter.xcresult ]; then
-            xcrun xccov view --report .build/TestResults/openotter.xcresult \
-              | tee .build/TestResults/coverage.txt
-            xcrun xccov view --report --json .build/TestResults/openotter.xcresult \
-              > .build/TestResults/coverage.json
+            if xcrun xccov view --report .build/TestResults/openotter.xcresult > .build/TestResults/coverage.txt; then
+              xcrun xccov view --report --json .build/TestResults/openotter.xcresult > .build/TestResults/coverage.json \
+                || echo "{}" > .build/TestResults/coverage.json
+            else
+              echo "Coverage report was not generated, likely because the build or test action failed before coverage was written." \
+                > .build/TestResults/coverage.txt
+              echo "{}" > .build/TestResults/coverage.json
+            fi
           else
             echo "No xcresult bundle found." | tee .build/TestResults/coverage.txt
+            echo "{}" > .build/TestResults/coverage.json
           fi
 
       - name: Add coverage summary

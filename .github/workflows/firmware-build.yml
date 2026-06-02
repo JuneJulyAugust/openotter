@@ -2,6 +2,8 @@ name: Firmware Target Build
 
 on:
   push:
+    branches:
+      - main
     paths:
       - ".github/workflows/firmware-build.yml"
       - "firmware/stm32-mcp/**"
