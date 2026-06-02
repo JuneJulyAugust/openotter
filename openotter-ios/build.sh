@@ -8,7 +8,8 @@ PROJECT_NAME="openotter"
 SCHEME="$PROJECT_NAME"
 CONFIG="${CONFIG:-Debug}"
 DERIVED_DATA="$SCRIPT_DIR/.build/DerivedData"
-BUNDLE_ID="${BUNDLE_ID:-com.openotter.app}"
+BUNDLE_ID="${BUNDLE_ID:-com.openotter-ios.app}"
+APP_VERSION="${APP_VERSION:-$(cat VERSION)}"
 
 usage() {
     cat <<EOF
@@ -31,6 +32,8 @@ Options:
 Environment:
   DEVICE_UDID       Device UDID (alternative to --device flag)
   CONFIG            Build configuration (default: Debug)
+  BUNDLE_ID         Product bundle identifier (default: com.openotter-ios.app)
+  APP_VERSION       Marketing version (default: contents of VERSION)
   SIMULATOR_NAME    Preferred test simulator name (default: iPhone 17)
   SIMULATOR_UDID    Exact test simulator UDID
   TEST_DESTINATION  Full xcodebuild test destination override
@@ -128,7 +131,7 @@ EOF
 
 cmd_generate() {
     echo "==> Generating Xcode project..."
-    export APP_VERSION=$(cat VERSION)
+    export APP_VERSION
     xcodegen generate
     echo "==> Done: $PROJECT_NAME.xcodeproj"
 }
@@ -153,6 +156,8 @@ cmd_build() {
         -destination "generic/platform=iOS" \
         -derivedDataPath "$DERIVED_DATA" \
         -allowProvisioningUpdates \
+        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+        MARKETING_VERSION="$APP_VERSION" \
         $team_arg \
         build 2>&1 | tee "$build_output" | tail -20; then
         if grep -qiE 'expired provisioning profile|profile has expired|invalid code signature|profile has not been explicitly trusted|0xe8008011|0x2712' "$build_output"; then
@@ -285,14 +290,16 @@ cmd_test() {
     destination="$(test_destination)"
 
     echo "==> Running tests on $destination..."
-    export APP_VERSION=$(cat VERSION)
+    export APP_VERSION
     local test_output
     test_output="$(mktemp)"
     if ! xcodebuild test \
         -project "$PROJECT_NAME.xcodeproj" \
         -scheme "$SCHEME" \
         -destination "$destination" \
-        -derivedDataPath "$DERIVED_DATA" 2>&1 | tee "$test_output"; then
+        -derivedDataPath "$DERIVED_DATA" \
+        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+        MARKETING_VERSION="$APP_VERSION" 2>&1 | tee "$test_output"; then
         if grep -qiE 'busy|failed preflight checks|FBSOpenApplicationServiceErrorDomain|Simulator device failed to launch' "$test_output"; then
             show_simulator_hint
         fi

@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "rev_safety_l8.h"
+#include "tof_l8_status.h"
 
 static int g_fails = 0;
 
@@ -62,6 +63,17 @@ static void test_uses_min_of_row3_center_zones(void) {
 
   expect_class("min class", r.tof_class, REV_SAFETY_TOF_VALID);
   expect_near("min depth", r.depth_m, 0.7f, 1e-6f);
+}
+
+static void test_status_validity_set_is_l8_specific(void) {
+  for (uint8_t status = 0u; status < 16u; ++status) {
+    int want = status == 5u || status == 6u ||
+               status == 9u || status == 10u;
+    if (TofL8_StatusIsRangeValid(status) != want) {
+      fprintf(stderr, "FAIL status %u validity mismatch\n", (unsigned)status);
+      g_fails++;
+    }
+  }
 }
 
 static void test_uses_single_valid_selected_zone(void) {
@@ -230,6 +242,7 @@ static void test_l8_far_status2_with_near_invalid_other_is_partial(void) {
 }
 
 int main(void) {
+  test_status_validity_set_is_l8_specific();
   test_uses_min_of_row3_center_zones();
   test_uses_single_valid_selected_zone();
   test_rejects_invalid_selected_zones();

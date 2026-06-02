@@ -40,11 +40,11 @@ Use the build script from the `openotter-ios` directory:
 ### Worktree Mode
 
 If the active feature branch lives in a git worktree while the repo root stays
-on `main`, build from the worktree checkout, not the root checkout. For this
-feature branch:
+on `main`, build from the worktree checkout, not the root checkout. For the
+active SATEL-VL53L8 feature branch:
 
 ```bash
-cd /Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/openotter-ios
+cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/openotter-ios
 ./build.sh generate
 ./build.sh test
 ```
@@ -73,8 +73,12 @@ The app version is defined in a single source of truth: `openotter-ios/VERSION`.
 
 To bump the version:
 1. Edit the `openotter-ios/VERSION` file.
-2. Run `./build.sh generate` to inject the new version into the Xcode project (`project.yml` sets `MARKETING_VERSION: ${APP_VERSION}`).
+2. Run `./build.sh generate` to refresh the Xcode project when project settings changed.
 3. The UI automatically reads the current version from the `Bundle` at runtime.
+
+`build.sh build`, `build.sh deploy`, and `build.sh test` also pass
+`MARKETING_VERSION` from `VERSION` into `xcodebuild`, so a stale generated
+project cannot accidentally deploy the previous app version.
 
 ## Notes
 

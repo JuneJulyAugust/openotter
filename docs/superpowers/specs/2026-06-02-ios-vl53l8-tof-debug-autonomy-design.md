@@ -7,6 +7,17 @@ STM32 debug ToF visualization work against VL53L8 frames first, then surface the
 same sensor health and rear safety information in autonomous mode. The design
 must leave one clear extension point for a future second VL53L8 sensor.
 
+## Release-Candidate Status
+
+As of 2026-06-02, the iOS app is prepared as `1.2.0` for more testing before
+merge and tag. The STM32 Control diagnostics path was deployed to the iPhone
+from the feature worktree and verified against the connected IOT01A1 plus one
+SATEL-VL53L8. The debug view rendered live VL53L8 ToF data without requiring an
+iOS protocol change.
+
+Autonomous-mode UI support for rear VL53L8 health is implemented, but the full
+vehicle-level autonomous validation remains intentionally pending.
+
 ## Current App Context
 
 The app already has the right physical boundaries:

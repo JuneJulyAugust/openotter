@@ -10,8 +10,19 @@
 
 ---
 
+## Release-Candidate Status
+
+- Version prepared: `openotter-ios` `1.2.0`.
+- Branch status: implemented and committed as a release candidate; not merged
+  or tagged yet.
+- Debug status: STM32 Control was deployed from the feature worktree and the
+  live VL53L8 ToF visualization worked against the connected IOT01A1.
+- Autonomous status: rear ToF health presentation is implemented; full
+  vehicle-level autonomous validation is still pending.
+
 ## Files
 
+- Modify: `openotter-ios/VERSION`
 - Modify: `openotter-ios/Sources/Capture/TofTypes.swift`
 - Modify: `openotter-ios/Sources/Capture/STM32TofService.swift`
 - Modify: `openotter-ios/Sources/Capture/STM32ControlViewModel.swift`
@@ -23,6 +34,9 @@
 - Modify: `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`
 - Create: `openotter-ios/Tests/Capture/TofHealthPresentationTests.swift`
 - Modify: `openotter-ios/Tests/Capture/STM32BleModeTransitionTests.swift`
+- Modify: `openotter-ios/build.sh`
+- Modify: `openotter-ios/project.yml`
+- Modify: `openotter-ios/README.md`
 - Modify: `openotter-ios/CHANGELOG.md`
 
 ## Task 1: Rename The iOS ToF Wire Model To VL53L8
@@ -297,7 +311,7 @@ Replace "Waiting for frame..." with mode-aware copy:
 Text(viewModel.firmwareMode == .debug ? "Waiting for VL53L8 frame..." : "Switch to Debug for depth frames")
 ```
 
-- [ ] **Step 4: Manual debug check**
+- [x] **Step 4: Manual debug check**
 
 Run the app on device after firmware is flashed:
 
@@ -314,8 +328,9 @@ Expected:
 - 8x8 frames render as an 8x8 grid at the capped rate;
 - FE63 status shows running and a non-zero scan rate.
 
-Status: not run in this session; requires a flashed STM32 and connected VL53L8
-hardware.
+Status: passed on 2026-06-02. The feature-worktree app deployed to the iPhone,
+entered STM32 Control, and rendered live VL53L8 ToF data from the flashed
+IOT01A1 plus one SATEL-VL53L8.
 
 ## Task 5: Add Rear ToF Health Presentation For Autonomous Mode
 
@@ -517,7 +532,9 @@ Expected:
 - FE63 health remains visible;
 - FE43 rear BRAKE overlay still appears when firmware reports rear safety brake.
 
-Status: not run in this session; requires a flashed STM32 and connected VL53L8
+Status: pending. The iOS rear ToF health presentation is implemented, but full
+vehicle-level autonomous validation still requires a controlled physical run
+after the release-candidate commit.
 hardware.
 
 ## Task 7: Document Future Two-Sensor Hook
@@ -561,46 +578,47 @@ Expected: tests pass.
 ## Task 8: Final Verification And Commit
 
 **Files:**
+- Modify: `openotter-ios/VERSION`
 - Modify: `openotter-ios/CHANGELOG.md`
+- Modify: `openotter-ios/build.sh`
+- Modify: `openotter-ios/project.yml`
 
 - [x] **Step 1: Add changelog entry**
 
-At the top of `openotter-ios/CHANGELOG.md`, add or extend an unreleased section
-with:
+Promote the iOS release-candidate changelog to `1.2.0`, bump `VERSION`, keep
+the worktree bundle identifier at `com.openotter-ios.app`, and pass
+`MARKETING_VERSION` from `VERSION` into `xcodebuild`.
 
-```markdown
-### Changed
-- Renamed the STM32 ToF debug path from VL53L5CX to VL53L8CX while preserving the FE61/FE62 wire value.
-- Updated autonomous HUD planning to surface rear VL53L8 health from firmware status notifications.
-```
-
-- [ ] **Step 2: Full iOS verification**
+- [x] **Step 2: Full iOS verification**
 
 Run:
 
 ```sh
 cd openotter-ios
 ./build.sh test
-./build.sh build
+./build.sh --release build
 ```
 
-Expected: tests and build pass.
+Expected: release build passes; full simulator suite either passes or records
+any residual failure clearly before commit.
 
-Status: partially complete. `xcodebuild build-for-testing` succeeded for the
-iOS test bundle. Focused ToF tests passed before the later HUD-only compact
-text edit. Focused autonomous health and mode tests passed after that edit.
-Full `test-without-building`, plus a final rerun attempt for
-`STM32TofServiceTests`, could not launch the simulator test runner because
-CoreSimulator reported `Busy ("Application failed preflight checks")`.
-`openotter-ios/build.sh build` reached provisioning input gathering, reported
-invalid Xcode account credentials in the keychain, then `xcodebuild` exited with
-segmentation fault `11`.
+Status: release device deploy passed on 2026-06-02 after the bundle identifier
+fix. Final release build also passed and the built app reported
+`CFBundleShortVersionString=1.2.0` and
+`CFBundleIdentifier=com.openotter-ios.app`.
 
-- [x] **Step 3: Commit**
+`./build.sh test` ran the full simulator suite with the same bundle/version
+overrides. It executed 200 tests with one residual failure in the existing
+Telegram agent test `AgentRuntimeTests.testUnknownCommandReturnHelp`. The
+VL53L8-relevant suites passed, including `STM32TofServiceTests`,
+`STM32BleModeTransitionTests`, `TofHealthPresentationTests`, and
+`FirmwareSafetyEventTests`.
+
+- [x] **Step 3: Commit release candidate**
 
 Run:
 
 ```sh
-git add openotter-ios docs/superpowers/specs/2026-06-02-ios-vl53l8-tof-debug-autonomy-design.md docs/superpowers/plans/2026-06-02-ios-vl53l8-tof-debug-autonomy.md
-git commit -m "docs: plan iOS VL53L8 ToF integration"
+git add openotter-ios docs/superpowers .ai-context firmware/stm32-mcp
+git commit -m "chore: prepare VL53L8 v1.2.0 release candidate"
 ```

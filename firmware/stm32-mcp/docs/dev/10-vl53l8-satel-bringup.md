@@ -8,6 +8,8 @@ VL53L1CB, and VL53L5CX are deprecated for this deployment path.
 - `docs/hardware/sensors/satel-vl53l8-schematic.pdf`
 - `docs/hardware/sensors/satel-vl53l8.pdf`
 - `docs/hardware/sensors/an5945-how-to-connect-the-satelvl53l8-to-an-stm32-nucleo64-board-stmicroelectronics.pdf`
+- ST-maintained STM32duino `VL53L8CX` SATEL wiring example, which confirms
+  `SPI_I2C_N` low for I2C mode and high for SPI mode.
 
 ## Finding J1 And J2 On The SATEL Board
 
@@ -42,7 +44,7 @@ are the `J1` pads by physical position:
 
 | J2 pin | Signal | Use in this project |
 | --- | --- | --- |
-| 1 | `EXT_SPI_I2C_N` | Tie high to 3V3 for I2C mode |
+| 1 | `EXT_SPI_I2C_N` | Tie low to GND for I2C mode |
 | 2 | `EXT_LPn` | Optional host reset/enable control |
 | 3 | `EXT_NCS` | SPI chip-select; unused for I2C |
 | 4 | `EXT_MISO` | SPI MISO; unused for I2C |
@@ -64,13 +66,16 @@ is used, because the carrier provides the required regulators and level shifters
 The full SATEL carrier board expects two different kinds of connections:
 
 - one power input: IOT01A1 5V to `J2` pin 11 `EXT_5V0`;
-- 3.3 V logic highs: IOT01A1 3V3 to `J2` pin 1 `EXT_SPI_I2C_N`
-  and `J2` pin 7 `EXT_PWR_EN`;
+- one mode-select low: IOT01A1 GND to `J2` pin 1 `EXT_SPI_I2C_N`
+  for I2C mode;
+- one 3.3 V logic high: IOT01A1 3V3 to `J2` pin 7 `EXT_PWR_EN`;
 - 3.3 V open-drain I2C signals: A5/SCL and A4/SDA;
 - common ground.
 
 Do not move these rails around:
 
+- 3V3 on `J2` pin 1 `EXT_SPI_I2C_N` selects the SPI-side mode; for the
+  I2C wiring in this project it should be tied to GND.
 - 5V on `J2` pin 1 `EXT_SPI_I2C_N` is a logic over-voltage risk.
 - 3V3 or 5V on `J2` pin 10 `EXT_1V8` can over-voltage a low-voltage rail.
 - 3V3 or 5V on `J2` pin 8 `EXT_IOVDD` can over-voltage the sensor I/O rail.
@@ -97,7 +102,7 @@ not fully correct.
 
 | Current connection | Check | Required correction |
 | --- | --- | --- |
-| IOT01A1 3V3 -> pin 11 `SPI_I2C_n` | Incorrect. J2 pin 11 is `EXT_5V0`, not `SPI_I2C_N`. 3V3 there is not the intended 5V regulator input and does not select I2C mode. | Move 3V3 to J2 pin 1 `EXT_SPI_I2C_N` and J2 pin 7 `EXT_PWR_EN`; move 5V to J2 pin 11 `EXT_5V0`. |
+| IOT01A1 3V3 -> pin 11 `SPI_I2C_n` | Incorrect. J2 pin 11 is `EXT_5V0`, not `SPI_I2C_N`. 3V3 there is not the intended 5V regulator input and does not select I2C mode. | Move 5V to J2 pin 11 `EXT_5V0`; tie J2 pin 1 `EXT_SPI_I2C_N` to GND for I2C mode; tie J2 pin 7 `EXT_PWR_EN` to 3V3. |
 | IOT01A1 5V -> pin 1 | Dangerous. J2 pin 1 is `EXT_SPI_I2C_N`, a logic input, not a 5V power input. | Move 5V to J2 pin 11 `EXT_5V0`. |
 | IOT01A1 A5 -> pin 6 `MCLK_SCL` | Correct. | Keep J2 pin 6 `EXT_MCLK_SCL`. |
 | IOT01A1 A4 -> pin 7 `MOSI_SDA` | Incorrect. J2 pin 7 is `EXT_PWR_EN`, not SDA. | Move A4 / PC1 to J2 pin 5 `EXT_MOSI_SDA`; tie J2 pin 7 high to 3V3. |
@@ -110,7 +115,7 @@ not fully correct.
 | IOT01A1 | MCU pin | SATEL-VL53L8 | Purpose |
 | --- | --- | --- | --- |
 | 5V | board 5V | J2 pin 11 `EXT_5V0` | SATEL regulator input |
-| 3V3 | board 3V3 | J2 pin 1 `EXT_SPI_I2C_N` | Select I2C mode |
+| GND | board GND | J2 pin 1 `EXT_SPI_I2C_N` | Select I2C mode |
 | 3V3 | board 3V3 | J2 pin 7 `EXT_PWR_EN` | Enable SATEL regulators |
 | A5 | PC0 / I2C3_SCL | J2 pin 6 `EXT_MCLK_SCL` | I2C clock |
 | A4 | PC1 / I2C3_SDA | J2 pin 5 `EXT_MOSI_SDA` | I2C data |
@@ -118,7 +123,7 @@ not fully correct.
 | A1 | PC4 | J2 pin 2 `EXT_LPn` | Sensor low-power/reset control |
 | GND | GND | J1 bottom square pad GND or SATEL GND | Common ground |
 
-`SPI_I2C_N` must be high for I2C mode. `PWR_EN` should be high for the full
+`SPI_I2C_N` must be low for I2C mode. `PWR_EN` should be high for the full
 SATEL board regulators unless the board assembly already straps it high.
 
 ## Connection Diagrams
@@ -144,7 +149,7 @@ J2, 11-pin header
     pin  4  EXT_MISO      <- DO NOT WIRE
     pin  3  EXT_NCS       <- DO NOT WIRE
     pin  2  EXT_LPn       <- IOT01A1 A1 / PC4
-    pin  1  EXT_SPI_I2C_N <- IOT01A1 3V3
+    pin  1  EXT_SPI_I2C_N <- IOT01A1 GND
             square pad
 
 J1, 3-pad header
@@ -180,7 +185,7 @@ flowchart LR
     end
 
     I5V -->|"power input"| P11
-    I3V3 -->|"select I2C mode"| P1
+    IGND -->|"select I2C mode"| P1
     I3V3 -->|"enable regulators"| P7
     IA5 -->|"I2C clock"| P6
     IA4 -->|"I2C data"| P5
@@ -237,8 +242,8 @@ flowchart LR
 
     I5V --> R5V
     I5V --> F5V
-    I3V3 --> R3V3MODE
-    I3V3 --> F3V3MODE
+    IGND --> R3V3MODE
+    IGND --> F3V3MODE
     I3V3 --> R3V3PWR
     I3V3 --> F3V3PWR
     IGND --> RGND
@@ -279,7 +284,7 @@ firmware can boot and re-address them one at a time.
 | `EXT_MCLK_SCL` | Shared A5 / PC0 | Shared A5 / PC0 |
 | `EXT_MOSI_SDA` | Shared A4 / PC1 | Shared A4 / PC1 |
 | `EXT_5V0` | Shared 5V -> J2 pin 11 | Shared 5V -> J2 pin 11 |
-| `EXT_SPI_I2C_N` | Shared 3V3 | Shared 3V3 |
+| `EXT_SPI_I2C_N` | Shared GND | Shared GND |
 | `EXT_PWR_EN` | Shared 3V3 | Shared 3V3 |
 | GND | Shared GND | Shared GND |
 | `EXT_LPn` | Dedicated A1 / PC4 | Dedicated A0 / PC5 or D8 / PB2 |
@@ -302,7 +307,7 @@ only one is powered.
 1. Power off the IOT01A1 before changing wires.
 2. Wire according to the corrected one-sensor table.
 3. Confirm SATEL J2 pin 11 has 5V relative to GND.
-4. Confirm J2 pin 1 and J2 pin 7 are high at 3V3.
+4. Confirm J2 pin 1 is at GND and J2 pin 7 is high at 3V3.
 5. Confirm J2 pin 10 `EXT_1V8` and J2 pin 8 `EXT_IOVDD` have no external
    IOT01A1 wire attached.
 6. Confirm A5/SCL and A4/SDA are not swapped.
@@ -310,3 +315,203 @@ only one is powered.
 8. Watch UART1 for a `VL53L8` probe line.
 9. If the probe fails, check `PWR_EN`, ground, SCL/SDA order, and whether
    `LPn` is held low.
+
+## Firmware Debug Workflow
+
+Use the ST-LINK USB connector on the IOT01A1 for both flashing and serial
+logs. Do not power the SATEL board until the firmware is flashed and the UART
+monitor is ready; that keeps the first sensor boot sequence visible.
+
+### Build And Flash From The Feature Worktree
+
+Install local vendor dependencies first. The STM32 HAL and VL53L8 Ultra Lite
+Driver are intentionally not tracked in git:
+
+```bash
+cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp
+./scripts/fetch-deps.sh --vl53l8cx-path /path/to/extracted/STSW-IMG040
+```
+
+Then build and flash:
+
+```bash
+cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp
+./build.sh all
+```
+
+On Apple Silicon, if `STM32_Programmer_CLI` exits with:
+
+```text
+Incompatible processor. This Qt build requires the following features:
+    neon
+```
+
+use the x86_64 slice through Rosetta:
+
+```bash
+arch -x86_64 /opt/ST/STM32CubeCLT_1.21.0/STM32CubeProgrammer/bin/STM32_Programmer_CLI \
+  --connect port=SWD reset=SWrst \
+  --download build/Debug/stm32-mcp.elf \
+  --verify \
+  --go
+```
+
+If the firmware is already built, flash only:
+
+```bash
+cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp
+./build.sh flash
+```
+
+### Open The ST-LINK Serial Log On macOS
+
+Find the virtual serial device:
+
+```bash
+ls /dev/cu.usbmodem*
+```
+
+Open it at 115200 8N1:
+
+```bash
+screen /dev/cu.usbmodemXXXX 115200
+```
+
+To exit `screen`, press `Ctrl-A`, then `Ctrl-\`, then confirm.
+
+### Expected Logs Before SATEL Power
+
+With only the IOT01A1 powered, the firmware should boot and retry the sensor
+path. You should see lines like:
+
+```text
+[1000] BLE_Tof safety_config fire mode=0 tick=1000
+[1000] VL53L8 init phase=gpio tick=1000
+[1012] VL53L8 init phase=is_alive
+[1018] VL53L8 probe: no sensor addr=0x52
+```
+
+That is expected before the SATEL board has power. It proves the firmware is
+alive, the lazy VL53L8 bring-up path is running, and failures are observable.
+
+### Expected Logs After SATEL Power
+
+After applying the corrected wiring and powering the SATEL board, the retry path
+should eventually reach firmware download, configuration, and frame logs:
+
+```text
+[4000] VL53L8 init phase=is_alive
+[4010] VL53L8 pre-stop=... alive_rd=0 alive=1 tick=4010
+[4010] VL53L8 init phase=fw_download tick=4010
+[9000] VL53L8 init phase=fw_done tick=9000
+[9020] VL53L8 stream start layout=4 zones=16 hz=30 it=20 readBytes=...
+[9050] VL53L8 frame layout=4 zones=16 seq=1 fps=... targetZones=...
+```
+
+Drive mode uses `layout=4` because reverse safety intentionally runs the sensor
+as a 4x4, 30 Hz safety input.
+
+`fps` is the number of frames received since the previous one-second frame log.
+For the 4x4 safety configuration, expect roughly `29` to `30` after the ST
+driver output list is trimmed to target count, distance, and target status in
+`cmake/stm32cubemx/CMakeLists.txt`.
+
+### Proving 8x8 Depth Maps
+
+To prove the sensor is returning the full debug depth map, switch firmware to
+Debug mode from the iOS debug view and write the VL53L8 config with:
+
+| Field | Value |
+| --- | --- |
+| sensor | `VL53L8CX` |
+| layout | `8` |
+| profile | continuous |
+| frequency | `10 Hz` or `15 Hz` |
+| integration | `20 ms` |
+
+The serial proof is a frame line with `layout=8` and `zones=64`:
+
+```text
+[12345] VL53L8 stream start layout=8 zones=64 hz=10 it=20 readBytes=...
+[12420] VL53L8 frame layout=8 zones=64 seq=23 fps=11 targetZones=34 ...
+```
+
+The `z0`, `zLast`, and `center` values are millimeters copied from the current
+frame. Zero can be valid for a zone with no target; point the sensor at a flat
+object roughly 20-80 cm away to make several center values non-zero.
+
+The iOS debug view should also receive the same 64-zone frame over FE62. If
+serial shows `layout=8 zones=64` but iOS does not render the grid, debug the
+BLE frame reassembly path next. If serial never reaches `layout=8 zones=64`,
+debug the firmware config write or sensor path first.
+
+### Interpreting Frame Logs
+
+The frame summary prints only valid-range counts:
+
+```text
+VL53L8 frame layout=4 zones=16 seq=241 fps=29 targetZones=4 min=15 max=21 ...
+```
+
+`targetZones` counts zones with a target, a non-zero range, and a VL53L8CX
+valid status (`5`, `6`, `9`, or `10`). Status `4` means target consistency
+failed and must not be used as a safety distance.
+
+### Current Bench Evidence
+
+On 2026-06-02, the connected IOT01A1 and one SATEL-VL53L8 were verified over
+ST-LINK serial with the production safety firmware restored:
+
+```text
+VL53L8 frame layout=4 zones=16 seq=117 fps=29 targetZones=4 min=16 max=22 ...
+VL53L8 frame layout=4 zones=16 seq=466 fps=30 targetZones=4 min=17 max=22 ...
+```
+
+A temporary diagnostic firmware pass also proved full 8x8 frame acquisition:
+
+```text
+VL53L8 frame layout=8 zones=64 seq=23 fps=11 targetZones=34 min=4 max=21 ...
+VL53L8 frame layout=8 zones=64 seq=320 fps=11 targetZones=35 min=4 max=22 ...
+```
+
+Those logs prove the I2C wiring, LPn release, ST driver platform callbacks,
+firmware download, ranging start, and frame-copy path. An immediate MCU-only
+flash/reset later left the SATEL not acknowledging I2C (`alive=0`) until the
+board was physically disconnected and reconnected.
+
+After that USB power cycle, the production 4x4 safety firmware produced stable,
+plausible center depth values:
+
+```text
+VL53L8 frame layout=4 zones=16 seq=2008 fps=31 targetZones=16 min=1720 max=2177 center=1927,1979,1849,1910 cst=5,5,5,5
+VL53L8 frame layout=4 zones=16 seq=3338 fps=31 targetZones=16 min=177 max=321 center=315,293,307,284 cst=5,5,5,5
+```
+
+That final evidence proves the one-sensor driver and firmware path can acquire
+usable 4x4 depth maps. If a later flash shows `alive=0` again, power-cycle the
+SATEL/IOT01A1 and re-check the `LPn` wire before changing firmware.
+
+The compact 4x4 grid log prints each zone as:
+
+```text
+range_mm/status/target_count
+```
+
+Example:
+
+```text
+VL53L8 grid r/s/f: 0/4/1 0/4/1 0/4/1 17/5/1 | ...
+```
+
+In this example, `0/4/1` means the sensor saw something target-like but the
+range is invalid. `17/5/1` means status valid, but the measured distance is
+only 17 mm. If most valid zones stay at roughly 15-25 mm while the sensor is
+aimed at a wall or flat target 20-80 cm away, treat it as a physical/optical
+problem first:
+
+- remove any protective film, tape, foam, or cover from the VL53L8 aperture;
+- make sure the SATEL board is not face-down against the bench;
+- keep fingers and jumper wires away from the optical window;
+- aim the sensor at a matte flat target at least 20 cm away;
+- then re-check that the grid changes to larger valid ranges in the center
+  zones.

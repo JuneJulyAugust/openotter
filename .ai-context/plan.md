@@ -57,10 +57,11 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - Bot token is stored securely in the iOS Keychain.
 - Stub interfaces exist for future LLM interpreter, skill registry, and memory store.
 
-### 2.5 Current Release (v1.0.0)
+### 2.5 Current Release Candidate (v1.2.0)
 
 - The project was formally rebranded to OpenOtter on 2026-04-16.
-- Version 1.0.0 establishes the first complete iPhone + STM32 safety milestone: forward LiDAR safety, rear ToF firmware safety, Telegram Park/Drive control, Self Driving emergency UI parity, and repeatable simulator test workflow.
+- Version 1.0.0 established the first complete iPhone + STM32 safety milestone: forward LiDAR safety, rear ToF firmware safety, Telegram Park/Drive control, Self Driving emergency UI parity, and repeatable simulator test workflow.
+- Version 1.2.0 is prepared as a release candidate, not yet merged or tagged. It migrates the active STM32 ToF deployment path to one SATEL-VL53L8, fixes the SATEL wiring contract, verifies live 4x4 firmware frames on IOT01A1, and updates iOS diagnostics plus rear ToF health presentation.
 
 ## 3. Product Direction
 
@@ -80,6 +81,7 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 
 - Sensor, command, and telemetry timestamps are monotonic.
 - Safety overrides performance.
+- SATEL-VL53L8 wiring is safety-critical: `SPI_I2C_N` is tied low for I2C, `EXT_5V0` receives 5V, and `EXT_PWR_EN` receives 3V3.
 - Core math stays deterministic and testable.
 - Transport, protocol, and UI stay separated.
 - Coordinate transforms are explicit and validated.

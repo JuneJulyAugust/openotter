@@ -7,7 +7,7 @@ Receives steering and throttle commands over BLE and drives PWM outputs to contr
 
 - **Target MCU**: STM32L475 (Cortex-M4 with FPU)
 - **Board**: B-L475E-IOT01A (Discovery Kit IoT Node)
-- **Current Version**: 1.0.0
+- **Current Version**: 1.2.0
 - **Framework**: STM32Cube HAL + BlueNRG-MS BLE middleware
 - **BLE Module**: SPBTLE-RF (BlueNRG-MS) via SPI3
 

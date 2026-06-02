@@ -32,6 +32,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-06-02 - SATEL-VL53L8 v1.2.0 Release Candidate
+
+- **Context:** Moving the STM32 deployment ToF path from VL53L1/VL53L5 prototypes to one SATEL-VL53L8 on B-L475E-IOT01A1, then making the iOS diagnostics view match the new firmware.
+- **What we built/tested:** Implemented the active VL53L8 firmware path, corrected SATEL `J1`/`J2` wiring docs, added UART frame/grid diagnostics, fixed worktree iOS deploy bundle ID handling, and prepared iOS/STM32 `1.2.0` release metadata.
+- **Issue observed:** Early SATEL wiring notes misread `J2 pin 11` as `SPI_I2C_N` even though the schematic image shows it is `EXT_5V0`; iOS worktree deploy also used unavailable bundle ID `com.openotter.app`.
+- **Root cause:** The SATEL connector combines separate `J2` and `J1` headers in some shorthand diagrams, making pin numbering easy to misread; the generated Xcode project kept stale bundle/version settings unless `xcodebuild` received explicit overrides.
+- **Resolution:** Documented `J2 pin 1 EXT_SPI_I2C_N` tied to GND for I2C mode, `J2 pin 11 EXT_5V0` tied to 5V, `J2 pin 7 EXT_PWR_EN` tied to 3V3, and SDA on `J2 pin 5`. The iOS build now defaults to `com.openotter-ios.app` and passes `MARKETING_VERSION` from `VERSION`.
+- **Validation:** Firmware build and host tests passed; ST-LINK serial showed stable 4x4 VL53L8 frames at about 30 Hz with valid center statuses; `bash openotter-ios/build.sh --release deploy` installed/launched the app and STM32 Control rendered live ToF diagnostics. The iOS release build passed with bundle `com.openotter-ios.app` and version `1.2.0`; the full simulator suite still has one residual Telegram agent failure outside the VL53L8 path.
+- **Follow-up:** Do more vehicle-level validation before merging, tagging `stm32-mcp-v1.2.0` / `ios-v1.2.0`, or enabling two-SATEL address sequencing.
+
 ### 2026-04-24 - OpenOtter v1.0 Safety Milestone
 
 - **Context:** Finalizing the first integrated iPhone + STM32 safety release after rear ToF reverse safety, Self Driving emergency panel parity, and Telegram Park state management landed.

@@ -57,6 +57,16 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Establish CMake presets and correct `.gitignore` & Git LFS for STM32 drivers.
 - [x] Fix the STM32/iOS BLE reconnect loop by aligning GAP device naming with iOS cache behavior.
 
+#### 1.3.4 SATEL-VL53L8 deployment path
+
+- [x] Correct SATEL-VL53L8 `J1`/`J2` wiring documentation for the IOT01A1.
+- [x] Migrate the active STM32 ToF firmware path to VL53L8CX.
+- [x] Verify one SATEL-VL53L8 streams valid 4x4 frames on IOT01A1 over I2C3.
+- [x] Deploy iOS diagnostics from the feature worktree and render live VL53L8 ToF data.
+- [ ] Run vehicle-level autonomous validation with rear VL53L8 health visible in Self Driving.
+- [ ] After validation, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
+- [ ] Future: add second SATEL-VL53L8 address sequencing with independent `LPn` lines.
+
 ### 1.4 Legacy Raspberry Pi WiFi bridge
 
 #### 1.4.1 Protocol and transport implementation

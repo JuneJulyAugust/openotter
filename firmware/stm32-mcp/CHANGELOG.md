@@ -3,16 +3,24 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
-## [Unreleased] - 2026-06-02
+## [Unreleased]
+
+## [1.2.0] - 2026-06-02
 
 ### Added
 - **SATEL-VL53L8 deployment path**: Added firmware design, implementation plan, and bring-up documentation for one SATEL-VL53L8 on B-L475E-IOT01A1 I2C3.
 - **Two-sensor wiring plan**: Documented the future front/rear SATEL-VL53L8 topology with shared I2C and dedicated `LPn` lines for safe address assignment.
+- **VL53L8 bring-up diagnostics**: Added UART frame summaries with measured frame cadence and compact 4x4 zone grids for hardware bring-up.
+- **Firmware version file**: Added `VERSION` so STM32 release metadata has an explicit local source alongside the changelog.
 
 ### Changed
 - **Active ToF firmware path**: Migrated the active multizone driver, reverse-safety selector, BLE ToF config path, and host tests from VL53L5-facing names to VL53L8-facing names.
+- **VL53L8 result payload**: Limited the ST driver output list to target count, distance, and target status so the 4x4 safety stream sustains about 30 Hz on I2C.
 - **Vendor dependency import**: `fetch-deps.sh` now expects STSW-IMG040 via `--vl53l8cx-path` and no longer installs the deprecated VL53L1 driver.
 - **Deployment deprecation**: VL53L0X, VL53L1CB, and VL53L5CX are now historical/deprecated for the deployment path; active target firmware uses SATEL-VL53L8.
+
+### Fixed
+- **SATEL Connector Pinout**: Corrected the bring-up documentation so `J2 pin 1 EXT_SPI_I2C_N` is tied to GND for I2C mode, `J2 pin 11 EXT_5V0` receives 5V, `J2 pin 7 EXT_PWR_EN` receives 3V3, and SDA uses `J2 pin 5 EXT_MOSI_SDA`.
 
 ## [1.1.0] - 2026-04-25
 

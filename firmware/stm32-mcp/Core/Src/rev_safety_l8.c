@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 #include "rev_safety_l8.h"
+#include "tof_l8_status.h"
 
 /*
  * VL53L8CX target_status codes (per ST UM3109 and the driver header
@@ -20,14 +21,10 @@
  * after `tof_blind_frames` clean reads, producing a spurious rear emergency
  * brake whenever the sensor was actually working.
  */
-static int l8_status_is_valid(uint8_t status) {
-  return status == 5u || status == 6u || status == 9u || status == 10u;
-}
-
 #define REV_SAFETY_L8_CLEAR_MIN_MM 4000u
 
 static int zone_is_valid(const Tof_Zone_t *zone) {
-  return zone && zone->range_mm > 0u && l8_status_is_valid(zone->status);
+  return zone && zone->range_mm > 0u && TofL8_StatusIsRangeValid(zone->status);
 }
 
 static int zone_is_clear(const Tof_Zone_t *zone) {

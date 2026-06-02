@@ -10,8 +10,19 @@
 
 ---
 
+## Release-Candidate Status
+
+- Version prepared: `stm32-mcp` `1.2.0`.
+- Branch status: implemented and committed as a release candidate; not merged
+  or tagged yet.
+- Hardware status: one SATEL-VL53L8 on I2C3 produced stable 4x4 safety frames
+  at about 30 Hz after the sensor was repositioned away from the bench.
+- Future scope: two-sensor address sequencing is documented but intentionally
+  not implemented in this phase.
+
 ## Files
 
+- Create: `firmware/stm32-mcp/VERSION`
 - Create: `firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md`
 - Create: `firmware/stm32-mcp/Core/Inc/tof_l8.h`
 - Create: `firmware/stm32-mcp/Core/Src/tof_l8.c`
@@ -64,7 +75,7 @@ Create `firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md` with:
 | IOT01A1 | SATEL-VL53L8 | Purpose |
 | --- | --- | --- |
 | 5V | J2 pin 11 `EXT_5V0` | SATEL regulator input |
-| 3V3 | J2 pin 1 `EXT_SPI_I2C_N` | Select I2C mode |
+| GND | J2 pin 1 `EXT_SPI_I2C_N` | Select I2C mode |
 | 3V3 | J2 pin 7 `EXT_PWR_EN` | Enable SATEL regulators |
 | A5 / PC0 | J2 pin 6 `EXT_MCLK_SCL` | I2C3 SCL |
 | A4 / PC1 | J2 pin 5 `EXT_MOSI_SDA` | I2C3 SDA |
@@ -218,16 +229,9 @@ cd firmware/stm32-mcp
 Expected: firmware builds. If vendor dependencies are missing, report the exact
 missing dependency instead of claiming a target build passed.
 
-Actual: attempted on 2026-06-02. CMake stopped before compilation because the
-worktree is missing generated vendor dependencies:
-
-- `Drivers/STM32L4xx_HAL_Driver/...`
-- `BLE/ble_core/...`
-- `Drivers/VL53L8CX/modules/*.c`
-- `Drivers/VL53L8CX/platform/*.c`
-
-Install with `firmware/stm32-mcp/scripts/fetch-deps.sh --vl53l8cx-path
-/path/to/extracted/stsw-img040`, then rerun `./build.sh build`.
+Actual: passed on 2026-06-02 after local vendor dependencies were restored.
+The production image was flashed to the IOT01A1 over ST-LINK and streamed
+valid 4x4 VL53L8 frames at about 30 Hz.
 
 - [x] **Step 3: Check Git status**
 
@@ -237,7 +241,18 @@ Run:
 git status --short
 ```
 
-Expected: only intended firmware, docs, and copied SATEL hardware PDFs changed.
+Expected: only intended firmware, iOS release-prep, and documentation changes
+are present.
 
-Actual: only intended firmware, docs, and SATEL hardware PDFs are modified or
-added in the feature worktree.
+Actual: only intended firmware, iOS release-prep, and documentation changes
+are modified or added in the feature worktree.
+
+- [x] **Step 4: Record release-candidate metadata**
+
+Update `firmware/stm32-mcp/VERSION`, `firmware/stm32-mcp/README.md`, and
+`firmware/stm32-mcp/CHANGELOG.md` for `1.2.0`.
+
+Expected: release metadata is ready for follow-on verification, but no merge or
+tag is performed.
+
+Actual: completed on 2026-06-02.

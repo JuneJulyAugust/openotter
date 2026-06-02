@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-02
+
 ### Added
 - **Rear VL53L8 Health HUD**: Self Driving now surfaces rear ToF state, error detail, and scan rate from firmware FE63 status notifications without enabling FE62 debug frame streaming in Drive mode.
 
 ### Changed
 - **VL53L8 ToF Debug Path**: Renamed the STM32 ToF debug model and grid visualization from VL53L5CX to VL53L8CX while preserving the FE61/FE62 wire sensor value `2`.
+- **Release Version Injection**: `build.sh` now passes `MARKETING_VERSION` from `VERSION` into `xcodebuild`, so worktree builds and deploys keep the app bundle version synchronized even when the generated Xcode project already exists.
+
+### Fixed
+- **Worktree Device Deploy Bundle ID**: The iOS project and build script now default to `com.openotter-ios.app`, matching the available development provisioning profile and avoiding `com.openotter.app` registration failures.
 
 ## [1.1.0] - 2026-04-25
 

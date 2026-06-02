@@ -6,6 +6,14 @@ set(MX_Defines_Syms
 	USE_HAL_DRIVER
 	STM32L475xx
 	BLUENRG_MS=1
+    # VL53L8CX safety frames need only target count, distance, and status.
+    VL53L8CX_NB_TARGET_PER_ZONE=1
+    VL53L8CX_DISABLE_AMBIENT_PER_SPAD
+    VL53L8CX_DISABLE_NB_SPADS_ENABLED
+    VL53L8CX_DISABLE_SIGNAL_PER_SPAD
+    VL53L8CX_DISABLE_RANGE_SIGMA_MM
+    VL53L8CX_DISABLE_REFLECTANCE_PERCENT
+    VL53L8CX_DISABLE_MOTION_INDICATOR
     $<$<CONFIG:Debug>:DEBUG>
 )
 
@@ -37,6 +45,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_l8.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_status.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_config.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_frame_codec.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_policy.c

@@ -6,7 +6,30 @@ Move STM32 firmware development from the older VL53L1/VL53L5 prototype stack to
 one deployed SATEL-VL53L8 sensor on the B-L475E-IOT01A1, while making the
 firmware structure ready for a second SATEL-VL53L8 sensor later.
 
-This phase is firmware-only. iOS changes are explicitly out of scope.
+This document describes the firmware/hardware phase. The matching iOS debug and
+autonomy plan is tracked separately in
+`docs/superpowers/specs/2026-06-02-ios-vl53l8-tof-debug-autonomy-design.md`.
+
+## Release-Candidate Status
+
+As of 2026-06-02, the one-sensor SATEL-VL53L8 firmware path is implemented and
+prepared as `stm32-mcp` `1.2.0`. The branch is intentionally not merged or
+tagged yet because additional vehicle-level verification is still planned.
+
+Bench evidence from ST-LINK serial after the sensor was moved off the table:
+
+```text
+VL53L8 frame layout=4 zones=16 seq=3338 fps=31 targetZones=16 min=177 max=321 center=315,293,307,284 cst=5,5,5,5
+```
+
+The invariant proven by that log is:
+
+```text
+correct SATEL wiring
+  -> VL53L8CX boot and firmware download
+  -> continuous 4x4 depth frames
+  -> valid-status center-zone data available to reverse safety
+```
 
 ## Hardware Findings
 
@@ -15,7 +38,7 @@ the schematic connector numbers:
 
 | User connection | Result | Correction |
 | --- | --- | --- |
-| IOT01A1 3V3 -> SATEL pin 11 `SPI_I2C_n` | Incorrect. J2 pin 11 is `EXT_5V0`, not `SPI_I2C_N`. 3V3 there is not the intended 5V regulator input and does not select I2C mode. | Connect IOT01A1 3V3 to J2 pin 1 `EXT_SPI_I2C_N` for I2C mode and J2 pin 7 `EXT_PWR_EN`; connect IOT01A1 5V to J2 pin 11 `EXT_5V0`. |
+| IOT01A1 3V3 -> SATEL pin 11 `SPI_I2C_n` | Incorrect. J2 pin 11 is `EXT_5V0`, not `SPI_I2C_N`. 3V3 there is not the intended 5V regulator input and does not select I2C mode. | Connect IOT01A1 GND to J2 pin 1 `EXT_SPI_I2C_N` for I2C mode, 3V3 to J2 pin 7 `EXT_PWR_EN`, and 5V to J2 pin 11 `EXT_5V0`. |
 | IOT01A1 5V -> SATEL pin 1 | Dangerous. J2 pin 1 is `EXT_SPI_I2C_N`, a logic input, not a 5V power input. | Connect IOT01A1 5V to J2 pin 11 `EXT_5V0`. |
 | IOT01A1 A5 -> SATEL pin 6 `MCLK_SCL` | Correct. | Keep A5 / PC0 on J2 pin 6 `EXT_MCLK_SCL`. |
 | IOT01A1 A4 -> SATEL pin 7 `MOSI_SDA` | Incorrect. J2 pin 7 is `EXT_PWR_EN`; `EXT_MOSI_SDA` is J2 pin 5. | Connect A4 / PC1 to J2 pin 5 `EXT_MOSI_SDA`; tie J2 pin 7 high to 3V3. |
@@ -113,7 +136,8 @@ Use the corrected SATEL wiring on I2C3:
 | IOT01A1 | MCU pin | SATEL signal |
 | --- | --- | --- |
 | 5V | board 5V | J2 pin 11 `EXT_5V0` |
-| 3V3 | board 3V3 | J2 pin 1 `EXT_SPI_I2C_N`; J2 pin 7 `EXT_PWR_EN` |
+| GND | board GND | J2 pin 1 `EXT_SPI_I2C_N` |
+| 3V3 | board 3V3 | J2 pin 7 `EXT_PWR_EN` |
 | A5 | PC0 / I2C3_SCL | J2 pin 6 `EXT_MCLK_SCL` |
 | A4 | PC1 / I2C3_SDA | J2 pin 5 `EXT_MOSI_SDA` |
 | A2 | PC3 input | J1 top pad `EXT_GPIO1` / INT |
@@ -137,7 +161,7 @@ The future two-sensor topology is:
 | I2C3 SCL | Shared A5 / PC0 -> both J2 pin 6 | Shared A5 / PC0 -> both J2 pin 6 |
 | I2C3 SDA | Shared A4 / PC1 -> both J2 pin 5 | Shared A4 / PC1 -> both J2 pin 5 |
 | 5V, 3V3, GND | Shared rails; 5V to J2 pin 11 | Shared rails; 5V to J2 pin 11 |
-| `SPI_I2C_N` | Tied high to 3V3 | Tied high to 3V3 |
+| `SPI_I2C_N` | Tied low to GND | Tied low to GND |
 | `PWR_EN` | Tied high to 3V3 | Tied high to 3V3 |
 | `LPn` | Dedicated GPIO, suggested A1 / PC4 | Dedicated GPIO, suggested A0 / PC5 or D8 / PB2 |
 | `GPIO1 / INT` | Dedicated GPIO, suggested A2 / PC3 to J1 top pad | Dedicated GPIO, suggested A3 / PC2 to J1 top pad |

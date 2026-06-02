@@ -9,6 +9,7 @@
 #include "main.h"
 #include "stm32l4xx_hal.h"
 #include "firmware_watchdog.h"
+#include "tof_l8_status.h"
 #include "vl53l8cx_api.h"
 
 extern UART_HandleTypeDef huart1;
@@ -23,10 +24,14 @@ static uint8_t g_streaming;
 static uint8_t g_driver_dead;
 static uint32_t g_seq;
 static uint32_t g_last_configure_tick;
+static uint32_t g_last_frame_log_tick;
+static uint32_t g_last_frame_log_seq;
+static uint16_t g_i2c_addr = TOF_L8_DEFAULT_I2C_ADDR_8BIT;
 
 /* TOF_L8_RECONFIGURE_DEBOUNCE_MS is owned by tof_l8_debounce.h. */
 #define TOF_L8_I2C_MIN_TIMEOUT_MS       1000u
 #define TOF_L8_I2C_MAX_TIMEOUT_MS       15000u
+#define TOF_L8_FRAME_LOG_INTERVAL_MS    1000u
 static Tof_Config_t g_cfg = {
     .sensor_type = TOF_SENSOR_VL53L8CX,
     .layout = 4,
@@ -48,14 +53,77 @@ static void log_prefix(void)
 
 static void log_fmt(const char *fmt, ...)
 {
-  char buf[96];
+  char buf[256];
   va_list ap;
   va_start(ap, fmt);
   int n = vsnprintf(buf, sizeof(buf), fmt, ap);
   va_end(ap);
   if (n > 0) {
+    if ((size_t)n >= sizeof(buf)) {
+      n = (int)sizeof(buf) - 1;
+    }
     log_prefix();
     HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)n, 100);
+  }
+}
+
+static uint16_t logged_range_at(uint8_t idx)
+{
+  return (idx < g_frame_latest.zone_count) ? g_frame_latest.zones[idx].range_mm
+                                           : 0u;
+}
+
+static uint8_t logged_status_at(uint8_t idx)
+{
+  return (idx < g_frame_latest.zone_count) ? g_frame_latest.zones[idx].status
+                                           : 0u;
+}
+
+static uint8_t logged_flags_at(uint8_t idx)
+{
+  return (idx < g_frame_latest.zone_count) ? g_frame_latest.zones[idx].flags
+                                           : 0u;
+}
+
+static void append_grid_text(char *buf, size_t len, size_t *off,
+                             const char *fmt, ...)
+{
+  if (*off >= len) return;
+
+  va_list ap;
+  va_start(ap, fmt);
+  int n = vsnprintf(&buf[*off], len - *off, fmt, ap);
+  va_end(ap);
+  if (n <= 0) return;
+
+  size_t wrote = (size_t)n;
+  *off += (wrote >= (len - *off)) ? (len - *off - 1u) : wrote;
+}
+
+static void log_4x4_grid(void)
+{
+  if (g_frame_latest.layout != 4u || g_frame_latest.zone_count < 16u) return;
+
+  char buf[256];
+  size_t off = 0u;
+  append_grid_text(buf, sizeof(buf), &off, "VL53L8 grid r/s/f: ");
+  for (uint8_t row = 0u; row < 4u; ++row) {
+    if (row > 0u) {
+      append_grid_text(buf, sizeof(buf), &off, " | ");
+    }
+    for (uint8_t col = 0u; col < 4u; ++col) {
+      uint8_t idx = (uint8_t)(row * 4u + col);
+      append_grid_text(buf, sizeof(buf), &off, "%u/%u/%u%s",
+                       (unsigned)logged_range_at(idx),
+                       (unsigned)logged_status_at(idx),
+                       (unsigned)logged_flags_at(idx),
+                       (col == 3u) ? "" : " ");
+    }
+  }
+  append_grid_text(buf, sizeof(buf), &off, "\r\n");
+  if (off > 0u) {
+    log_prefix();
+    HAL_UART_Transmit(&huart1, (uint8_t *)buf, (uint16_t)off, 100);
   }
 }
 
@@ -96,37 +164,51 @@ static uint32_t i2c_timeout_for_size(uint16_t size)
              : timeout;
 }
 
-/* The VL53L8CX firmware download issues hundreds of multi-KB I2C writes,
- * each with up to a 15 s HAL timeout. Without refreshing the IWDG inside
- * these platform callbacks the 20 s watchdog can fire mid-init. Refreshing
- * at op start gives every blocking HAL_I2C_Mem_* call a fresh 20 s window;
- * inside the ULD's WaitMs spin loop, GetTick is called every iteration, so
- * refreshing there keeps the watchdog alive across long polls (e.g. the
- * up-to-5 s stop_ranging poll). */
-static int32_t l8_i2c_write(uint16_t dev_addr, uint16_t reg_addr,
-                            uint8_t *data, uint16_t size)
+static uint16_t platform_i2c_addr(void *handle)
 {
-  FwWatchdog_Refresh();
-  HAL_StatusTypeDef s = HAL_I2C_Mem_Write(&hi2c3, dev_addr, reg_addr,
-                                          I2C_MEMADD_SIZE_16BIT, data, size,
-                                          i2c_timeout_for_size(size));
-  return (s == HAL_OK) ? 0 : -1;
+  return (handle != NULL) ? *((uint16_t *)handle) : TOF_L8_DEFAULT_I2C_ADDR_8BIT;
 }
 
-static int32_t l8_i2c_read(uint16_t dev_addr, uint16_t reg_addr,
-                           uint8_t *data, uint16_t size)
+/* The VL53L8CX firmware download issues multi-KB I2C writes. Without
+ * refreshing the IWDG inside these platform callbacks the watchdog can fire
+ * mid-init. Refreshing at op start gives every blocking HAL_I2C_Mem_* call a
+ * fresh window; l8_wait refreshes during ULD polls. */
+static uint8_t l8_i2c_write(void *handle, uint16_t reg_addr, uint8_t *data,
+                            uint32_t size)
 {
+  if (size > UINT16_MAX) return VL53L8CX_MCU_ERROR;
+
   FwWatchdog_Refresh();
-  HAL_StatusTypeDef s = HAL_I2C_Mem_Read(&hi2c3, dev_addr, reg_addr,
-                                         I2C_MEMADD_SIZE_16BIT, data, size,
-                                         i2c_timeout_for_size(size));
-  return (s == HAL_OK) ? 0 : -1;
+  uint16_t tx_size = (uint16_t)size;
+  HAL_StatusTypeDef s =
+      HAL_I2C_Mem_Write(&hi2c3, platform_i2c_addr(handle), reg_addr,
+                        I2C_MEMADD_SIZE_16BIT, data, tx_size,
+                        i2c_timeout_for_size(tx_size));
+  return (s == HAL_OK) ? VL53L8CX_STATUS_OK : VL53L8CX_MCU_ERROR;
 }
 
-static int32_t l8_get_tick(void)
+static uint8_t l8_i2c_read(void *handle, uint16_t reg_addr, uint8_t *data,
+                           uint32_t size)
 {
+  if (size > UINT16_MAX) return VL53L8CX_MCU_ERROR;
+
   FwWatchdog_Refresh();
-  return (int32_t)HAL_GetTick();
+  uint16_t rx_size = (uint16_t)size;
+  HAL_StatusTypeDef s =
+      HAL_I2C_Mem_Read(&hi2c3, platform_i2c_addr(handle), reg_addr,
+                       I2C_MEMADD_SIZE_16BIT, data, rx_size,
+                       i2c_timeout_for_size(rx_size));
+  return (s == HAL_OK) ? VL53L8CX_STATUS_OK : VL53L8CX_MCU_ERROR;
+}
+
+static uint8_t l8_wait(void *handle, uint32_t time_ms)
+{
+  (void)handle;
+  uint32_t start = HAL_GetTick();
+  while ((HAL_GetTick() - start) < time_ms) {
+    FwWatchdog_Refresh();
+  }
+  return VL53L8CX_STATUS_OK;
 }
 
 static int stop_stream(void)
@@ -180,10 +262,12 @@ int TofL8_Init(void)
   stamp_empty_frame();
 
   memset(&g_dev, 0, sizeof(g_dev));
+  g_i2c_addr = TOF_L8_DEFAULT_I2C_ADDR_8BIT;
   g_dev.platform.address = TOF_L8_DEFAULT_I2C_ADDR_8BIT;
   g_dev.platform.Write = l8_i2c_write;
   g_dev.platform.Read = l8_i2c_read;
-  g_dev.platform.GetTick = l8_get_tick;
+  g_dev.platform.Wait = l8_wait;
+  g_dev.platform.handle = &g_i2c_addr;
 
   /* LPn normally returns SATEL-VL53L8 to a quiet boot state. Keep the
    * best-effort stop because it also protects benches where LPn is not wired
@@ -294,6 +378,12 @@ int TofL8_Configure(const Tof_Config_t *cfg)
     g_cfg.integration_ms = integration_for_config(&g_cfg);
   }
   stamp_empty_frame();
+  g_last_frame_log_tick = 0u;
+  g_last_frame_log_seq = 0u;
+  log_fmt("VL53L8 stream start layout=%u zones=%u hz=%u it=%u readBytes=%lu\r\n",
+          (unsigned)g_cfg.layout, (unsigned)g_frame_latest.zone_count,
+          (unsigned)g_cfg.frequency_hz, (unsigned)g_cfg.integration_ms,
+          (unsigned long)g_dev.data_read_size);
   return TOF_STATUS_OK;
 }
 
@@ -328,6 +418,58 @@ void TofL8_Process(void)
     g_frame_latest.zones[i].flags = targets;
   }
   g_has_new_frame = 1;
+
+  uint32_t now = g_frame_latest.tick_ms;
+  if (g_seq == 1u ||
+      (now - g_last_frame_log_tick) >= TOF_L8_FRAME_LOG_INTERVAL_MS) {
+    uint8_t layout = g_frame_latest.layout;
+    uint8_t last = (zones > 0u) ? (uint8_t)(zones - 1u) : 0u;
+    uint8_t c0 = (layout > 1u) ? (uint8_t)((layout / 2u) - 1u) : 0u;
+    uint8_t c1 = (layout > 1u) ? (uint8_t)(layout / 2u) : 0u;
+    uint8_t cc00 = (uint8_t)(c0 * layout + c0);
+    uint8_t cc01 = (uint8_t)(c0 * layout + c1);
+    uint8_t cc10 = (uint8_t)(c1 * layout + c0);
+    uint8_t cc11 = (uint8_t)(c1 * layout + c1);
+    uint8_t target_zones = 0u;
+    uint16_t min_mm = UINT16_MAX;
+    uint16_t max_mm = 0u;
+    for (uint8_t i = 0u; i < zones; ++i) {
+      uint16_t range_mm = g_frame_latest.zones[i].range_mm;
+      if (g_frame_latest.zones[i].flags > 0u && range_mm > 0u &&
+          TofL8_StatusIsRangeValid(g_frame_latest.zones[i].status)) {
+        target_zones++;
+        if (range_mm < min_mm) min_mm = range_mm;
+        if (range_mm > max_mm) max_mm = range_mm;
+      }
+    }
+    if (target_zones == 0u) {
+      min_mm = 0u;
+    }
+    uint32_t frame_delta = (g_last_frame_log_seq == 0u)
+                               ? g_seq
+                               : (g_seq - g_last_frame_log_seq);
+    g_last_frame_log_tick = now;
+    g_last_frame_log_seq = g_seq;
+    log_fmt("VL53L8 frame layout=%u zones=%u seq=%lu fps=%lu targetZones=%u "
+            "min=%u max=%u z0=%u/%u/%u zLast=%u/%u/%u "
+            "center=%u,%u,%u,%u cst=%u,%u,%u,%u cn=%u,%u,%u,%u\r\n",
+            (unsigned)layout, (unsigned)zones, (unsigned long)g_seq,
+            (unsigned long)frame_delta, (unsigned)target_zones,
+            (unsigned)min_mm, (unsigned)max_mm,
+            (unsigned)logged_range_at(0u),
+            (unsigned)logged_status_at(0u),
+            (unsigned)logged_flags_at(0u),
+            (unsigned)logged_range_at(last),
+            (unsigned)logged_status_at(last),
+            (unsigned)logged_flags_at(last),
+            (unsigned)logged_range_at(cc00), (unsigned)logged_range_at(cc01),
+            (unsigned)logged_range_at(cc10), (unsigned)logged_range_at(cc11),
+            (unsigned)logged_status_at(cc00), (unsigned)logged_status_at(cc01),
+            (unsigned)logged_status_at(cc10), (unsigned)logged_status_at(cc11),
+            (unsigned)logged_flags_at(cc00), (unsigned)logged_flags_at(cc01),
+            (unsigned)logged_flags_at(cc10), (unsigned)logged_flags_at(cc11));
+    log_4x4_grid();
+  }
 }
 
 const Tof_Frame_t *TofL8_GetLatestFrame(void)
