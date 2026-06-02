@@ -9,6 +9,55 @@ VL53L1CB, and VL53L5CX are deprecated for this deployment path.
 - `docs/hardware/sensors/satel-vl53l8.pdf`
 - `docs/hardware/sensors/an5945-how-to-connect-the-satelvl53l8-to-an-stm32-nucleo64-board-stmicroelectronics.pdf`
 
+## Finding J1 And J2 On The SATEL Board
+
+`J1` and `J2` are schematic connector reference names, not one continuous
+14-pin connector. The SATEL schematic calls them:
+
+| Connector | Schematic part | What it carries |
+| --- | --- | --- |
+| `J1` | 3-pin, 2.54 mm male header | `EXT_GPIO1`, `EXT_GPIO2`, and GND |
+| `J2` | 11-pin, 2.54 mm male header | mode, reset, I2C/SPI, power-enable, and supply pins |
+
+With the SATEL board oriented like Figure 1 in `satel-vl53l8.pdf`:
+
+- the snap-off mini-PCB is on the left of the red perforation line;
+- the larger carrier board is on the right of the red perforation line;
+- `J1` is the short 3-hole expansion header footprint near the perforation;
+- `J2` is the longer 11-hole expansion header footprint on the carrier board;
+- `J3` is the I/O-voltage select jumper and is not part of the IOT01A1 wiring.
+
+Do not treat the board as a single 14-pin header. If a diagram says SATEL
+pin 12, pin 13, or pin 14, that is usually shorthand for `J1` after counting
+the 11 pins of `J2`. In the ST schematic, those signals are still `J1` pins:
+
+| Combined shorthand | Schematic name | Signal |
+| --- | --- | --- |
+| pin 12 | `J1` pin 1 | `EXT_GPIO1` |
+| pin 13 | `J1` pin 2 | `EXT_GPIO2` |
+| pin 14 | `J1` pin 3 | GND |
+
+`J2` is numbered separately:
+
+| J2 pin | Signal | Use in this project |
+| --- | --- | --- |
+| 1 | `EXT_SPI_I2C_N` | Tie high to 3V3 for I2C mode |
+| 2 | `EXT_LPn` | Optional host reset/enable control |
+| 3 | `EXT_NCS` | SPI chip-select; unused for I2C |
+| 4 | `EXT_MISO` | SPI MISO; unused for I2C |
+| 5 | `EXT_MOSI_SDA` | I2C3 SDA from IOT01A1 A4 / PC1 |
+| 6 | `EXT_MCLK_SCL` | I2C3 SCL from IOT01A1 A5 / PC0 |
+| 7 | `EXT_PWR_EN` | Tie high to 3V3 to enable SATEL regulators |
+| 8 | `EXT_IOVDD` | Do not wire for this bring-up |
+| 9 | `EXT_3V3` | Do not wire for this bring-up |
+| 10 | `EXT_5V0` | 5V input to the SATEL regulators |
+| 11 | `EXT_1V8` | Do not connect to IOT01A1 3V3 |
+
+The yellow pads on the snap-off mini-PCB expose the tiny sensor board directly.
+Those pads are useful only if the mini-PCB is broken off and powered/level-shifted
+as a separate 1.8 V design. The wiring below assumes the full SATEL carrier board
+is used, because the carrier provides the required regulators and level shifters.
+
 ## Current Wiring Check
 
 If your SATEL pin numbers mean schematic connector pins, the current wiring is
@@ -20,9 +69,9 @@ not fully correct.
 | IOT01A1 5V -> pin 1 | Incorrect. J2 pin 1 is `EXT_SPI_I2C_N`. | Use J2 pin 10 `EXT_5V0`. |
 | IOT01A1 A5 -> pin 6 `MCLK_SCL` | Correct. | Keep J2 pin 6 `EXT_MCLK_SCL`. |
 | IOT01A1 A4 -> pin 7 `MOSI_SDA` | Incorrect. J2 pin 7 is `EXT_PWR_EN`. | Use J2 pin 5 `EXT_MOSI_SDA`. |
-| IOT01A1 GND -> pin 14 GND | Likely correct if combined numbering maps J1 bottom to GND. | Keep common ground. |
-| IOT01A1 A2 -> pin 12 `GPIO1 / INT` | Likely correct if combined numbering maps J1 top to GPIO1. | Keep for data-ready interrupt input. |
-| IOT01A1 A1 -> pin 13 `GPIO2` | GPIO2 is not the reset/enable line. | Prefer A1 / PC4 -> J2 pin 2 `EXT_LPn`. |
+| IOT01A1 GND -> pin 14 GND | Correct only if pin 14 means `J1` pin 3. | Keep common ground. |
+| IOT01A1 A2 -> pin 12 `GPIO1 / INT` | Correct only if pin 12 means `J1` pin 1. | Keep for data-ready interrupt input. |
+| IOT01A1 A1 -> pin 13 `GPIO2` | `J1` pin 2 is GPIO2, but GPIO2 is not the reset/enable line. | Prefer A1 / PC4 -> J2 pin 2 `EXT_LPn`. |
 
 ## Correct One-Sensor Wiring
 
@@ -33,9 +82,9 @@ not fully correct.
 | 3V3 | board 3V3 | J2 pin 7 `EXT_PWR_EN` | Enable SATEL regulators |
 | A5 | PC0 / I2C3_SCL | J2 pin 6 `EXT_MCLK_SCL` | I2C clock |
 | A4 | PC1 / I2C3_SDA | J2 pin 5 `EXT_MOSI_SDA` | I2C data |
-| A2 | PC3 | J1 `EXT_GPIO1` | Data-ready interrupt input; firmware can poll first |
+| A2 | PC3 | J1 pin 1 `EXT_GPIO1` | Data-ready interrupt input; firmware can poll first |
 | A1 | PC4 | J2 pin 2 `EXT_LPn` | Sensor low-power/reset control |
-| GND | GND | J1 GND or SATEL GND | Common ground |
+| GND | GND | J1 pin 3 GND or SATEL GND | Common ground |
 
 `SPI_I2C_N` must be high for I2C mode. `PWR_EN` should be high for the full
 SATEL board regulators unless the board assembly already straps it high.
@@ -70,7 +119,7 @@ firmware can boot and re-address them one at a time.
 | `EXT_PWR_EN` | Shared 3V3 | Shared 3V3 |
 | GND | Shared GND | Shared GND |
 | `EXT_LPn` | Dedicated A1 / PC4 | Dedicated A0 / PC5 or D8 / PB2 |
-| `EXT_GPIO1` | Dedicated A2 / PC3 | Dedicated A3 / PC2 |
+| `EXT_GPIO1` | Dedicated A2 / PC3 -> J1 pin 1 | Dedicated A3 / PC2 -> J1 pin 1 |
 
 Future boot sequence:
 
