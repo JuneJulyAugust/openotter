@@ -47,6 +47,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_status.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_topology.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_frame_codec.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_drive_policy.c

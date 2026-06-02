@@ -17,8 +17,9 @@
   or tagged yet.
 - Hardware status: one SATEL-VL53L8 on I2C3 produced stable 4x4 safety frames
   at about 30 Hz after the sensor was repositioned away from the bench.
-- Future scope: two-sensor address sequencing is documented but intentionally
-  not implemented in this phase.
+- Future scope: two-sensor front/rear safety should use separate I2C buses
+  when possible: rear on I2C3 A5/A4, front on I2C1 D15/D14, with independent
+  `LPn` and optional independent `PWR_EN`.
 
 ## Files
 
@@ -29,10 +30,13 @@
 - Create: `firmware/stm32-mcp/Core/Src/tof_l8_config.c`
 - Create: `firmware/stm32-mcp/Core/Inc/tof_l8_debounce.h`
 - Create: `firmware/stm32-mcp/Core/Src/tof_l8_debounce.c`
+- Create: `firmware/stm32-mcp/Core/Inc/tof_l8_topology.h`
+- Create: `firmware/stm32-mcp/Core/Src/tof_l8_topology.c`
 - Create: `firmware/stm32-mcp/Core/Inc/rev_safety_l8.h`
 - Create: `firmware/stm32-mcp/Core/Src/rev_safety_l8.c`
 - Create: `firmware/stm32-mcp/tests/host/test_tof_l8_config.c`
 - Create: `firmware/stm32-mcp/tests/host/test_tof_l8_debounce.c`
+- Create: `firmware/stm32-mcp/tests/host/test_tof_l8_topology.c`
 - Create: `firmware/stm32-mcp/tests/host/test_rev_safety_l8.c`
 - Modify: `firmware/stm32-mcp/scripts/fetch-deps.sh`
 - Modify: `firmware/stm32-mcp/cmake/stm32cubemx/CMakeLists.txt`
@@ -201,6 +205,51 @@ Replace `tof_l5.h` with `tof_l8.h`, `TofL5_*` with `TofL8_*`, and
 
 Use `VL53L8` in boot and debug labels.
 
+## Task 7.5: Capture Two-Sensor Topology In Tests
+
+- [x] **Step 1: Write the failing topology test**
+
+Create `firmware/stm32-mcp/tests/host/test_tof_l8_topology.c` with tests that
+prove:
+
+- rear and front slots use different buses by default;
+- each slot has a distinct `LPn` and `GPIO1` role tag;
+- separate buses allow both sensors to use default HAL address `0x52`;
+- a same-bus pair with duplicate runtime address is rejected;
+- a same-bus pair with shared `LPn` is rejected.
+
+Run:
+
+```sh
+cd firmware/stm32-mcp/tests/host
+make build/test_tof_l8_topology
+```
+
+Expected: compilation fails because `tof_l8_topology.h` or
+`tof_l8_topology.c` does not exist yet.
+
+Actual: failed first because `../../Core/Src/tof_l8_topology.c` did not exist.
+
+- [x] **Step 2: Implement the pure topology helper**
+
+Create `firmware/stm32-mcp/Core/Inc/tof_l8_topology.h` and
+`firmware/stm32-mcp/Core/Src/tof_l8_topology.c` with a small HAL-free model of
+the front/rear bus, address, `LPn`, and `GPIO1` assignments.
+
+- [x] **Step 3: Run the topology test**
+
+Run:
+
+```sh
+cd firmware/stm32-mcp/tests/host
+make build/test_tof_l8_topology
+build/test_tof_l8_topology
+```
+
+Expected: topology tests pass.
+
+Actual: passed on 2026-06-02.
+
 ## Task 8: Verify
 
 - [x] **Step 1: Run host tests**
@@ -215,7 +264,8 @@ make test
 
 Expected: all host tests pass.
 
-Actual: passed on 2026-06-02 after migration.
+Actual: passed on 2026-06-02 after migration and again after the expanded
+VL53L8 frame/config/policy/topology tests.
 
 - [x] **Step 2: Attempt firmware build**
 
@@ -256,3 +306,20 @@ Expected: release metadata is ready for follow-on verification, but no merge or
 tag is performed.
 
 Actual: completed on 2026-06-02.
+
+- [x] **Step 5: Run host coverage**
+
+Run:
+
+```sh
+cd firmware/stm32-mcp/tests/host
+PATH=/Users/fang/projects/openotter/.venv/bin:$PATH \
+  make coverage GCOVR=/Users/fang/projects/openotter/.venv/bin/gcovr
+```
+
+Expected: host coverage renders for HAL-free project modules.
+
+Actual: passed on 2026-06-02 with line coverage `99.3%` (`450/453`),
+function coverage `98.0%` (`48/49`), and branch coverage `90.7%` (`294/324`).
+Every filtered module except the host-only `Firmware_Panic` spin stub reached
+100% line coverage.

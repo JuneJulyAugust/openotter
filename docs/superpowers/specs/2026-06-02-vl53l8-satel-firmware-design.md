@@ -150,33 +150,51 @@ bring-up.
 
 ## Two-Sensor Ready Design
 
-Two VL53L8 sensors share I2C SCL/SDA only after they have unique addresses. The
-VL53L8 default I2C address is `0x29` 7-bit (`0x52` in STM32 HAL 8-bit form).
-Two sensors at the default address cannot be online together.
+The preferred two-sensor topology uses separate I2C buses:
+
+- rear SATEL-VL53L8 on I2C3 (`A5/PC0` SCL, `A4/PC1` SDA);
+- front SATEL-VL53L8 on I2C1 (`D15/PB8` SCL, `D14/PB9` SDA).
+
+This lets both sensors remain online and ranging at the VL53L8 default address
+`0x29` 7-bit (`0x52` in STM32 HAL 8-bit form), because each bus has only one
+active SATEL at that address. The firmware still reads them sequentially, but
+bus bandwidth and fault isolation are much better than putting both sensors on
+one 100 kHz I2C3 bus.
+
+The I2C1 caveat is the on-board VL53L0X. It also uses default address `0x29`,
+so firmware must keep `VL53L0X_XSHUT` / PC6 low whenever the front SATEL lives
+on I2C1 at its default address.
 
 The future two-sensor topology is:
 
 | Signal | Rear sensor | Front sensor |
 | --- | --- | --- |
-| I2C3 SCL | Shared A5 / PC0 -> both J2 pin 6 | Shared A5 / PC0 -> both J2 pin 6 |
-| I2C3 SDA | Shared A4 / PC1 -> both J2 pin 5 | Shared A4 / PC1 -> both J2 pin 5 |
+| I2C SCL | A5 / PC0 / I2C3 -> J2 pin 6 | D15 / PB8 / I2C1 -> J2 pin 6 |
+| I2C SDA | A4 / PC1 / I2C3 -> J2 pin 5 | D14 / PB9 / I2C1 -> J2 pin 5 |
 | 5V, 3V3, GND | Shared rails; 5V to J2 pin 11 | Shared rails; 5V to J2 pin 11 |
 | `SPI_I2C_N` | Tied low to GND | Tied low to GND |
-| `PWR_EN` | Tied high to 3V3 | Tied high to 3V3 |
-| `LPn` | Dedicated GPIO, suggested A1 / PC4 | Dedicated GPIO, suggested A0 / PC5 or D8 / PB2 |
+| `PWR_EN` | D9 / PA15, or tied high to 3V3 | D10 / PA2, or tied high to 3V3 |
+| `LPn` | Dedicated GPIO, suggested A1 / PC4 | Dedicated GPIO, suggested A0 / PC5 |
 | `GPIO1 / INT` | Dedicated GPIO, suggested A2 / PC3 to J1 top pad | Dedicated GPIO, suggested A3 / PC2 to J1 top pad |
-| I2C address | Default during isolated boot, then assigned rear address | Default during isolated boot, then assigned front address |
+| I2C address | Default `0x29` is acceptable on I2C3 | Default `0x29` is acceptable on I2C1 while PC6 holds the on-board VL53L0X off |
 
 Future sequencing:
 
-1. Hold both `LPn` lines low.
-2. Release rear `LPn`.
-3. Boot rear at default address and change it to the rear address.
-4. Release front `LPn`.
-5. Boot front at default address and change it to the front address.
-6. Poll/process each slot independently.
+1. Hold both SATEL `LPn` lines low.
+2. Hold PC6 `VL53L0X_XSHUT` low.
+3. Enable and release rear SATEL, then initialize it on I2C3.
+4. Enable and release front SATEL, then initialize it on I2C1.
+5. Start both sensors ranging.
+6. Poll/process each slot independently. Forward safety consumes the front
+   slot; reverse safety consumes the rear slot.
 
-This sequence is the invariant that makes shared I2C safe.
+This sequence is the invariant that makes two always-online sensors safe
+without runtime address reassignment.
+
+A shared-bus fallback is still possible if I2C1 cannot be used, but then
+independent `LPn` is mandatory and the first sensor must be reassigned before
+the second sensor is released. Two awake sensors must never share address
+`0x29` on the same I2C bus.
 
 ## Deprecation
 
@@ -195,7 +213,10 @@ Required checks for this phase:
 
 - Host tests before and after edits: `make test` in
   `firmware/stm32-mcp/tests/host`.
-- New/renamed host tests for VL53L8 config and reverse-safety selection.
+- Host tests for VL53L8 config, frame encoding, BLE ToF status policy,
+  reverse-safety selection, and future two-sensor topology.
+- Coverage workflow in
+  `firmware/stm32-mcp/docs/dev/11-firmware-test-strategy.md`.
 - Firmware build if STSW-IMG040 and STM32CubeCLT dependencies are available.
 - Manual wiring check against
   `firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md`.

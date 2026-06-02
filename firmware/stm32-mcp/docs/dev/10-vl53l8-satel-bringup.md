@@ -198,11 +198,22 @@ Do not add wires to `J2` pin 10 `EXT_1V8`, pin 9 `EXT_3V3`, or pin 8
 `EXT_IOVDD` for this bring-up. The full SATEL carrier board derives the sensor
 rails from `EXT_5V0` and uses level shifters for the IOT01A1 3.3 V signals.
 
-### Two-Sensor Future Topology
+### Two-Sensor Recommended Topology
 
-Two SATEL boards can share power, ground, SCL, SDA, `SPI_I2C_N`, and `PWR_EN`.
-Each board needs its own `LPn` line so firmware can hold one sensor off while
-it boots and re-addresses the other sensor at the default I2C address.
+Use separate I2C buses for the front and rear SATEL boards. This avoids the
+VL53L8 default-address collision at boot and gives each sensor its own read
+bandwidth while both sensors range continuously.
+
+Shared connections are still safe for power and mode:
+
+- both SATEL `J2 pin 11 EXT_5V0` pins share IOT01A1 `5V`;
+- both SATEL grounds share IOT01A1 `GND`;
+- both SATEL `J2 pin 1 EXT_SPI_I2C_N` pins tie to `GND` for I2C mode.
+
+Do not share `LPn`. Separate `LPn` lets firmware reset or recover one sensor
+without disturbing the other. Separate `PWR_EN` is recommended if the extra
+wires are acceptable; tying both `PWR_EN` pins to IOT01A1 `3V3` is simpler but
+removes per-sensor hard-power recovery.
 
 ```mermaid
 flowchart LR
@@ -210,20 +221,24 @@ flowchart LR
         I5V["5V"]
         I3V3["3V3"]
         IGND["GND"]
-        SCL["A5 / PC0 / I2C3_SCL"]
-        SDA["A4 / PC1 / I2C3_SDA"]
+        RSCL["A5 / PC0 / rear I2C3_SCL"]
+        RSDA["A4 / PC1 / rear I2C3_SDA"]
+        FSCL["D15 / PB8 / front I2C1_SCL"]
+        FSDA["D14 / PB9 / front I2C1_SDA"]
         RLP["A1 / PC4 / rear LPn"]
-        FLP["A0 / PC5 or D8 / PB2 / front LPn"]
+        FLP["A0 / PC5 / front LPn"]
         RINT["A2 / PC3 / rear GPIO1"]
         FINT["A3 / PC2 / front GPIO1"]
+        RPWR["D9 / PA15 / rear PWR_EN"]
+        FPWR["D10 / PA2 / front PWR_EN"]
     end
 
     subgraph REAR["Rear SATEL-VL53L8"]
         R5V["J2 pin 11 / EXT_5V0"]
         R3V3MODE["J2 pin 1 / EXT_SPI_I2C_N"]
         R3V3PWR["J2 pin 7 / EXT_PWR_EN"]
-        RSCL["J2 pin 6 / EXT_MCLK_SCL"]
-        RSDA["J2 pin 5 / EXT_MOSI_SDA"]
+        RSCLPIN["J2 pin 6 / EXT_MCLK_SCL"]
+        RSDAPIN["J2 pin 5 / EXT_MOSI_SDA"]
         RLPIN["J2 pin 2 / EXT_LPn"]
         RG1["J1 top pad / EXT_GPIO1"]
         RGND["J1 bottom square pad / GND"]
@@ -233,8 +248,8 @@ flowchart LR
         F5V["J2 pin 11 / EXT_5V0"]
         F3V3MODE["J2 pin 1 / EXT_SPI_I2C_N"]
         F3V3PWR["J2 pin 7 / EXT_PWR_EN"]
-        FSCL["J2 pin 6 / EXT_MCLK_SCL"]
-        FSDA["J2 pin 5 / EXT_MOSI_SDA"]
+        FSCLPIN["J2 pin 6 / EXT_MCLK_SCL"]
+        FSDAPIN["J2 pin 5 / EXT_MOSI_SDA"]
         FLPIN["J2 pin 2 / EXT_LPn"]
         FG1["J1 top pad / EXT_GPIO1"]
         FGND["J1 bottom square pad / GND"]
@@ -244,14 +259,14 @@ flowchart LR
     I5V --> F5V
     IGND --> R3V3MODE
     IGND --> F3V3MODE
-    I3V3 --> R3V3PWR
-    I3V3 --> F3V3PWR
+    RPWR --> R3V3PWR
+    FPWR --> F3V3PWR
     IGND --> RGND
     IGND --> FGND
-    SCL --> RSCL
-    SCL --> FSCL
-    SDA --> RSDA
-    SDA --> FSDA
+    RSCL --> RSCLPIN
+    FSCL --> FSCLPIN
+    RSDA --> RSDAPIN
+    FSDA --> FSDAPIN
     RLP --> RLPIN
     FLP --> FLPIN
     RINT --> RG1
@@ -275,29 +290,87 @@ The STM32 HAL uses 8-bit I2C addresses. The VL53L8 default 7-bit address is
 
 ## Two-Sensor Wiring Plan
 
-Two VL53L8 sensors cannot both be active at the default I2C address. They must
-share SCL/SDA only while each has an independently controlled `LPn` line so the
-firmware can boot and re-address them one at a time.
+Two VL53L8 sensors can both be online and ranging. The firmware polls or reads
+them one after the other; the safety decision chooses the front reading while
+moving forward and the rear reading while reversing.
+
+The HAL-free topology contract lives in `Core/Src/tof_l8_topology.c` and is
+covered by `tests/host/test_tof_l8_topology.c`.
+
+### IOT01A1 Pin Allocation
+
+The PWM outputs are already occupied:
+
+| IOT01A1 pin | MCU pin | Current use |
+| --- | --- | --- |
+| A6 / near Arduino analog header | PB1 / TIM3_CH4 | Steering PWM |
+| D5 | PB4 / TIM3_CH1 | Throttle PWM |
+
+The preferred ToF pins avoid those PWM outputs and avoid the BLE SPI3 pins:
+
+| Role | IOT01A1 pin | MCU pin | Reason |
+| --- | --- | --- | --- |
+| Rear SCL | A5 | PC0 / I2C3_SCL | Already verified with one SATEL |
+| Rear SDA | A4 | PC1 / I2C3_SDA | Already verified with one SATEL |
+| Front SCL | D15 | PB8 / I2C1_SCL | Separate I2C bus exposed on Arduino header |
+| Front SDA | D14 | PB9 / I2C1_SDA | Separate I2C bus exposed on Arduino header |
+| Rear `LPn` | A1 | PC4 | Verified as reset/control for the one-sensor bring-up |
+| Front `LPn` | A0 | PC5 | Free Arduino analog pin, usable as GPIO output |
+| Rear `GPIO1` | A2 | PC3 | Free Arduino analog pin, usable as data-ready input |
+| Front `GPIO1` | A3 | PC2 | Free Arduino analog pin, usable as data-ready input |
+| Rear `PWR_EN` | D9 | PA15 | Free GPIO output in current firmware |
+| Front `PWR_EN` | D10 | PA2 | Free GPIO output in current firmware |
+
+Pins to avoid for this ToF expansion:
+
+- PB1 and PB4 are the active PWM outputs.
+- PB6/PB7 are the ST-LINK UART log.
+- PC10/PC11/PC12, PD13, PA8, and PE6 are the BlueNRG-MS BLE SPI/control pins.
+- PA13/PA14 are SWD.
+- PC6 must stay low to keep the on-board VL53L0X off when the front SATEL uses
+  I2C1 at default address `0x29`.
+
+Recommended wiring keeps them on separate buses:
 
 | Signal | Rear SATEL | Front SATEL |
 | --- | --- | --- |
-| `EXT_MCLK_SCL` | Shared A5 / PC0 | Shared A5 / PC0 |
-| `EXT_MOSI_SDA` | Shared A4 / PC1 | Shared A4 / PC1 |
+| `EXT_MCLK_SCL` | A5 / PC0 / I2C3_SCL -> J2 pin 6 | D15 / PB8 / I2C1_SCL -> J2 pin 6 |
+| `EXT_MOSI_SDA` | A4 / PC1 / I2C3_SDA -> J2 pin 5 | D14 / PB9 / I2C1_SDA -> J2 pin 5 |
 | `EXT_5V0` | Shared 5V -> J2 pin 11 | Shared 5V -> J2 pin 11 |
 | `EXT_SPI_I2C_N` | Shared GND | Shared GND |
-| `EXT_PWR_EN` | Shared 3V3 | Shared 3V3 |
+| `EXT_PWR_EN` | D9 / PA15 -> J2 pin 7, or 3V3 | D10 / PA2 -> J2 pin 7, or 3V3 |
 | GND | Shared GND | Shared GND |
-| `EXT_LPn` | Dedicated A1 / PC4 | Dedicated A0 / PC5 or D8 / PB2 |
+| `EXT_LPn` | Dedicated A1 / PC4 -> J2 pin 2 | Dedicated A0 / PC5 -> J2 pin 2 |
 | `EXT_GPIO1` | Dedicated A2 / PC3 -> J1 top pad | Dedicated A3 / PC2 -> J1 top pad |
 
-Future boot sequence:
+I2C1 caveat: the IOT01A1 on-board VL53L0X also sits on I2C1 at default
+address `0x29`. This firmware keeps `VL53L0X_XSHUT` / PC6 low so that on-board
+sensor remains disabled. Do not release PC6 while a front SATEL-VL53L8 is on
+I2C1 at the default address.
 
-1. Hold both `LPn` lines low.
-2. Release rear `LPn`.
-3. Initialize rear at default address and assign the rear address.
-4. Release front `LPn`.
-5. Initialize front at default address and assign the front address.
-6. Poll or interrupt each sensor independently.
+Recommended boot sequence:
+
+1. Drive both SATEL `LPn` lines low and both SATEL `PWR_EN` lines low if they
+   are wired to GPIO.
+2. Assert PC6 `VL53L0X_XSHUT` low and keep it low.
+3. Enable rear `PWR_EN`, release rear `LPn`, and initialize rear on I2C3 at
+   default address `0x29` / HAL address `0x52`.
+4. Enable front `PWR_EN`, release front `LPn`, and initialize front on I2C1 at
+   default address `0x29` / HAL address `0x52`.
+5. Start both sensors ranging.
+6. In each main-loop pass, process the rear slot and front slot independently.
+
+With separate buses, unique runtime addresses are optional because each bus has
+only one active SATEL at `0x29`.
+
+Shared-bus fallback is still possible but less preferred:
+
+1. Put both sensors on I2C3 A5/A4.
+2. Hold both `LPn` lines low.
+3. Release one sensor, initialize it at `0x29`, assign a non-default address,
+   and confirm it answers at that new address.
+4. Release the other sensor and leave or assign its address.
+5. Never let both sensors be awake at `0x29` on the same bus.
 
 Do not wire two SATEL boards with shared `LPn` unless only one is populated or
 only one is powered.

@@ -159,7 +159,7 @@ static void snapshot_l8_if_ready(void)
                                    sizeof(s_tof.pending_buf), &payload_len);
   if (rc != TOF_CODEC_OK) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
-    s_tof.state = 2;
+    s_tof.state = BLE_TOF_STATE_ERROR;
     TofL8_ClearNewFrame();
     return;
   }
@@ -201,7 +201,7 @@ int BLE_Tof_Init(void)
   tBleStatus ret;
 
   memset(&s_tof, 0, sizeof(s_tof));
-  s_tof.state = 1;
+  s_tof.state = BLE_TOF_STATE_RUNNING;
   s_tof.debug_sensor = TOF_SENSOR_VL53L8CX;
 
   SVCCTL_RegisterSvcHandler(BLE_Tof_EventHandler);
@@ -411,21 +411,21 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
    * version, a corrupted attribute write packet). */
   if (data == NULL || len < sizeof(BLE_TofConfigPayload_t)) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
-    s_tof.state      = 2;
+    s_tof.state      = BLE_TOF_STATE_ERROR;
     publish_status();
     return;
   }
 
   if (data[0] != TOF_SENSOR_VL53L8CX) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
-    s_tof.state = 1;
+    s_tof.state = BLE_TOF_STATE_RUNNING;
     publish_status();
     return;
   }
 
   if (!BLE_Tof_ConfigWriteAllowed((uint8_t)BLE_App_GetMode(), data[0])) {
     s_tof.last_error = (uint8_t)TOF_STATUS_LOCKED_IN_DRIVE;
-    s_tof.state      = 1;
+    s_tof.state      = BLE_TOF_STATE_RUNNING;
     publish_status();
     return;
   }
@@ -442,19 +442,9 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
     reset_stream_state();
   }
 
-  if (rc == TOF_STATUS_OK) {
-    s_tof.last_error = 0;
-    s_tof.state = 1;
-  } else if (rc == TOF_STATUS_DRIVER_MISSING ||
-             rc == TOF_STATUS_NO_SENSOR ||
-             rc == TOF_STATUS_BOOT_FAILED ||
-             rc == TOF_STATUS_DRIVER_DEAD) {
-    s_tof.last_error = (uint8_t)rc;
-    s_tof.state = 2;
-  } else {
-    s_tof.last_error = (uint8_t)rc;
-    s_tof.state = 1;
-  }
+  BLE_TofStatusDecision_t decision = BLE_Tof_StatusForResult(rc);
+  s_tof.last_error = decision.last_error;
+  s_tof.state = decision.state;
   publish_status();
 }
 
@@ -497,10 +487,9 @@ void BLE_Tof_EnforceSafetyConfig(void)
     s_tof.debug_sensor = TOF_SENSOR_VL53L8CX;
   }
   s_tof.safety_config_ready = (rc == TOF_STATUS_OK) ? 1u : 0u;
-  s_tof.last_error = (rc == TOF_STATUS_OK) ? 0 : (uint8_t)rc;
-  s_tof.state      = (rc == TOF_STATUS_DRIVER_DEAD ||
-                      rc == TOF_STATUS_NO_SENSOR ||
-                      rc == TOF_STATUS_BOOT_FAILED) ? 2 : 1;
+  BLE_TofStatusDecision_t decision = BLE_Tof_StatusForResult(rc);
+  s_tof.last_error = decision.last_error;
+  s_tof.state = decision.state;
   reset_stream_state();
   publish_status();
 }
