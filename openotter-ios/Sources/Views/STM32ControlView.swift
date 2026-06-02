@@ -13,9 +13,9 @@ struct STM32ControlView: View {
                 ScrollView {
                     VStack(spacing: 24) {
 
-                    // --- VL53L5CX TOF DEBUG (FE60 multi-zone grid) ---
+                    // --- VL53L8CX TOF DEBUG (FE60 multi-zone grid) ---
                     GroupBox(label:
-                        Label("VL53L5CX DEPTH MAP", systemImage: "square.grid.3x3.fill")
+                        Label("VL53L8CX DEPTH MAP", systemImage: "square.grid.3x3.fill")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
                     ) {
@@ -284,22 +284,19 @@ private struct TofDebugCard: View {
     }
 
     private var maxIntegrationMs: Double {
-        Double(TofConfig.maxL5IntegrationMs(frequencyHz: viewModel.tofConfig.frequencyHz))
+        Double(TofConfig.maxL8IntegrationMs(frequencyHz: viewModel.tofConfig.frequencyHz))
     }
 
     private var errorBanner: String {
         switch viewModel.tofLastError {
         case 0:  return ""
-        case 1:  return "VL53L5CX not detected"
-        case 2:  return "VL53L5CX boot failed"
-        case 3:  return "VL53L5CX I2C error"
-        case 4:  return "Firmware rejected VL53L5CX config"
-        case 5:  return "VL53L5CX driver missing"
-        case 6:  return "Firmware rejected layout"
-        case 7:  return "Firmware rejected distance mode"
-        case 8:  return "Budget below sensor minimum for this combo"
-        case 9:  return "Driver rejected combo — rolled back to previous"
-        case 10: return "ToF driver offline — reboot the board"
+        case 1:  return "VL53L8CX not detected"
+        case 2:  return "VL53L8CX boot failed"
+        case 3:  return "VL53L8CX I2C error"
+        case 4:  return "Firmware rejected VL53L8CX config"
+        case 5:  return "VL53L8CX driver missing"
+        case 6:  return "VL53L8CX driver offline"
+        case 11: return "Config locked outside Debug mode"
         default: return "ToF error \(viewModel.tofLastError)"
         }
     }
@@ -372,7 +369,12 @@ private struct TofDebugCard: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.gray.opacity(0.15))
                     .frame(height: 120)
-                    .overlay(Text("Waiting for frame…").foregroundStyle(.secondary))
+                    .overlay(
+                        Text(viewModel.firmwareMode == .debug
+                             ? "Waiting for VL53L8 frame..."
+                             : "Switch to Debug for depth frames")
+                            .foregroundStyle(.secondary)
+                    )
             }
 
             HStack {
@@ -389,7 +391,7 @@ private struct TofDebugCard: View {
                     .foregroundStyle(.secondary)
                 Text(verbatim: "chunks rx \(viewModel.tofChunksReceived)  parsed \(viewModel.tofFramesParsed)  dropped \(viewModel.tofDroppedFrameChunks)")
                 Text(verbatim: "state \(String(describing: viewModel.tofState))  err \(viewModel.tofLastError)  mode \(String(describing: viewModel.firmwareMode))")
-                Text(verbatim: "sensor \(String(describing: viewModel.tofConfig.sensor))  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
+                Text(verbatim: "sensor \(viewModel.tofConfig.sensor.displayName)  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
             }
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)

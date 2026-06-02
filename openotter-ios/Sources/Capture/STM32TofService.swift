@@ -6,7 +6,8 @@ import Combine
 /// frame plus a derived scan rate to SwiftUI.
 ///
 /// Frame wire format authority:
-///   firmware/stm32-mcp/Core/Inc/tof_l1.h (TofL1_Frame_t, 76 B fixed, LE)
+///   firmware/stm32-mcp/Core/Inc/tof_frame_codec.h
+///   firmware/stm32-mcp/Core/Inc/tof_types.h
 ///
 /// Status payload authority:
 ///   firmware/stm32-mcp/Core/Inc/ble_tof.h (BLE_TofStatusPayload_t, 4 B)
@@ -27,7 +28,7 @@ public final class STM32TofService: NSObject, ObservableObject {
     private weak var configChar: CBCharacteristic?
     private weak var statusChar: CBCharacteristic?
     private var debugStreamingEnabled = false
-    private var preferredConfig = TofConfig(sensor: .vl53l5cx,
+    private var preferredConfig = TofConfig(sensor: .vl53l8cx,
                                             layout: 4,
                                             distMode: 1,
                                             budgetUs: 0,

@@ -31,8 +31,8 @@ class STM32ControlViewModel: ObservableObject {
     @Published var firmwareMode: OperatingMode = .debug
     @Published var rearSafetyEvent: FirmwareSafetyEvent?
     @Published private var rearSafetyReceivedAt: Date?
-    /// Defaults match firmware VL53L5CX debug stream: 4x4, profile 1, 10 Hz, 20 ms.
-    @Published var tofConfig = TofConfig(sensor: .vl53l5cx,
+    /// Defaults match firmware VL53L8CX debug stream: 4x4, profile 1, 10 Hz, 20 ms.
+    @Published var tofConfig = TofConfig(sensor: .vl53l8cx,
                                          layout: 4,
                                          distMode: 1,
                                          budgetUs: 0,
@@ -73,7 +73,7 @@ class STM32ControlViewModel: ObservableObject {
         setupSubscriptions()
         bleManager.start()   // idempotent — no-op if already connected
         escManager.start()   // idempotent — no-op if already connected
-        // Bench bring-up: keep firmware in Debug so VL53L5CX FE62 frames
+        // Bench bring-up: keep firmware in Debug so VL53L8CX FE62 frames
         // stream regardless of mode. Reverse safety supervisor stays disarmed.
         setFirmwareMode(.debug)
     }
@@ -128,15 +128,9 @@ class STM32ControlViewModel: ObservableObject {
 
     func setTofLayout(_ layout: UInt8) {
         tofConfig.layout = layout
-        if tofConfig.sensor == .vl53l5cx {
-            let cap = TofConfig.bleCapFrequencyHz(layout: layout)
-            tofConfig.frequencyHz = min(tofConfig.frequencyHz, cap)
-            tofConfig.integrationMs = TofConfig.defaultL5IntegrationMs(layout: layout)
-        } else {
-            tofConfig.budgetUs = TofConfig.clampBudget(tofConfig.budgetUs,
-                                                       layout: layout,
-                                                       distMode: tofConfig.distMode)
-        }
+        let cap = TofConfig.bleCapFrequencyHz(layout: layout)
+        tofConfig.frequencyHz = min(tofConfig.frequencyHz, cap)
+        tofConfig.integrationMs = TofConfig.defaultL8IntegrationMs(layout: layout)
         scheduleTofSend()
     }
 
@@ -156,14 +150,14 @@ class STM32ControlViewModel: ObservableObject {
     }
 
     func setTofFrequencyHz(_ hz: UInt8) {
-        tofConfig.frequencyHz = min(max(hz, 1), TofConfig.maxL5FrequencyHz(layout: tofConfig.layout))
-        tofConfig.integrationMs = TofConfig.clampL5IntegrationMs(tofConfig.integrationMs,
+        tofConfig.frequencyHz = min(max(hz, 1), TofConfig.maxL8FrequencyHz(layout: tofConfig.layout))
+        tofConfig.integrationMs = TofConfig.clampL8IntegrationMs(tofConfig.integrationMs,
                                                                  frequencyHz: tofConfig.frequencyHz)
         scheduleTofSend()
     }
 
     func setTofIntegrationMs(_ ms: UInt16) {
-        tofConfig.integrationMs = TofConfig.clampL5IntegrationMs(ms,
+        tofConfig.integrationMs = TofConfig.clampL8IntegrationMs(ms,
                                                                  frequencyHz: tofConfig.frequencyHz)
         scheduleTofSend()
     }
@@ -179,18 +173,12 @@ class STM32ControlViewModel: ObservableObject {
     }
 
     private func sendTofConfig() {
-        if tofConfig.sensor == .vl53l5cx {
-            tofService.sendConfig(sensor: tofConfig.sensor,
-                                  layout: tofConfig.layout,
-                                  profile: tofConfig.distMode,
-                                  frequencyHz: tofConfig.frequencyHz,
-                                  integrationMs: tofConfig.integrationMs,
-                                  budgetMs: UInt16(min(UInt32(UInt16.max), tofConfig.budgetUs / 1000)))
-        } else {
-            tofService.sendConfig(layout: tofConfig.layout,
-                                  distMode: tofConfig.distMode,
-                                  budgetUs: tofConfig.budgetUs)
-        }
+        tofService.sendConfig(sensor: tofConfig.sensor,
+                              layout: tofConfig.layout,
+                              profile: tofConfig.distMode,
+                              frequencyHz: tofConfig.frequencyHz,
+                              integrationMs: tofConfig.integrationMs,
+                              budgetMs: UInt16(min(UInt32(UInt16.max), tofConfig.budgetUs / 1000)))
     }
 
     // MARK: - Send Logic

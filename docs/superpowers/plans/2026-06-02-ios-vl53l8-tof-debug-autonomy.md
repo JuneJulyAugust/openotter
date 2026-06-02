@@ -1,6 +1,6 @@
 # iOS VL53L8 ToF Debug And Autonomy Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the iOS STM32 ToF debug visualization work with SATEL-VL53L8 firmware frames first, then surface VL53L8 rear sensor health and safety state in autonomous mode.
 
@@ -31,7 +31,7 @@
 - Modify: `openotter-ios/Sources/Capture/TofTypes.swift`
 - Modify: `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`
 
-- [ ] **Step 1: Update tests for the new sensor semantic name**
+- [x] **Step 1: Update tests for the new sensor semantic name**
 
 In `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`, rename the
 VL53L5 tests to VL53L8 and change expected enum cases:
@@ -53,7 +53,7 @@ func testVL53L8CXConfigEncodesFE61V2() {
 
 Expected: tests fail because `.vl53l8cx` is not defined.
 
-- [ ] **Step 2: Rename the enum case while preserving wire value**
+- [x] **Step 2: Rename the enum case while preserving wire value**
 
 In `openotter-ios/Sources/Capture/TofTypes.swift`, change:
 
@@ -69,7 +69,7 @@ public enum TofSensorType: UInt8, Equatable, Sendable {
 Do not keep `.vl53l5cx`; the deployment path is deprecated and compile errors
 should force every call site to choose the new name.
 
-- [ ] **Step 3: Add a current sensor display name**
+- [x] **Step 3: Add a current sensor display name**
 
 Add this extension below `TofSensorType`:
 
@@ -86,7 +86,7 @@ public extension TofSensorType {
 }
 ```
 
-- [ ] **Step 4: Run the focused ToF tests**
+- [x] **Step 4: Run the focused ToF tests**
 
 Run:
 
@@ -104,7 +104,7 @@ Expected: failures only at call sites still using `.vl53l5cx` or VL53L5 names.
 - Modify: `openotter-ios/Sources/Views/TofGridView.swift`
 - Modify: `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`
 
-- [ ] **Step 1: Rename the zone class type and tests**
+- [x] **Step 1: Rename the zone class type and tests**
 
 Replace `VL53L5CXZoneClass` with:
 
@@ -138,7 +138,7 @@ func testVL53L8CXNearStatus2StaysInvalid() {
 }
 ```
 
-- [ ] **Step 2: Implement the VL53L8 class helper**
+- [x] **Step 2: Implement the VL53L8 class helper**
 
 In `ZoneReading` extension, replace `vl53l5cxClass` with:
 
@@ -155,7 +155,7 @@ var vl53l8cxClass: VL53L8CXZoneClass {
 }
 ```
 
-- [ ] **Step 3: Update `TofGridView` to use VL53L8 semantics**
+- [x] **Step 3: Update `TofGridView` to use VL53L8 semantics**
 
 Replace every `.vl53l5cx` check with `.vl53l8cx`, and every
 `vl53l5cxClass` call with `vl53l8cxClass`.
@@ -163,7 +163,7 @@ Replace every `.vl53l5cx` check with `.vl53l8cx`, and every
 Keep legacy VL53L1 rendering for `.vl53l1cb` frames only; this is historical
 parser compatibility, not the active deployment path.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -181,7 +181,7 @@ Expected: ToF tests pass or remaining failures point to stale VL53L5 names.
 - Modify: `openotter-ios/Sources/Capture/STM32ControlViewModel.swift`
 - Modify: `openotter-ios/Tests/Capture/STM32TofServiceTests.swift`
 
-- [ ] **Step 1: Change service preferred config**
+- [x] **Step 1: Change service preferred config**
 
 In `STM32TofService`, change:
 
@@ -198,7 +198,7 @@ Update the file header so the frame wire authority points to
 `firmware/stm32-mcp/Core/Inc/tof_frame_codec.h` and
 `firmware/stm32-mcp/Core/Inc/tof_types.h`.
 
-- [ ] **Step 2: Change debug view model default config**
+- [x] **Step 2: Change debug view model default config**
 
 In `STM32ControlViewModel`, change:
 
@@ -223,7 +223,7 @@ public static func defaultL8IntegrationMs(layout: UInt8) -> UInt16
 
 Use the same formulas currently used by the L5-named helpers.
 
-- [ ] **Step 3: Update config send path**
+- [x] **Step 3: Update config send path**
 
 In `STM32ControlViewModel.sendTofConfig()`, collapse to the VL53L8 path:
 
@@ -240,7 +240,7 @@ tofService.sendConfig(sensor: tofConfig.sensor,
 The legacy L1 branch can be removed because firmware rejects deprecated sensor
 config writes.
 
-- [ ] **Step 4: Verify parser tests**
+- [x] **Step 4: Verify parser tests**
 
 Update `makeV2Payload(layout:)` test helper to expect `.vl53l8cx` and keep
 wire byte `2`. Run:
@@ -258,7 +258,7 @@ Expected: `STM32TofServiceTests` pass.
 - Modify: `openotter-ios/Sources/Views/STM32ControlView.swift`
 - Modify: `openotter-ios/Sources/Views/TofGridView.swift`
 
-- [ ] **Step 1: Rename visible text**
+- [x] **Step 1: Rename visible text**
 
 Change the group label in `STM32ControlView` to:
 
@@ -281,7 +281,7 @@ case 11: return "Config locked outside Debug mode"
 Status code `6` now maps to `TOF_STATUS_DRIVER_DEAD`; the old iOS text
 "Firmware rejected layout" is no longer correct.
 
-- [ ] **Step 2: Use display names in debug text**
+- [x] **Step 2: Use display names in debug text**
 
 Change the debug line to use:
 
@@ -289,7 +289,7 @@ Change the debug line to use:
 Text(verbatim: "sensor \(viewModel.tofConfig.sensor.displayName)  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
 ```
 
-- [ ] **Step 3: Improve empty state**
+- [x] **Step 3: Improve empty state**
 
 Replace "Waiting for frame..." with mode-aware copy:
 
@@ -314,6 +314,9 @@ Expected:
 - 8x8 frames render as an 8x8 grid at the capped rate;
 - FE63 status shows running and a non-zero scan rate.
 
+Status: not run in this session; requires a flashed STM32 and connected VL53L8
+hardware.
+
 ## Task 5: Add Rear ToF Health Presentation For Autonomous Mode
 
 **Files:**
@@ -321,7 +324,7 @@ Expected:
 - Create: `openotter-ios/Tests/Capture/TofHealthPresentationTests.swift`
 - Modify: `openotter-ios/Sources/Capture/SelfDrivingViewModel.swift`
 
-- [ ] **Step 1: Write presentation tests**
+- [x] **Step 1: Write presentation tests**
 
 Create `openotter-ios/Tests/Capture/TofHealthPresentationTests.swift`:
 
@@ -334,6 +337,7 @@ final class TofHealthPresentationTests: XCTestCase {
         let p = TofHealthPresentation(state: .running, lastError: 0, scanHz: 30)
         XCTAssertEqual(p.statusText, "RUNNING")
         XCTAssertEqual(p.detailText, "30 Hz")
+        XCTAssertEqual(p.compactDetailText, "30 Hz")
         XCTAssertFalse(p.isError)
     }
 
@@ -341,12 +345,14 @@ final class TofHealthPresentationTests: XCTestCase {
         let p = TofHealthPresentation(state: .error, lastError: 1, scanHz: 0)
         XCTAssertEqual(p.statusText, "ERROR")
         XCTAssertEqual(p.detailText, "VL53L8CX not detected")
+        XCTAssertEqual(p.compactDetailText, "No sensor")
         XCTAssertTrue(p.isError)
     }
 
     func testLockedModeIsNotHealthFailure() {
         let p = TofHealthPresentation(state: .running, lastError: 11, scanHz: 30)
         XCTAssertEqual(p.detailText, "Config locked outside Debug mode")
+        XCTAssertEqual(p.compactDetailText, "Locked")
         XCTAssertFalse(p.isError)
     }
 }
@@ -354,7 +360,7 @@ final class TofHealthPresentationTests: XCTestCase {
 
 Expected: fails because `TofHealthPresentation` does not exist.
 
-- [ ] **Step 2: Implement presentation model**
+- [x] **Step 2: Implement presentation model**
 
 Create `openotter-ios/Sources/Capture/TofHealthPresentation.swift`:
 
@@ -364,6 +370,7 @@ import Foundation
 struct TofHealthPresentation: Equatable {
     let statusText: String
     let detailText: String
+    let compactDetailText: String
     let isError: Bool
 
     init(state: TofState, lastError: UInt8, scanHz: UInt8) {
@@ -377,6 +384,7 @@ struct TofHealthPresentation: Equatable {
         }()
 
         detailText = Self.detail(lastError: lastError, scanHz: scanHz)
+        compactDetailText = Self.compactDetail(lastError: lastError, scanHz: scanHz)
         isError = state == .error || [1, 2, 3, 5, 6].contains(lastError)
     }
 
@@ -393,10 +401,24 @@ struct TofHealthPresentation: Equatable {
         default: return "ToF error \(lastError)"
         }
     }
+
+    private static func compactDetail(lastError: UInt8, scanHz: UInt8) -> String {
+        switch lastError {
+        case 0: return "\(scanHz) Hz"
+        case 1: return "No sensor"
+        case 2: return "Boot fail"
+        case 3: return "I2C"
+        case 4: return "Config"
+        case 5: return "Missing"
+        case 6: return "Offline"
+        case 11: return "Locked"
+        default: return "Err \(lastError)"
+        }
+    }
 }
 ```
 
-- [ ] **Step 3: Expose rear ToF health from SelfDrivingViewModel**
+- [x] **Step 3: Expose rear ToF health from SelfDrivingViewModel**
 
 In `SelfDrivingViewModel`, store the ToF service and observe it so FE63 status
 updates redraw the autonomous HUD:
@@ -424,7 +446,7 @@ tofService.objectWillChange
 This is a read-only presentation helper. Do not enable debug streaming in
 Self Driving.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run:
 
@@ -441,7 +463,7 @@ Expected: health presentation tests pass.
 - Modify: `openotter-ios/Sources/Views/SelfDrivingView.swift`
 - Modify: `openotter-ios/Tests/Capture/STM32BleModeTransitionTests.swift`
 
-- [ ] **Step 1: Add rear ToF rows to the safety HUD**
+- [x] **Step 1: Add rear ToF rows to the safety HUD**
 
 In `SelfDrivingView.bottomHUD`, inside the `SAFETY` card after forward depth,
 add:
@@ -449,14 +471,14 @@ add:
 ```swift
 let rearHealth = viewModel.rearTofHealth
 MetricRow(label: "Rear ToF", value: rearHealth.statusText)
-MetricRow(label: "Rear Hz", value: rearHealth.detailText)
+MetricRow(label: "ToF Info", value: rearHealth.compactDetailText)
 ```
 
 Use red/orange text only if the local `MetricRow` API supports row coloring
 without broad UI refactoring; otherwise keep the value text simple and let the
 emergency overlay carry the urgent state.
 
-- [ ] **Step 2: Preserve Drive/Park streaming invariant**
+- [x] **Step 2: Preserve Drive/Park streaming invariant**
 
 Keep `STM32ModeTransitionPolicy.startActions(for:)` unchanged:
 
@@ -495,13 +517,16 @@ Expected:
 - FE63 health remains visible;
 - FE43 rear BRAKE overlay still appears when firmware reports rear safety brake.
 
+Status: not run in this session; requires a flashed STM32 and connected VL53L8
+hardware.
+
 ## Task 7: Document Future Two-Sensor Hook
 
 **Files:**
 - Modify: `openotter-ios/Sources/Capture/TofTypes.swift`
 - Modify: `docs/superpowers/specs/2026-06-02-ios-vl53l8-tof-debug-autonomy-design.md`
 
-- [ ] **Step 1: Add role enum without changing wire parsing**
+- [x] **Step 1: Add role enum without changing wire parsing**
 
 Add:
 
@@ -517,12 +542,12 @@ Keep `TofFrame` role-free in this phase unless the implementation needs a
 visible label. Current firmware exposes one sensor only; role is inferred as
 rear in UI copy, not encoded in the frame.
 
-- [ ] **Step 2: Keep future role protocol explicit in docs**
+- [x] **Step 2: Keep future role protocol explicit in docs**
 
 The design doc must state that future front/rear role must come from firmware
 protocol extension, not from whichever UI tab is active.
 
-- [ ] **Step 3: Verify no behavior changed**
+- [x] **Step 3: Verify no behavior changed**
 
 Run:
 
@@ -538,7 +563,7 @@ Expected: tests pass.
 **Files:**
 - Modify: `openotter-ios/CHANGELOG.md`
 
-- [ ] **Step 1: Add changelog entry**
+- [x] **Step 1: Add changelog entry**
 
 At the top of `openotter-ios/CHANGELOG.md`, add or extend an unreleased section
 with:
@@ -561,7 +586,17 @@ cd openotter-ios
 
 Expected: tests and build pass.
 
-- [ ] **Step 3: Commit**
+Status: partially complete. `xcodebuild build-for-testing` succeeded for the
+iOS test bundle. Focused ToF tests passed before the later HUD-only compact
+text edit. Focused autonomous health and mode tests passed after that edit.
+Full `test-without-building`, plus a final rerun attempt for
+`STM32TofServiceTests`, could not launch the simulator test runner because
+CoreSimulator reported `Busy ("Application failed preflight checks")`.
+`openotter-ios/build.sh build` reached provisioning input gathering, reported
+invalid Xcode account credentials in the keychain, then `xcodebuild` exited with
+segmentation fault `11`.
+
+- [x] **Step 3: Commit**
 
 Run:
 

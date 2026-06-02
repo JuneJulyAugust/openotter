@@ -318,6 +318,14 @@ struct SelfDrivingView: View {
                     label: "Depth",
                     value: viewModel.poseModel.forwardDepth.map { String(format: "%.2f m", $0) } ?? "—"
                 )
+                MetricRow(
+                    label: "Rear ToF",
+                    value: viewModel.rearTofHealth.statusText
+                )
+                MetricRow(
+                    label: "ToF Info",
+                    value: viewModel.rearTofHealth.compactDetailText
+                )
                 if let event = viewModel.orchestrator.lastSupervisorEvent {
                     MetricRow(
                         label: "Smooth",

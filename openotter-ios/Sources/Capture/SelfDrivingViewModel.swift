@@ -10,6 +10,7 @@ final class SelfDrivingViewModel: ObservableObject {
     @Published var poseModel = ARKitPoseViewModel()
     @Published var escManager = ESCBleManager.shared
     @Published var stm32Manager = STM32BleManager.shared
+    private let tofService = STM32TofService.shared
 
     // MARK: - Planner
 
@@ -180,6 +181,7 @@ final class SelfDrivingViewModel: ObservableObject {
         poseModel.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         escManager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         stm32Manager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        tofService.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         orchestrator.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         agentRuntime.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         telegramGateway.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
@@ -225,6 +227,12 @@ final class SelfDrivingViewModel: ObservableObject {
 
     // PWM normalization moved to `PwmMapping.toPulseWidth(_:)` so iOS
     // and firmware share the single source of truth for PWM bounds.
+
+    var rearTofHealth: TofHealthPresentation {
+        TofHealthPresentation(state: tofService.state,
+                              lastError: tofService.lastError,
+                              scanHz: tofService.scanHz)
+    }
 }
 
 // MARK: - Car Status Provider

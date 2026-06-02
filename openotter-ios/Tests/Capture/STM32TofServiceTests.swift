@@ -15,9 +15,9 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertFalse(STM32ControlViewModel.shouldRefreshTofConfig(afterModeChangeTo: .park))
     }
 
-    func testVL53L5CXConfigEncodesFE61V2() {
+    func testVL53L8CXConfigEncodesFE61V2() {
         let payload = STM32TofService.makeConfigPayload(
-            sensor: .vl53l5cx,
+            sensor: .vl53l8cx,
             layout: 8,
             profile: 1,
             frequencyHz: 10,
@@ -31,14 +31,14 @@ final class STM32TofServiceTests: XCTestCase {
     func testConfigSentBeforeAttachIsRemembered() {
         let service = STM32TofService()
 
-        service.sendConfig(sensor: .vl53l5cx,
+        service.sendConfig(sensor: .vl53l8cx,
                            layout: 8,
                            profile: 1,
                            frequencyHz: 1,
                            integrationMs: 100,
                            budgetMs: 0)
 
-        XCTAssertEqual(service.preferredConfigForTesting.sensor, .vl53l5cx)
+        XCTAssertEqual(service.preferredConfigForTesting.sensor, .vl53l8cx)
         XCTAssertEqual(service.preferredConfigForTesting.layout, 8)
         XCTAssertEqual(service.preferredConfigForTesting.frequencyHz, 1)
         XCTAssertEqual(service.preferredConfigForTesting.integrationMs, 100)
@@ -58,21 +58,21 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertTrue(service.debugStreamingEnabledForTesting)
     }
 
-    func testVL53L5CXFarStatus2ClassifiesAsClear() {
+    func testVL53L8CXFarStatus2ClassifiesAsClear() {
         XCTAssertEqual(ZoneReading(rangeMm: 4300,
                                    status: VL53L1RangeStatus(raw: 2),
-                                   flags: 1).vl53l5cxClass,
+                                   flags: 1).vl53l8cxClass,
                        .clear)
         XCTAssertEqual(ZoneReading(rangeMm: 0,
                                    status: VL53L1RangeStatus(raw: 2),
-                                   flags: 0).vl53l5cxClass,
+                                   flags: 0).vl53l8cxClass,
                        .clear)
     }
 
-    func testVL53L5CXNearStatus2StaysInvalid() {
+    func testVL53L8CXNearStatus2StaysInvalid() {
         XCTAssertEqual(ZoneReading(rangeMm: 1000,
                                    status: VL53L1RangeStatus(raw: 2),
-                                   flags: 1).vl53l5cxClass,
+                                   flags: 1).vl53l8cxClass,
                        .invalid)
     }
 
@@ -80,7 +80,7 @@ final class STM32TofServiceTests: XCTestCase {
         let payload = makeV2Payload(layout: 4)
         let frame = STM32TofService.parseFrameV2(Data(payload))
 
-        XCTAssertEqual(frame?.sensor, .vl53l5cx)
+        XCTAssertEqual(frame?.sensor, .vl53l8cx)
         XCTAssertEqual(frame?.layout, 4)
         XCTAssertEqual(frame?.numZones, 16)
         XCTAssertEqual(frame?.zones.count, 16)
@@ -92,7 +92,7 @@ final class STM32TofServiceTests: XCTestCase {
         let payload = makeV2Payload(layout: 8)
         let frame = STM32TofService.parseFrameV2(Data(payload))
 
-        XCTAssertEqual(frame?.sensor, .vl53l5cx)
+        XCTAssertEqual(frame?.sensor, .vl53l8cx)
         XCTAssertEqual(frame?.layout, 8)
         XCTAssertEqual(frame?.numZones, 64)
         XCTAssertEqual(frame?.zones.count, 64)

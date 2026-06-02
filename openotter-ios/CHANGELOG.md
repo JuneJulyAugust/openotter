@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Rear VL53L8 Health HUD**: Self Driving now surfaces rear ToF state, error detail, and scan rate from firmware FE63 status notifications without enabling FE62 debug frame streaming in Drive mode.
+
+### Changed
+- **VL53L8 ToF Debug Path**: Renamed the STM32 ToF debug model and grid visualization from VL53L5CX to VL53L8CX while preserving the FE61/FE62 wire sensor value `2`.
+
 ## [1.1.0] - 2026-04-25
 
 ### Added

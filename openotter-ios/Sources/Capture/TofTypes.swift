@@ -3,12 +3,29 @@ import Foundation
 public enum TofSensorType: UInt8, Equatable, Sendable {
     case none = 0
     case vl53l1cb = 1
-    case vl53l5cx = 2
+    case vl53l8cx = 2
     case unknown = 255
 
     public init(raw: UInt8) {
         self = TofSensorType(rawValue: raw) ?? .unknown
     }
+}
+
+public extension TofSensorType {
+    var displayName: String {
+        switch self {
+        case .none: return "None"
+        case .vl53l1cb: return "VL53L1CB"
+        case .vl53l8cx: return "VL53L8CX"
+        case .unknown: return "Unknown"
+        }
+    }
+}
+
+public enum TofSensorRole: Equatable, Sendable {
+    case rear
+    case front
+    case unknown
 }
 
 /// VL53L1 range-status codes — subset we surface in the UI.
@@ -63,17 +80,17 @@ public struct ZoneReading: Equatable, Sendable {
     }
 }
 
-public enum VL53L5CXZoneClass: Equatable, Sendable {
+public enum VL53L8CXZoneClass: Equatable, Sendable {
     case invalid
     case clear
     case valid
 }
 
 public extension ZoneReading {
-    /// Mirrors firmware reverse-safety handling for VL53L5CX zones.
+    /// Mirrors firmware reverse-safety handling for VL53L8CX zones.
     /// Status 2 at/above the useful range, or a zero-range no-target cell,
     /// means clear space rather than an obstacle or blind sensor.
-    var vl53l5cxClass: VL53L5CXZoneClass {
+    var vl53l8cxClass: VL53L8CXZoneClass {
         switch status.rawValue {
         case 5, 6, 9, 10:
             return rangeMm > 0 ? .valid : .invalid
@@ -89,13 +106,13 @@ public struct TofConfig: Equatable, Sendable {
     public var sensor: TofSensorType
     /// Zones per side: 1, 3, or 4.
     public var layout: UInt8
-    /// L1: 1 = SHORT, 2 = MEDIUM, 3 = LONG. L5: profile id.
+    /// VL53L1: 1 = SHORT, 2 = MEDIUM, 3 = LONG. VL53L8: profile id.
     public var distMode: UInt8
     /// Per-zone timing budget, microseconds.
     public var budgetUs: UInt32
-    /// L5 ranging frequency in Hz; 0 lets firmware choose default.
+    /// VL53L8 ranging frequency in Hz; 0 lets firmware choose default.
     public var frequencyHz: UInt8
-    /// L5 integration time in ms; 0 lets firmware choose default.
+    /// VL53L8 integration time in ms; 0 lets firmware choose default.
     public var integrationMs: UInt16
 
     public init(sensor: TofSensorType = .vl53l1cb,
@@ -148,7 +165,7 @@ public struct TofConfig: Equatable, Sendable {
         return max(lo, min(hi, requestedUs))
     }
 
-    public static func maxL5FrequencyHz(layout: UInt8) -> UInt8 {
+    public static func maxL8FrequencyHz(layout: UInt8) -> UInt8 {
         layout == 8 ? 15 : 60
     }
 
@@ -161,22 +178,22 @@ public struct TofConfig: Equatable, Sendable {
         layout == 8 ? 1 : 10
     }
 
-    public static func maxL5IntegrationMs(frequencyHz: UInt8) -> UInt16 {
+    public static func maxL8IntegrationMs(frequencyHz: UInt8) -> UInt16 {
         let hz = max(1, UInt16(frequencyHz))
         let period = 1000 / hz
         return max(2, period > 5 ? period - 5 : 2)
     }
 
-    public static func clampL5IntegrationMs(_ requestedMs: UInt16,
+    public static func clampL8IntegrationMs(_ requestedMs: UInt16,
                                             frequencyHz: UInt8) -> UInt16 {
-        let hi = maxL5IntegrationMs(frequencyHz: frequencyHz)
+        let hi = maxL8IntegrationMs(frequencyHz: frequencyHz)
         return min(max(requestedMs, 2), hi)
     }
 
     /// Sensible integration-time default per layout. 8x8 spreads the photon
     /// budget over 64 zones; at 20ms most zones return no-target. 100ms gives
     /// each zone adequate signal while fitting within a 1 Hz period (1000ms).
-    public static func defaultL5IntegrationMs(layout: UInt8) -> UInt16 {
+    public static func defaultL8IntegrationMs(layout: UInt8) -> UInt16 {
         layout == 8 ? 100 : 20
     }
 }
