@@ -121,6 +121,138 @@ not fully correct.
 `SPI_I2C_N` must be high for I2C mode. `PWR_EN` should be high for the full
 SATEL board regulators unless the board assembly already straps it high.
 
+## Connection Diagrams
+
+### SATEL Connector Orientation
+
+Use this view when looking at the ST connector image: `J2` pin 1 is the bottom
+square pad, then the numbers count upward to pin 11. `J1` is the separate
+3-pad header below `J2`.
+
+```text
+SATEL-VL53L8 expansion connector view
+
+J2, 11-pin header
+
+    pin 11  EXT_5V0       <- IOT01A1 5V
+    pin 10  EXT_1V8       <- DO NOT WIRE
+    pin  9  EXT_3V3       <- DO NOT WIRE
+    pin  8  EXT_IOVDD     <- DO NOT WIRE
+    pin  7  EXT_PWR_EN    <- IOT01A1 3V3
+    pin  6  EXT_MCLK_SCL  <- IOT01A1 A5 / PC0 / I2C3_SCL
+    pin  5  EXT_MOSI_SDA  <- IOT01A1 A4 / PC1 / I2C3_SDA
+    pin  4  EXT_MISO      <- DO NOT WIRE
+    pin  3  EXT_NCS       <- DO NOT WIRE
+    pin  2  EXT_LPn       <- IOT01A1 A1 / PC4
+    pin  1  EXT_SPI_I2C_N <- IOT01A1 3V3
+            square pad
+
+J1, 3-pad header
+
+    top round pad     EXT_GPIO1 <- IOT01A1 A2 / PC3
+    middle round pad  EXT_GPIO2 <- leave open for one-sensor bring-up
+    bottom square pad GND       <- IOT01A1 GND
+```
+
+### One-Sensor Wiring
+
+```mermaid
+flowchart LR
+    subgraph IOT["B-L475E-IOT01A1"]
+        I5V["5V"]
+        I3V3["3V3"]
+        IGND["GND"]
+        IA5["A5 / PC0 / I2C3_SCL"]
+        IA4["A4 / PC1 / I2C3_SDA"]
+        IA2["A2 / PC3"]
+        IA1["A1 / PC4"]
+    end
+
+    subgraph SATEL["SATEL-VL53L8 carrier board"]
+        P11["J2 pin 11 / EXT_5V0"]
+        P1["J2 pin 1 / EXT_SPI_I2C_N"]
+        P7["J2 pin 7 / EXT_PWR_EN"]
+        P6["J2 pin 6 / EXT_MCLK_SCL"]
+        P5["J2 pin 5 / EXT_MOSI_SDA"]
+        P2["J2 pin 2 / EXT_LPn"]
+        J1TOP["J1 top pad / EXT_GPIO1"]
+        J1GND["J1 bottom square pad / GND"]
+    end
+
+    I5V -->|"power input"| P11
+    I3V3 -->|"select I2C mode"| P1
+    I3V3 -->|"enable regulators"| P7
+    IA5 -->|"I2C clock"| P6
+    IA4 -->|"I2C data"| P5
+    IA1 -->|"reset / low-power control"| P2
+    IA2 -->|"optional interrupt"| J1TOP
+    IGND -->|"common ground"| J1GND
+```
+
+Do not add wires to `J2` pin 10 `EXT_1V8`, pin 9 `EXT_3V3`, or pin 8
+`EXT_IOVDD` for this bring-up. The full SATEL carrier board derives the sensor
+rails from `EXT_5V0` and uses level shifters for the IOT01A1 3.3 V signals.
+
+### Two-Sensor Future Topology
+
+Two SATEL boards can share power, ground, SCL, SDA, `SPI_I2C_N`, and `PWR_EN`.
+Each board needs its own `LPn` line so firmware can hold one sensor off while
+it boots and re-addresses the other sensor at the default I2C address.
+
+```mermaid
+flowchart LR
+    subgraph IOT["B-L475E-IOT01A1"]
+        I5V["5V"]
+        I3V3["3V3"]
+        IGND["GND"]
+        SCL["A5 / PC0 / I2C3_SCL"]
+        SDA["A4 / PC1 / I2C3_SDA"]
+        RLP["A1 / PC4 / rear LPn"]
+        FLP["A0 / PC5 or D8 / PB2 / front LPn"]
+        RINT["A2 / PC3 / rear GPIO1"]
+        FINT["A3 / PC2 / front GPIO1"]
+    end
+
+    subgraph REAR["Rear SATEL-VL53L8"]
+        R5V["J2 pin 11 / EXT_5V0"]
+        R3V3MODE["J2 pin 1 / EXT_SPI_I2C_N"]
+        R3V3PWR["J2 pin 7 / EXT_PWR_EN"]
+        RSCL["J2 pin 6 / EXT_MCLK_SCL"]
+        RSDA["J2 pin 5 / EXT_MOSI_SDA"]
+        RLPIN["J2 pin 2 / EXT_LPn"]
+        RG1["J1 top pad / EXT_GPIO1"]
+        RGND["J1 bottom square pad / GND"]
+    end
+
+    subgraph FRONT["Front SATEL-VL53L8"]
+        F5V["J2 pin 11 / EXT_5V0"]
+        F3V3MODE["J2 pin 1 / EXT_SPI_I2C_N"]
+        F3V3PWR["J2 pin 7 / EXT_PWR_EN"]
+        FSCL["J2 pin 6 / EXT_MCLK_SCL"]
+        FSDA["J2 pin 5 / EXT_MOSI_SDA"]
+        FLPIN["J2 pin 2 / EXT_LPn"]
+        FG1["J1 top pad / EXT_GPIO1"]
+        FGND["J1 bottom square pad / GND"]
+    end
+
+    I5V --> R5V
+    I5V --> F5V
+    I3V3 --> R3V3MODE
+    I3V3 --> F3V3MODE
+    I3V3 --> R3V3PWR
+    I3V3 --> F3V3PWR
+    IGND --> RGND
+    IGND --> FGND
+    SCL --> RSCL
+    SCL --> FSCL
+    SDA --> RSDA
+    SDA --> FSDA
+    RLP --> RLPIN
+    FLP --> FLPIN
+    RINT --> RG1
+    FINT --> FG1
+```
+
 ## Firmware Expectations
 
 The active firmware path is:
