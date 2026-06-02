@@ -58,7 +58,7 @@ public final class STM32TofService: NSObject, ObservableObject {
         frameChar = nil
         configChar = nil
         statusChar = nil
-        DispatchQueue.main.async {
+        updateOnMain {
             self.latestFrame = nil
             self.state = .unknown
             self.lastError = 0
@@ -180,6 +180,14 @@ public final class STM32TofService: NSObject, ObservableObject {
         case v2
     }
 
+    private func updateOnMain(_ update: @escaping () -> Void) {
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.async(execute: update)
+        }
+    }
+
     public func handleFrameNotification(_ data: Data) {
         guard data.count >= 2 else { return }
         chunksReceived &+= 1
@@ -225,7 +233,7 @@ public final class STM32TofService: NSObject, ObservableObject {
         if last {
             if let frame = STM32TofService.parseFrame(Data(rxBuf)) {
                 framesParsed &+= 1
-                DispatchQueue.main.async {
+                updateOnMain {
                     self.latestFrame = frame
                 }
             }
@@ -264,7 +272,7 @@ public final class STM32TofService: NSObject, ObservableObject {
             if frameLen <= copied,
                let frame = Self.parseFrameV2(Data(rxV2Buf.prefix(frameLen))) {
                 framesParsed &+= 1
-                DispatchQueue.main.async {
+                updateOnMain {
                     self.latestFrame = frame
                 }
             } else {
@@ -278,7 +286,7 @@ public final class STM32TofService: NSObject, ObservableObject {
     public func handleStatusNotification(_ data: Data) {
         guard data.count >= 4 else { return }
         let bytes = [UInt8](data)
-        DispatchQueue.main.async {
+        updateOnMain {
             self.state     = TofState(raw: bytes[0])
             self.lastError = bytes[1]
             self.scanHz    = bytes[2]
