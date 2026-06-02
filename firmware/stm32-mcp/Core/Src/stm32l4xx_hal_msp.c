@@ -198,7 +198,7 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c) {
     }
 
     __HAL_RCC_GPIOC_CLK_ENABLE();
-    /**I2C3 GPIO Configuration — VL53L1-Satel (Arduino A4/A5)
+    /**I2C3 GPIO Configuration - SATEL-VL53L8 (Arduino A4/A5)
     PC0     ------> I2C3_SCL
     PC1     ------> I2C3_SDA
     */

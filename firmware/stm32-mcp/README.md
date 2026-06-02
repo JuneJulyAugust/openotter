@@ -18,7 +18,7 @@ Receives steering and throttle commands over BLE and drives PWM outputs to contr
   - **Status Characteristic** (`0xFE42`): Notify / Read — firmware heartbeat/status
   - **Safety Characteristic** (`0xFE43`): Notify — reverse safety state and trigger snapshot
   - **Mode Characteristic** (`0xFE44`): Write / Read — Drive, Debug, or Park operating mode
-- **Reverse ToF Safety**: VL53L1CB rear ToF supervisor brakes reverse motion based on speed-dependent critical distance.
+- **Reverse ToF Safety**: SATEL-VL53L8 rear ToF supervisor brakes reverse motion based on speed-dependent critical distance.
 - **PWM Servo Output** via TIM3
   - `PB1` (TIM3_CH4) → Steering servo
   - `PB4` (TIM3_CH1) → Throttle ESC
@@ -37,18 +37,18 @@ Make sure you have STM32CubeCLT installed at `/opt/st/STM32CubeCLT_1.21.0/` or s
 
 This repository often keeps active feature work in a git worktree while the
 repo root stays on `main`. If you are working on a branch like
-`feature/vl53l5cx-tof-debug`, build from the worktree path, not the repo root
+`feature/vl53l8-satel-firmware`, build from the worktree path, not the repo root
 checkout:
 
 ```bash
-cd /Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/firmware/stm32-mcp
+cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp
 ./build.sh
 ```
 
 Host tests live beside that worktree too:
 
 ```bash
-cd /Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/firmware/stm32-mcp/tests/host
+cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp/tests/host
 make test
 ```
 

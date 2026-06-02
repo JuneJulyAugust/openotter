@@ -1,20 +1,20 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
-#include "tof_l5.h"
+#include "tof_l8.h"
 
 static uint8_t max_freq_for_layout(uint8_t layout)
 {
   switch (layout) {
-    case 4: return TOF_L5_MAX_FREQ_4X4_HZ;
-    case 8: return TOF_L5_MAX_FREQ_8X8_HZ;
+    case 4: return TOF_L8_MAX_FREQ_4X4_HZ;
+    case 8: return TOF_L8_MAX_FREQ_8X8_HZ;
     default: return 0;
   }
 }
 
-int TofL5_ValidateConfig(const Tof_Config_t *cfg)
+int TofL8_ValidateConfig(const Tof_Config_t *cfg)
 {
   if (cfg == 0) return TOF_STATUS_BAD_CONFIG;
-  if (cfg->sensor_type != TOF_SENSOR_VL53L5CX) return TOF_STATUS_BAD_CONFIG;
-  if (cfg->profile != TOF_PROFILE_L5_CONTINUOUS) return TOF_STATUS_BAD_CONFIG;
+  if (cfg->sensor_type != TOF_SENSOR_VL53L8CX) return TOF_STATUS_BAD_CONFIG;
+  if (cfg->profile != TOF_PROFILE_L8_CONTINUOUS) return TOF_STATUS_BAD_CONFIG;
 
   uint8_t max_freq = max_freq_for_layout(cfg->layout);
   if (max_freq == 0) return TOF_STATUS_BAD_CONFIG;

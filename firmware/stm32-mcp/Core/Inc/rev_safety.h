@@ -47,7 +47,7 @@ typedef struct {
                                       measure phase but the other gave data;
                                       hold previous reading without touching
                                       smoothed depth or blind counters */
-  bool         driver_dead;        /* TofL1_ERR_DRIVER_DEAD latched */
+  bool         driver_dead;        /* ToF driver dead-latched */
   uint32_t     now_ms;             /* HAL_GetTick() or test clock */
 } RevSafetyInput_t;
 

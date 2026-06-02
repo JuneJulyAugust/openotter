@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [Unreleased] - 2026-06-02
+
+### Added
+- **SATEL-VL53L8 deployment path**: Added firmware design, implementation plan, and bring-up documentation for one SATEL-VL53L8 on B-L475E-IOT01A1 I2C3.
+- **Two-sensor wiring plan**: Documented the future front/rear SATEL-VL53L8 topology with shared I2C and dedicated `LPn` lines for safe address assignment.
+
+### Changed
+- **Active ToF firmware path**: Migrated the active multizone driver, reverse-safety selector, BLE ToF config path, and host tests from VL53L5-facing names to VL53L8-facing names.
+- **Vendor dependency import**: `fetch-deps.sh` now expects STSW-IMG040 via `--vl53l8cx-path` and no longer installs the deprecated VL53L1 driver.
+- **Deployment deprecation**: VL53L0X, VL53L1CB, and VL53L5CX are now historical/deprecated for the deployment path; active target firmware uses SATEL-VL53L8.
+
 ## [1.1.0] - 2026-04-25
 
 ### Added

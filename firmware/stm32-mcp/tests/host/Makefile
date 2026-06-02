@@ -6,7 +6,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -Werror -O0 -g
 INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 
-TESTS = test_tof_l1_roi test_rev_safety test_rev_safety_tof test_rev_safety_l5 test_tof_frame_codec test_tof_l5_config test_ble_tof_policy test_ble_drive_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l5_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
+TESTS = test_rev_safety test_rev_safety_tof test_rev_safety_l8 test_tof_frame_codec test_tof_l8_config test_ble_tof_policy test_ble_drive_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l8_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test clean dirs
@@ -25,14 +25,14 @@ $(BUILD_DIR)/test_rev_safety: test_rev_safety.c ../../Core/Src/rev_safety.c ../.
 $(BUILD_DIR)/test_rev_safety_tof: test_rev_safety_tof.c ../../Core/Src/rev_safety_tof.c ../../Core/Inc/rev_safety_tof.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_tof.c ../../Core/Src/rev_safety_tof.c -o $@
 
-$(BUILD_DIR)/test_rev_safety_l5: test_rev_safety_l5.c ../../Core/Src/rev_safety_l5.c ../../Core/Src/rev_safety_tof.c ../../Core/Inc/rev_safety_l5.h ../../Core/Inc/rev_safety_tof.h ../../Core/Inc/tof_types.h | dirs
-	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_l5.c ../../Core/Src/rev_safety_l5.c ../../Core/Src/rev_safety_tof.c -o $@
+$(BUILD_DIR)/test_rev_safety_l8: test_rev_safety_l8.c ../../Core/Src/rev_safety_l8.c ../../Core/Src/rev_safety_tof.c ../../Core/Inc/rev_safety_l8.h ../../Core/Inc/rev_safety_tof.h ../../Core/Inc/tof_types.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_l8.c ../../Core/Src/rev_safety_l8.c ../../Core/Src/rev_safety_tof.c -o $@
 
 $(BUILD_DIR)/test_tof_frame_codec: test_tof_frame_codec.c ../../Core/Src/tof_frame_codec.c ../../Core/Inc/tof_frame_codec.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_frame_codec.c ../../Core/Src/tof_frame_codec.c -o $@
 
-$(BUILD_DIR)/test_tof_l5_config: test_tof_l5_config.c ../../Core/Src/tof_l5_config.c ../../Core/Inc/tof_l5.h ../../Core/Inc/tof_types.h | dirs
-	$(CC) $(CFLAGS) $(INCDIR) test_tof_l5_config.c ../../Core/Src/tof_l5_config.c -o $@
+$(BUILD_DIR)/test_tof_l8_config: test_tof_l8_config.c ../../Core/Src/tof_l8_config.c ../../Core/Inc/tof_l8.h ../../Core/Inc/tof_types.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_tof_l8_config.c ../../Core/Src/tof_l8_config.c -o $@
 
 $(BUILD_DIR)/test_ble_tof_policy: test_ble_tof_policy.c ../../Core/Src/ble_tof_policy.c ../../Core/Inc/ble_tof_policy.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_ble_tof_policy.c ../../Core/Src/ble_tof_policy.c -o $@
@@ -49,8 +49,8 @@ $(BUILD_DIR)/test_ble_command: test_ble_command.c ../../Core/Src/ble_command.c .
 $(BUILD_DIR)/test_ble_gatt_layout: test_ble_gatt_layout.c ../../Core/Src/ble_gatt_layout.c ../../Core/Inc/ble_gatt_layout.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_ble_gatt_layout.c ../../Core/Src/ble_gatt_layout.c -o $@
 
-$(BUILD_DIR)/test_tof_l5_debounce: test_tof_l5_debounce.c ../../Core/Src/tof_l5_debounce.c ../../Core/Inc/tof_l5_debounce.h | dirs
-	$(CC) $(CFLAGS) $(INCDIR) test_tof_l5_debounce.c ../../Core/Src/tof_l5_debounce.c -o $@
+$(BUILD_DIR)/test_tof_l8_debounce: test_tof_l8_debounce.c ../../Core/Src/tof_l8_debounce.c ../../Core/Inc/tof_l8_debounce.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_tof_l8_debounce.c ../../Core/Src/tof_l8_debounce.c -o $@
 
 # firmware_panic.c references TIM3/USART1 register names from stm32l4xx.h on
 # target builds; HOST_TEST disables those references for the host harness.

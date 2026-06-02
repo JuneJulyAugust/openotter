@@ -9,7 +9,7 @@
  * the configured timeout and reboots into a clean state.
  *
  * Timeout sizing: ~20 seconds gives enough slack for the slowest documented
- * blocking operation (VL53L5CX firmware download — bounded to 15 s of
+ * blocking operation (VL53L8CX firmware download — bounded to 15 s of
  * I²C work and may be triggered lazily from the main loop when Drive-mode
  * safety config is first applied). Normal steady-state loop iterations are
  * sub-millisecond, so this remains a last-resort recovery path rather than
@@ -35,7 +35,7 @@ extern "C" {
 /* LSI nominal frequency on STM32L4 = 32 kHz. */
 #define FW_WATCHDOG_LSI_HZ          32000u
 
-/* Default timeout. Must exceed the VL53L5CX driver's largest blocking I2C
+/* Default timeout. Must exceed the VL53L8CX driver's largest blocking I2C
  * transaction timeout (15 s) so legal sensor boot does not reset-loop. */
 #define FW_WATCHDOG_DEFAULT_TIMEOUT_MS  20000u
 

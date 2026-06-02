@@ -29,10 +29,10 @@ static void expect_u8(const char *label, uint8_t got, uint8_t want)
 static void fill_frame(Tof_Frame_t *f, uint8_t layout)
 {
   memset(f, 0, sizeof(*f));
-  f->sensor_type = TOF_SENSOR_VL53L5CX;
+  f->sensor_type = TOF_SENSOR_VL53L8CX;
   f->layout = layout;
   f->zone_count = (uint8_t)(layout * layout);
-  f->profile = TOF_PROFILE_L5_CONTINUOUS;
+  f->profile = TOF_PROFILE_L8_CONTINUOUS;
   f->seq = 0x12345678u;
   f->tick_ms = 0x01020304u;
   for (uint8_t i = 0; i < f->zone_count; ++i) {
@@ -54,7 +54,7 @@ static void test_4x4_payload_and_chunks(void)
   expect_u32("4x4 serialize rc", (uint32_t)rc, TOF_CODEC_OK);
   expect_u32("4x4 payload length", len, 80u);
   expect_u8("version", payload[0], TOF_FRAME_V2_VERSION);
-  expect_u8("sensor type", payload[1], TOF_SENSOR_VL53L5CX);
+  expect_u8("sensor type", payload[1], TOF_SENSOR_VL53L8CX);
   expect_u8("layout", payload[2], 4u);
   expect_u8("zone count", payload[3], 16u);
 

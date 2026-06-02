@@ -29,9 +29,9 @@
 #include "ble_lib.h"
 #include "blesvc.h"
 #include "rev_safety.h"
-#include "rev_safety_l5.h"
+#include "rev_safety_l8.h"
 #include "rev_safety_tof.h"
-#include "tof_l5.h"
+#include "tof_l8.h"
 #include "ble_tof.h"
 #include "ble_command.h"
 #include "ble_drive_policy.h"
@@ -192,7 +192,7 @@ void BLE_App_Process(void) {
   RevSafetyEvent_t ev = {0};
   bool drive_safety_ready = BLE_Tof_SafetyConfigReady() ? true : false;
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-    const Tof_Frame_t *f = TofL5_GetLatestFrame();
+    const Tof_Frame_t *f = TofL8_GetLatestFrame();
     bool new_frame = (f && f->seq != s_last_tof_seq);
     s_last_tof_seq = f ? f->seq : s_last_tof_seq;
 
@@ -203,13 +203,13 @@ void BLE_App_Process(void) {
         : (int16_t)PWM_NEUTRAL_US;
     in.frame_is_new = new_frame;
     if (f) {
-      RevSafetyTofReading_t reading = RevSafetyL5_SelectReverseReading(f);
+      RevSafetyTofReading_t reading = RevSafetyL8_SelectReverseReading(f);
       in.zone_valid       = (reading.tof_class == REV_SAFETY_TOF_VALID ||
                              reading.tof_class == REV_SAFETY_TOF_CLEAR);
       in.frame_is_partial = (reading.tof_class == REV_SAFETY_TOF_PARTIAL);
       in.raw_depth_m      = reading.depth_m;
     }
-    in.driver_dead = TofL5_IsDriverDead() ? true : false;
+    in.driver_dead = TofL8_IsDriverDead() ? true : false;
     in.now_ms      = now;
     RevSafety_Tick(s_rev_ctx, &in, &ev);
   }

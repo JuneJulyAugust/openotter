@@ -5,12 +5,14 @@
 #include <assert.h>
 #include <stdint.h>
 
-static void test_debug_allows_l1_and_l5_config(void)
+static void test_debug_allows_only_l8_config(void)
 {
   assert(BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_DEBUG,
-                                    TOF_SENSOR_VL53L1CB));
-  assert(BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_DEBUG,
-                                    TOF_SENSOR_VL53L5CX));
+                                    TOF_SENSOR_VL53L8CX));
+  assert(!BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_DEBUG,
+                                     TOF_SENSOR_VL53L1CB));
+  assert(!BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_DEBUG,
+                                     TOF_SENSOR_NONE));
 }
 
 static void test_drive_and_park_lock_external_config(void)
@@ -20,9 +22,9 @@ static void test_drive_and_park_lock_external_config(void)
   assert(!BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_PARK,
                                      TOF_SENSOR_VL53L1CB));
   assert(!BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_DRIVE,
-                                     TOF_SENSOR_VL53L5CX));
+                                     TOF_SENSOR_VL53L8CX));
   assert(!BLE_Tof_ConfigWriteAllowed(BLE_TOF_MODE_PARK,
-                                     TOF_SENSOR_VL53L5CX));
+                                     TOF_SENSOR_VL53L8CX));
 }
 
 static void test_frame_streams_only_in_debug(void)
@@ -34,7 +36,7 @@ static void test_frame_streams_only_in_debug(void)
 
 int main(void)
 {
-  test_debug_allows_l1_and_l5_config();
+  test_debug_allows_only_l8_config();
   test_drive_and_park_lock_external_config();
   test_frame_streams_only_in_debug();
   return 0;

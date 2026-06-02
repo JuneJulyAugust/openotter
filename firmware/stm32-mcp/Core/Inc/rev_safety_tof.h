@@ -29,8 +29,7 @@ typedef struct {
 
 #define REV_SAFETY_TOF_CLEAR_DEPTH_M 4.0f
 
-/* Classify a serialized center-zone reading from TofL1_Frame_t for the
- * reverse-safety supervisor:
+/* Classify a center-zone ToF reading for the reverse-safety supervisor:
  *   - range-valid statuses become VALID with their measured depth
  *   - zero-range "no target" statuses become CLEAR with a synthetic 4 m depth
  *   - true sensor faults remain INVALID and feed the blind-frame counter

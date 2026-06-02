@@ -25,8 +25,7 @@
 #include "ble_tof.h"
 #include "stm32l4xx_ll_pwr.h"
 #include "stm32l4xx_ll_rcc.h"
-#include "tof_l1.h"
-#include "tof_l5.h"
+#include "tof_l8.h"
 #include "firmware_watchdog.h"
 #include "firmware_stack_guard.h"
 #include "firmware_panic.h"
@@ -211,12 +210,10 @@ int main(void) {
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
-  /* VL53L1CB stays available for the existing reverse-safety path. VL53L5CX is
-   * initialized lazily from the BLE debug config path so a cold MSP01 power-up
-   * cannot block BLE advertising or the heartbeat LED before the main loop.
+  /* VL53L8CX is initialized lazily from BLE_Tof_Process so the multi-second
+   * sensor firmware download cannot block BLE advertising or the heartbeat LED
+   * before the main loop starts.
    */
-  boot_log_str("BOOT phase=tof_l1_init\r\n");
-  TofL1_Init();
 
   /* Initialize BLE stack and custom GATT service */
   boot_log_str("BOOT phase=ble_app_init\r\n");
@@ -242,7 +239,7 @@ int main(void) {
   FwMpu_Init();
 
   /* Start the independent watchdog after fast startup init paths have run.
-   * The window is sized to tolerate lazy VL53L5CX boot from the main loop.
+   * The window is sized to tolerate lazy VL53L8CX boot from the main loop.
    * From this point on, any main-loop iteration that exceeds the watchdog
    * window reboots the chip — last-resort recovery from a hung BLE stack,
    * blocked I²C transaction, or any other stuck-loop bug. */
@@ -257,7 +254,7 @@ int main(void) {
   uint32_t last_loop_log_tick = 0;
   while (1) {
     /* Refresh the watchdog at the top of every iteration. If we never get
-     * back here (e.g. BLE_App_Process or TofL5_Process spins forever), the
+     * back here (e.g. BLE_App_Process or TofL8_Process spins forever), the
      * IWDG fires after its configured window and resets the chip. */
     FwWatchdog_Refresh();
     loop_iter++;
@@ -285,8 +282,7 @@ int main(void) {
     }
 
     BLE_App_Process();
-    TofL1_Process();
-    TofL5_Process();
+    TofL8_Process();
     /* BLE_Tof_Process is mode-gated: in Drive mode (default) frame
      * notifications are suppressed; in Debug mode they stream normally. */
     BLE_Tof_Process();
@@ -298,20 +294,20 @@ int main(void) {
       last_toggle = HAL_GetTick();
     }
 
-    /* Toggle LED2 (PB14) at 1 Hz while VL53L5CX frames are arriving. */
-    static uint32_t last_l5_seq = 0;
-    static uint32_t last_l5_frame_tick = 0;
-    static uint32_t last_l5_led_toggle = 0;
+    /* Toggle LED2 (PB14) at 1 Hz while VL53L8CX frames are arriving. */
+    static uint32_t last_l8_seq = 0;
+    static uint32_t last_l8_frame_tick = 0;
+    static uint32_t last_l8_led_toggle = 0;
     uint32_t now = HAL_GetTick();
-    const Tof_Frame_t *l5_frame = TofL5_GetLatestFrame();
-    if (l5_frame && l5_frame->seq != 0u && l5_frame->seq != last_l5_seq) {
-      last_l5_seq = l5_frame->seq;
-      last_l5_frame_tick = now;
+    const Tof_Frame_t *l8_frame = TofL8_GetLatestFrame();
+    if (l8_frame && l8_frame->seq != 0u && l8_frame->seq != last_l8_seq) {
+      last_l8_seq = l8_frame->seq;
+      last_l8_frame_tick = now;
     }
-    if (last_l5_frame_tick != 0u && (now - last_l5_frame_tick) <= 1500u) {
-      if ((now - last_l5_led_toggle) >= 1000u) {
+    if (last_l8_frame_tick != 0u && (now - last_l8_frame_tick) <= 1500u) {
+      if ((now - last_l8_led_toggle) >= 1000u) {
         HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
-        last_l5_led_toggle = now;
+        last_l8_led_toggle = now;
       }
     } else {
       HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
@@ -461,7 +457,7 @@ static void MX_I2C2_Init(void) {
 }
 
 /**
- * @brief I2C3 Initialization Function — VL53L1CB on Arduino A4/A5 (PC1/PC0)
+ * @brief I2C3 Initialization Function — SATEL-VL53L8 on Arduino A4/A5 (PC1/PC0)
  * @retval None
  */
 static void MX_I2C3_Init(void) {
