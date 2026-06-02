@@ -1,0 +1,70 @@
+name: iOS Tests
+
+on:
+  push:
+    paths:
+      - ".github/workflows/ios.yml"
+      - "openotter-ios/**"
+  pull_request:
+    paths:
+      - ".github/workflows/ios.yml"
+      - "openotter-ios/**"
+
+permissions:
+  contents: read
+
+jobs:
+  simulator-tests:
+    name: Simulator tests
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Run iOS tests with coverage
+        working-directory: openotter-ios
+        env:
+          ENABLE_CODE_COVERAGE: "1"
+          RESULT_BUNDLE_PATH: ".build/TestResults/openotter.xcresult"
+        run: ./build.sh test
+
+      - name: Write coverage reports
+        if: always()
+        working-directory: openotter-ios
+        run: |
+          mkdir -p .build/TestResults
+          if [ -d .build/TestResults/openotter.xcresult ]; then
+            xcrun xccov view --report .build/TestResults/openotter.xcresult \
+              | tee .build/TestResults/coverage.txt
+            xcrun xccov view --report --json .build/TestResults/openotter.xcresult \
+              > .build/TestResults/coverage.json
+          else
+            echo "No xcresult bundle found." | tee .build/TestResults/coverage.txt
+          fi
+
+      - name: Add coverage summary
+        if: always()
+        run: |
+          {
+            echo "## iOS XCTest coverage"
+            echo
+            cat openotter-ios/.build/TestResults/coverage.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload XCTest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results
+          path: |
+            openotter-ios/.build/TestResults/openotter.xcresult
+            openotter-ios/.build/TestResults/coverage.txt
+            openotter-ios/.build/TestResults/coverage.json
+          if-no-files-found: warn

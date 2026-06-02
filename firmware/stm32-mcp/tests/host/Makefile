@@ -92,6 +92,8 @@ coverage:
 	    --filter '../../Core/Inc' \
 	    --exclude '../../Drivers' \
 	    --print-summary \
+	    --txt $(BUILD_DIR)/coverage.txt \
+	    --xml-pretty --xml $(BUILD_DIR)/coverage.xml \
 	    --html-details $(BUILD_DIR)/coverage.html; \
 	else \
 	  echo "gcovr not found; activate the project .venv and install gcovr to render coverage."; \

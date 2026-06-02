@@ -37,6 +37,9 @@ Environment:
   SIMULATOR_NAME    Preferred test simulator name (default: iPhone 17)
   SIMULATOR_UDID    Exact test simulator UDID
   TEST_DESTINATION  Full xcodebuild test destination override
+  ENABLE_CODE_COVERAGE  Set to 1 or YES to collect XCTest coverage
+  RESULT_BUNDLE_PATH    Optional xcodebuild .xcresult path for tests
+  CODE_SIGNING_ALLOWED  Optional xcodebuild override for simulator CI
 EOF
     exit 1
 }
@@ -46,6 +49,9 @@ DEVICE_UDID="${DEVICE_UDID:-}"
 SIMULATOR_NAME="${SIMULATOR_NAME:-iPhone 17}"
 SIMULATOR_UDID="${SIMULATOR_UDID:-}"
 TEST_DESTINATION="${TEST_DESTINATION:-}"
+ENABLE_CODE_COVERAGE="${ENABLE_CODE_COVERAGE:-0}"
+RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-}"
+CODE_SIGNING_ALLOWED="${CODE_SIGNING_ALLOWED:-}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device) DEVICE_UDID="$2"; shift 2 ;;
@@ -291,23 +297,62 @@ cmd_test() {
 
     echo "==> Running tests on $destination..."
     export APP_VERSION
+    local xcodebuild_args=(
+        test
+        -project "$PROJECT_NAME.xcodeproj"
+        -scheme "$SCHEME"
+        -destination "$destination"
+        -derivedDataPath "$DERIVED_DATA"
+    )
+
+    if [[ "$ENABLE_CODE_COVERAGE" == "1" || "$ENABLE_CODE_COVERAGE" == "YES" ]]; then
+        xcodebuild_args+=(-enableCodeCoverage YES)
+    fi
+
+    if [[ -n "$RESULT_BUNDLE_PATH" ]]; then
+        rm -rf "$RESULT_BUNDLE_PATH"
+        mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
+        xcodebuild_args+=(-resultBundlePath "$RESULT_BUNDLE_PATH")
+    fi
+
+    xcodebuild_args+=(
+        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+        MARKETING_VERSION="$APP_VERSION"
+    )
+    if [[ -n "$CODE_SIGNING_ALLOWED" ]]; then
+        xcodebuild_args+=(CODE_SIGNING_ALLOWED="$CODE_SIGNING_ALLOWED")
+    fi
+
     local test_output
     test_output="$(mktemp)"
-    if ! xcodebuild test \
-        -project "$PROJECT_NAME.xcodeproj" \
-        -scheme "$SCHEME" \
-        -destination "$destination" \
-        -derivedDataPath "$DERIVED_DATA" \
-        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-        MARKETING_VERSION="$APP_VERSION" 2>&1 | tee "$test_output"; then
+    local attempt=1
+    local max_attempts=2
+    while true; do
+        if [[ -n "$RESULT_BUNDLE_PATH" ]]; then
+            rm -rf "$RESULT_BUNDLE_PATH"
+            mkdir -p "$(dirname "$RESULT_BUNDLE_PATH")"
+        fi
+        : > "$test_output"
+
+        if xcodebuild "${xcodebuild_args[@]}" 2>&1 | tee "$test_output"; then
+            rm -f "$test_output"
+            echo "==> Tests complete."
+            return 0
+        fi
+
         if grep -qiE 'busy|failed preflight checks|FBSOpenApplicationServiceErrorDomain|Simulator device failed to launch' "$test_output"; then
             show_simulator_hint
+            if [[ "$attempt" -lt "$max_attempts" ]]; then
+                echo "==> Simulator was busy; shutting down simulators and retrying once..."
+                xcrun simctl shutdown all 2>/dev/null || true
+                sleep 3
+                attempt=$((attempt + 1))
+                continue
+            fi
         fi
         rm -f "$test_output"
         return 1
-    fi
-    rm -f "$test_output"
-    echo "==> Tests complete."
+    done
 }
 
 case "$COMMAND" in

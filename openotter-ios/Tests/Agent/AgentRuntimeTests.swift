@@ -61,7 +61,7 @@ final class AgentRuntimeTests: XCTestCase {
 
     func testUnknownCommandReturnHelp() {
         let response = runtime.handleMessage("dance")
-        XCTAssertTrue(response.lowercased().contains("unknown"))
+        XCTAssertTrue(response.lowercased().contains("unrecognized"))
     }
 
     func testHelpCommandSuppressesSpeech() {

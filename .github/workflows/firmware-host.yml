@@ -1,0 +1,73 @@
+name: Firmware Host Tests
+
+on:
+  push:
+    paths:
+      - ".github/workflows/firmware-host.yml"
+      - "firmware/stm32-mcp/**"
+  pull_request:
+    paths:
+      - ".github/workflows/firmware-host.yml"
+      - "firmware/stm32-mcp/**"
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Host tests and coverage
+    runs-on: ubuntu-latest
+    env:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install coverage tooling
+        run: python -m pip install --upgrade pip gcovr
+
+      - name: Run host tests with coverage
+        working-directory: firmware/stm32-mcp/tests/host
+        run: make coverage GCOVR=gcovr
+
+      - name: Add coverage summary
+        if: always()
+        run: |
+          {
+            echo "## Firmware host coverage"
+            echo
+            if [ -f firmware/stm32-mcp/tests/host/build/coverage.txt ]; then
+              cat firmware/stm32-mcp/tests/host/build/coverage.txt
+            else
+              echo "coverage.txt was not generated."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-host-coverage
+          path: |
+            firmware/stm32-mcp/tests/host/build/coverage.html
+            firmware/stm32-mcp/tests/host/build/coverage.*.html
+            firmware/stm32-mcp/tests/host/build/coverage.css
+            firmware/stm32-mcp/tests/host/build/coverage.js
+            firmware/stm32-mcp/tests/host/build/coverage.txt
+            firmware/stm32-mcp/tests/host/build/coverage.xml
+          if-no-files-found: error
+
+      - name: Upload coverage to Codecov
+        if: ${{ env.CODECOV_TOKEN != '' }}
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: firmware/stm32-mcp/tests/host/build/coverage.xml
+          flags: firmware-host
+          fail_ci_if_error: false
