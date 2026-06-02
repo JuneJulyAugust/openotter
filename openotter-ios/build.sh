@@ -8,7 +8,7 @@ PROJECT_NAME="openotter"
 SCHEME="$PROJECT_NAME"
 CONFIG="${CONFIG:-Debug}"
 DERIVED_DATA="$SCRIPT_DIR/.build/DerivedData"
-BUNDLE_ID="com.openotter.app"
+BUNDLE_ID="${BUNDLE_ID:-com.openotter.app}"
 
 usage() {
     cat <<EOF
@@ -60,26 +60,60 @@ auto_detect_device() {
     if [[ -n "$DEVICE_UDID" ]]; then return; fi
 
     local devices
-    devices=$(xcrun devicectl list devices 2>/dev/null \
+    local available_output
+    if ! available_output=$(xcrun devicectl list devices \
+        --filter "State == 'available' OR State == 'connected'" \
+        --timeout 15 2>/dev/null); then
+        echo "Unable to query connected iOS devices via CoreDevice."
+        echo "Try reconnecting the iPhone, unlocking it, and running: xcrun devicectl list devices"
+        exit 1
+    fi
+
+    devices=$(printf '%s\n' "$available_output" \
         | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' || true)
     local count
-    count=$(echo "$devices" | grep -c . 2>/dev/null || echo 0)
+    if [[ -n "$devices" ]]; then
+        count=$(printf '%s\n' "$devices" | wc -l | tr -d '[:space:]')
+    else
+        count=0
+    fi
 
     if [[ "$count" -eq 1 ]]; then
-        DEVICE_UDID="$(echo "$devices" | head -1 | xargs)"
+        DEVICE_UDID="$(printf '%s\n' "$devices" | head -1 | xargs)"
         echo "Auto-detected device: $DEVICE_UDID"
     elif [[ "$count" -gt 1 ]]; then
         echo "Multiple devices found. Specify with --device <UDID>:"
-        xcrun devicectl list devices 2>/dev/null
+        echo "$available_output"
         exit 1
     else
         echo "No connected iOS devices found."
+        echo
+        echo "CoreDevice currently reports:"
+        xcrun devicectl list devices --timeout 15 2>/dev/null || true
+        cat <<'EOF'
+
+If your iPhone is listed as unavailable, reconnect it, unlock it, confirm
+"Trust This Computer" on the device, and make sure Developer Mode is enabled.
+Then rerun:
+  xcrun devicectl list devices
+EOF
         exit 1
     fi
 }
 
 app_path() {
     echo "$DERIVED_DATA/Build/Products/$CONFIG-iphoneos/$PROJECT_NAME.app"
+}
+
+app_bundle_id() {
+    local plist
+    plist="$(app_path)/Info.plist"
+    if [[ -f "$plist" ]]; then
+        /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" 2>/dev/null \
+            || echo "$BUNDLE_ID"
+    else
+        echo "$BUNDLE_ID"
+    fi
 }
 
 show_signing_hint() {
@@ -143,12 +177,14 @@ cmd_install() {
 
 cmd_launch() {
     auto_detect_device
-    echo "==> Launching $BUNDLE_ID on $DEVICE_UDID..."
+    local bundle_id
+    bundle_id="$(app_bundle_id)"
+    echo "==> Launching $bundle_id on $DEVICE_UDID..."
     local launch_output
     if ! launch_output=$(
         xcrun devicectl device process launch \
         --device "$DEVICE_UDID" \
-        "$BUNDLE_ID" 2>&1
+        "$bundle_id" 2>&1
     ); then
         echo "$launch_output"
         if [[ "$launch_output" == *"invalid code signature"* || "$launch_output" == *"profile has not been explicitly trusted by the user"* ]]; then
