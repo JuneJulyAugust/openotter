@@ -16,7 +16,7 @@ VL53L1CB, and VL53L5CX are deprecated for this deployment path.
 
 | Connector | Schematic part | What it carries |
 | --- | --- | --- |
-| `J1` | 3-pin, 2.54 mm male header | `EXT_GPIO1`, `EXT_GPIO2`, and GND |
+| `J1` | 3-pin, 2.54 mm male header | top pad `EXT_GPIO1`, middle pad `EXT_GPIO2`, bottom square pad GND |
 | `J2` | 11-pin, 2.54 mm male header | mode, reset, I2C/SPI, power-enable, and supply pins |
 
 With the SATEL board oriented like Figure 1 in `satel-vl53l8.pdf`:
@@ -28,14 +28,15 @@ With the SATEL board oriented like Figure 1 in `satel-vl53l8.pdf`:
 - `J3` is the I/O-voltage select jumper and is not part of the IOT01A1 wiring.
 
 Do not treat the board as a single 14-pin header. If a diagram says SATEL
-pin 12, pin 13, or pin 14, that is usually shorthand for `J1` after counting
-the 11 pins of `J2`. In the ST schematic, those signals are still `J1` pins:
+pin 12, pin 13, or pin 14, that is usually shorthand for the three `J1` pads
+after counting the 11 pins of `J2`. In the ST connector image, those signals
+are the `J1` pads by physical position:
 
-| Combined shorthand | Schematic name | Signal |
+| Combined shorthand | J1 physical pad | Signal |
 | --- | --- | --- |
-| pin 12 | `J1` pin 1 | `EXT_GPIO1` |
-| pin 13 | `J1` pin 2 | `EXT_GPIO2` |
-| pin 14 | `J1` pin 3 | GND |
+| pin 12 | top round pad | `EXT_GPIO1` |
+| pin 13 | middle round pad | `EXT_GPIO2` |
+| pin 14 | bottom square pad | GND |
 
 `J2` is numbered separately:
 
@@ -50,13 +51,44 @@ the 11 pins of `J2`. In the ST schematic, those signals are still `J1` pins:
 | 7 | `EXT_PWR_EN` | Tie high to 3V3 to enable SATEL regulators |
 | 8 | `EXT_IOVDD` | Do not wire for this bring-up |
 | 9 | `EXT_3V3` | Do not wire for this bring-up |
-| 10 | `EXT_5V0` | 5V input to the SATEL regulators |
-| 11 | `EXT_1V8` | Do not connect to IOT01A1 3V3 |
+| 10 | `EXT_1V8` | Do not wire; low-voltage rail |
+| 11 | `EXT_5V0` | 5V input to the SATEL regulators |
 
 The yellow pads on the snap-off mini-PCB expose the tiny sensor board directly.
 Those pads are useful only if the mini-PCB is broken off and powered/level-shifted
 as a separate 1.8 V design. The wiring below assumes the full SATEL carrier board
 is used, because the carrier provides the required regulators and level shifters.
+
+## Electrical Safety Notes
+
+The full SATEL carrier board expects two different kinds of connections:
+
+- one power input: IOT01A1 5V to `J2` pin 11 `EXT_5V0`;
+- 3.3 V logic highs: IOT01A1 3V3 to `J2` pin 1 `EXT_SPI_I2C_N`
+  and `J2` pin 7 `EXT_PWR_EN`;
+- 3.3 V open-drain I2C signals: A5/SCL and A4/SDA;
+- common ground.
+
+Do not move these rails around:
+
+- 5V on `J2` pin 1 `EXT_SPI_I2C_N` is a logic over-voltage risk.
+- 3V3 or 5V on `J2` pin 10 `EXT_1V8` can over-voltage a low-voltage rail.
+- 3V3 or 5V on `J2` pin 8 `EXT_IOVDD` can over-voltage the sensor I/O rail.
+- 3V3 on `J2` pin 11 `EXT_5V0` is not the intended regulator input and can
+  create brown-out symptoms that look like firmware or I2C bugs.
+- `J2` pin 9 `EXT_3V3` is not needed when using the 5V regulator-input path;
+  do not tie it to IOT01A1 3V3 for this bring-up.
+
+Before powering the board, identify `J2` pin 1 by the square pad at the bottom
+of the 11-pin connector image, then count upward to pin 11. Identify `J1` by
+signal position: top is `EXT_GPIO1`, middle is `EXT_GPIO2`, bottom square pad
+is GND.
+
+Do not hot-plug these wires. If the board has already been powered with the
+wrong wiring, power it off, remove every flying lead, identify the connector
+pins again, then reconnect from the corrected table. If anything is uncertain,
+connect only 5V, 3V3 mode/enable, and GND first, then measure the rails before
+adding SCL/SDA or GPIO wires.
 
 ## Current Wiring Check
 
@@ -65,26 +97,26 @@ not fully correct.
 
 | Current connection | Check | Required correction |
 | --- | --- | --- |
-| IOT01A1 3V3 -> pin 11 `SPI_I2C_n` | Incorrect. SATEL J2 pin 11 is `EXT_1V8`. | Use J2 pin 1 `EXT_SPI_I2C_N`. |
-| IOT01A1 5V -> pin 1 | Incorrect. J2 pin 1 is `EXT_SPI_I2C_N`. | Use J2 pin 10 `EXT_5V0`. |
+| IOT01A1 3V3 -> pin 11 `SPI_I2C_n` | Incorrect. J2 pin 11 is `EXT_5V0`, not `SPI_I2C_N`. 3V3 there is not the intended 5V regulator input and does not select I2C mode. | Move 3V3 to J2 pin 1 `EXT_SPI_I2C_N` and J2 pin 7 `EXT_PWR_EN`; move 5V to J2 pin 11 `EXT_5V0`. |
+| IOT01A1 5V -> pin 1 | Dangerous. J2 pin 1 is `EXT_SPI_I2C_N`, a logic input, not a 5V power input. | Move 5V to J2 pin 11 `EXT_5V0`. |
 | IOT01A1 A5 -> pin 6 `MCLK_SCL` | Correct. | Keep J2 pin 6 `EXT_MCLK_SCL`. |
-| IOT01A1 A4 -> pin 7 `MOSI_SDA` | Incorrect. J2 pin 7 is `EXT_PWR_EN`. | Use J2 pin 5 `EXT_MOSI_SDA`. |
-| IOT01A1 GND -> pin 14 GND | Correct only if pin 14 means `J1` pin 3. | Keep common ground. |
-| IOT01A1 A2 -> pin 12 `GPIO1 / INT` | Correct only if pin 12 means `J1` pin 1. | Keep for data-ready interrupt input. |
-| IOT01A1 A1 -> pin 13 `GPIO2` | `J1` pin 2 is GPIO2, but GPIO2 is not the reset/enable line. | Prefer A1 / PC4 -> J2 pin 2 `EXT_LPn`. |
+| IOT01A1 A4 -> pin 7 `MOSI_SDA` | Incorrect. J2 pin 7 is `EXT_PWR_EN`, not SDA. | Move A4 / PC1 to J2 pin 5 `EXT_MOSI_SDA`; tie J2 pin 7 high to 3V3. |
+| IOT01A1 GND -> pin 14 GND | Correct only if pin 14 means the bottom square pad of `J1`. | Keep common ground. |
+| IOT01A1 A2 -> pin 12 `GPIO1 / INT` | Correct only if pin 12 means the top pad of `J1`. | Keep for optional data-ready interrupt input. Firmware can poll first. |
+| IOT01A1 A1 -> pin 13 `GPIO2` | The middle pad of `J1` is GPIO2, but GPIO2 is not the reset/enable line. | Prefer A1 / PC4 -> J2 pin 2 `EXT_LPn`. Leave GPIO2 unconnected unless using sync later. |
 
 ## Correct One-Sensor Wiring
 
 | IOT01A1 | MCU pin | SATEL-VL53L8 | Purpose |
 | --- | --- | --- | --- |
-| 5V | board 5V | J2 pin 10 `EXT_5V0` | SATEL regulator input |
+| 5V | board 5V | J2 pin 11 `EXT_5V0` | SATEL regulator input |
 | 3V3 | board 3V3 | J2 pin 1 `EXT_SPI_I2C_N` | Select I2C mode |
 | 3V3 | board 3V3 | J2 pin 7 `EXT_PWR_EN` | Enable SATEL regulators |
 | A5 | PC0 / I2C3_SCL | J2 pin 6 `EXT_MCLK_SCL` | I2C clock |
 | A4 | PC1 / I2C3_SDA | J2 pin 5 `EXT_MOSI_SDA` | I2C data |
-| A2 | PC3 | J1 pin 1 `EXT_GPIO1` | Data-ready interrupt input; firmware can poll first |
+| A2 | PC3 | J1 top pad `EXT_GPIO1` | Data-ready interrupt input; firmware can poll first |
 | A1 | PC4 | J2 pin 2 `EXT_LPn` | Sensor low-power/reset control |
-| GND | GND | J1 pin 3 GND or SATEL GND | Common ground |
+| GND | GND | J1 bottom square pad GND or SATEL GND | Common ground |
 
 `SPI_I2C_N` must be high for I2C mode. `PWR_EN` should be high for the full
 SATEL board regulators unless the board assembly already straps it high.
@@ -114,12 +146,12 @@ firmware can boot and re-address them one at a time.
 | --- | --- | --- |
 | `EXT_MCLK_SCL` | Shared A5 / PC0 | Shared A5 / PC0 |
 | `EXT_MOSI_SDA` | Shared A4 / PC1 | Shared A4 / PC1 |
-| `EXT_5V0` | Shared 5V | Shared 5V |
+| `EXT_5V0` | Shared 5V -> J2 pin 11 | Shared 5V -> J2 pin 11 |
 | `EXT_SPI_I2C_N` | Shared 3V3 | Shared 3V3 |
 | `EXT_PWR_EN` | Shared 3V3 | Shared 3V3 |
 | GND | Shared GND | Shared GND |
 | `EXT_LPn` | Dedicated A1 / PC4 | Dedicated A0 / PC5 or D8 / PB2 |
-| `EXT_GPIO1` | Dedicated A2 / PC3 -> J1 pin 1 | Dedicated A3 / PC2 -> J1 pin 1 |
+| `EXT_GPIO1` | Dedicated A2 / PC3 -> J1 top pad | Dedicated A3 / PC2 -> J1 top pad |
 
 Future boot sequence:
 
@@ -137,10 +169,12 @@ only one is powered.
 
 1. Power off the IOT01A1 before changing wires.
 2. Wire according to the corrected one-sensor table.
-3. Confirm SATEL J2 pin 10 has 5V relative to GND.
+3. Confirm SATEL J2 pin 11 has 5V relative to GND.
 4. Confirm J2 pin 1 and J2 pin 7 are high at 3V3.
-5. Confirm A5/SCL and A4/SDA are not swapped.
-6. Flash firmware.
-7. Watch UART1 for a `VL53L8` probe line.
-8. If the probe fails, check `PWR_EN`, ground, SCL/SDA order, and whether
+5. Confirm J2 pin 10 `EXT_1V8` and J2 pin 8 `EXT_IOVDD` have no external
+   IOT01A1 wire attached.
+6. Confirm A5/SCL and A4/SDA are not swapped.
+7. Flash firmware.
+8. Watch UART1 for a `VL53L8` probe line.
+9. If the probe fails, check `PWR_EN`, ground, SCL/SDA order, and whether
    `LPn` is held low.

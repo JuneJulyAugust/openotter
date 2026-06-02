@@ -63,14 +63,14 @@ Create `firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md` with:
 
 | IOT01A1 | SATEL-VL53L8 | Purpose |
 | --- | --- | --- |
-| 5V | J2 pin 10 `EXT_5V0` | SATEL regulator input |
+| 5V | J2 pin 11 `EXT_5V0` | SATEL regulator input |
 | 3V3 | J2 pin 1 `EXT_SPI_I2C_N` | Select I2C mode |
 | 3V3 | J2 pin 7 `EXT_PWR_EN` | Enable SATEL regulators |
 | A5 / PC0 | J2 pin 6 `EXT_MCLK_SCL` | I2C3 SCL |
 | A4 / PC1 | J2 pin 5 `EXT_MOSI_SDA` | I2C3 SDA |
-| A2 / PC3 | J1 `EXT_GPIO1` | Data-ready interrupt, currently optional |
+| A2 / PC3 | J1 top pad `EXT_GPIO1` | Data-ready interrupt, currently optional |
 | A1 / PC4 | J2 pin 2 `EXT_LPn` | Sensor low-power/reset control |
-| GND | J1 GND or SATEL GND | Common ground |
+| GND | J1 bottom square pad GND or SATEL GND | Common ground |
 ```
 
 - [x] **Step 2: Note current wiring mismatches**
