@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="520" viewBox="0 0 1120 520" role="img" aria-labelledby="title desc">
+  <title id="title">VL53L8 Mechanical Integration System</title>
+  <desc id="desc">High level mechanical system showing IOT01A1 adapter, front and rear ToF harnesses, full SATEL case option, and mini PCB case option.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#263238"/>
+    </marker>
+    <style>
+      .box { fill: #f8fafc; stroke: #263238; stroke-width: 2; }
+      .case { fill: #e7f4ff; stroke: #0f5e8c; stroke-width: 2; }
+      .mini { fill: #fff4df; stroke: #8a5a00; stroke-width: 2; }
+      .label { font: 18px sans-serif; fill: #111827; }
+      .small { font: 14px sans-serif; fill: #374151; }
+      .wire { stroke: #263238; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .bus { stroke: #4b5563; stroke-width: 4; fill: none; }
+      .power { stroke: #b91c1c; stroke-width: 4; fill: none; }
+      .ground { stroke: #111827; stroke-width: 4; fill: none; }
+      .signal { stroke: #2563eb; stroke-width: 4; fill: none; }
+      .select { stroke: #7c3aed; stroke-width: 4; fill: none; }
+    </style>
+  </defs>
+
+  <rect x="40" y="70" width="280" height="360" rx="12" class="box"/>
+  <text x="180" y="110" text-anchor="middle" class="label">IOT01A1 ToF Adapter</text>
+  <rect x="75" y="145" width="210" height="70" rx="8" fill="#e5e7eb" stroke="#263238" stroke-width="2"/>
+  <text x="180" y="176" text-anchor="middle" class="small">Arduino R3 proto shield</text>
+  <text x="180" y="198" text-anchor="middle" class="small">or custom adapter PCB</text>
+  <rect x="82" y="250" width="92" height="88" rx="8" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="128" y="280" text-anchor="middle" class="small">REAR</text>
+  <text x="128" y="302" text-anchor="middle" class="small">JST-GH</text>
+  <text x="128" y="322" text-anchor="middle" class="small">10-pin</text>
+  <rect x="186" y="250" width="92" height="88" rx="8" fill="#dcfce7" stroke="#15803d" stroke-width="2"/>
+  <text x="232" y="280" text-anchor="middle" class="small">FRONT</text>
+  <text x="232" y="302" text-anchor="middle" class="small">JST-GH</text>
+  <text x="232" y="322" text-anchor="middle" class="small">10-pin</text>
+
+  <rect x="425" y="80" width="300" height="165" rx="12" class="case"/>
+  <text x="575" y="118" text-anchor="middle" class="label">Full SATEL Case</text>
+  <rect x="470" y="140" width="210" height="72" rx="8" fill="#1e40af" opacity="0.85"/>
+  <rect x="543" y="166" width="34" height="22" rx="3" fill="#111827"/>
+  <circle cx="575" cy="177" r="36" fill="none" stroke="#0ea5e9" stroke-width="3"/>
+  <text x="575" y="228" text-anchor="middle" class="small">carrier board intact</text>
+
+  <rect x="425" y="315" width="300" height="145" rx="12" class="mini"/>
+  <text x="575" y="353" text-anchor="middle" class="label">Mini-PCB Case</text>
+  <rect x="515" y="374" width="120" height="52" rx="8" fill="#1e40af" opacity="0.85"/>
+  <rect x="558" y="391" width="34" height="22" rx="3" fill="#111827"/>
+  <circle cx="575" cy="402" r="35" fill="none" stroke="#f59e0b" stroke-width="3"/>
+  <text x="575" y="446" text-anchor="middle" class="small">interposer required</text>
+
+  <rect x="830" y="110" width="240" height="120" rx="12" class="box"/>
+  <text x="950" y="145" text-anchor="middle" class="label">Front Bumper</text>
+  <text x="950" y="176" text-anchor="middle" class="small">sensor face forward</text>
+  <text x="950" y="198" text-anchor="middle" class="small">VHB or M2 screws</text>
+
+  <rect x="830" y="320" width="240" height="120" rx="12" class="box"/>
+  <text x="950" y="355" text-anchor="middle" class="label">Rear Bumper</text>
+  <text x="950" y="386" text-anchor="middle" class="small">sensor face backward</text>
+  <text x="950" y="408" text-anchor="middle" class="small">VHB or M2 screws</text>
+
+  <path d="M174 293 C300 180 330 165 425 165" class="signal"/>
+  <path d="M278 293 C340 340 370 382 425 392" class="signal"/>
+  <path d="M725 165 C790 150 815 150 830 160" class="wire"/>
+  <path d="M725 392 C790 380 815 380 830 380" class="wire"/>
+
+  <path d="M355 45 H765" class="power"/>
+  <text x="560" y="35" text-anchor="middle" class="small">shared 5V / 3V3 PWR_EN / GND</text>
+  <path d="M355 485 H765" class="ground"/>
+  <text x="560" y="507" text-anchor="middle" class="small">strain relieved return path and chassis tie-downs</text>
+  <path d="M355 265 H765" class="bus"/>
+  <text x="560" y="255" text-anchor="middle" class="small">shared SPI bus or I2C fallback</text>
+  <path d="M355 288 H765" class="select"/>
+  <text x="560" y="310" text-anchor="middle" class="small">separate NCS / LPn / GPIO1 per sensor</text>
+</svg>

@@ -3,6 +3,9 @@
 This directory contains a first parametric enclosure for a broken-off
 SATEL-VL53L8 mini-PCB sensor head.
 
+For the recommended first car deployment with the complete SATEL carrier board,
+use the sibling `../satel-vl53l8-full-carrier-case/` model instead.
+
 ## Files
 
 - `satel_vl53l8_mini_case.scad` - OpenSCAD source for a two-piece tray and
@@ -10,10 +13,11 @@ SATEL-VL53L8 mini-PCB sensor head.
 
 ## Status
 
-This is a v0 mechanical artifact. The SATEL Gerber ZIP is the preferred source
-for exact board outline, but the ST download endpoint was not reachable from
-the current sandbox session. The defaults are therefore conservative and must be
-updated after measuring the snapped-off mini-PCB with calipers.
+This is a v0 mechanical artifact. The SATEL Gerber ZIP or STEP package is the
+preferred source for exact board outline, but the ST download endpoint timed out
+from the current development environment. The defaults are therefore
+conservative and must be updated after measuring the snapped-off mini-PCB with
+calipers.
 
 Edit these OpenSCAD parameters before a final print:
 

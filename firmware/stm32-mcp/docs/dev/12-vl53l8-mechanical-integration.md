@@ -1,10 +1,34 @@
 # 12 - SATEL-VL53L8 Mechanical Integration
 
 This document covers the deployment hardware path after the bench Dupont-wire
-prototype: cable harness, board-side connection, solder strain relief, and a
-first printable enclosure for front/rear SATEL-VL53L8 sensors.
+prototype: cable harness, board-side connection, full-SATEL case,
+snap-off-mini-PCB case, solder strain relief, and front/rear mounting.
 
-## Current Problem
+The firmware can already work with one or two VL53L8 sensors. This document is
+about making the physical system reliable enough for a moving RC car.
+
+## Design Summary
+
+Use two mechanical designs, not one:
+
+1. **Full SATEL carrier case**
+   - Recommended for the next deployment and v1.2 validation.
+   - Keeps the SATEL regulators, level translators, and full J1/J2 connector
+     interface.
+   - Larger, but electrically safer and easier to debug.
+
+2. **Snap-off mini-PCB case**
+   - Recommended only after the full-carrier path is stable.
+   - Much smaller and better for final packaging.
+   - Requires deliberate `DUT_AVDD`, `DUT_IOVDD`, and GPIO voltage-domain
+     design. Do not wire IOT01A1 5 V directly to the snapped-off board.
+
+The near-term robot should use full SATEL carrier cases at the front and rear.
+The mini-PCB path should be treated as a second mechanical/electrical revision.
+
+![VL53L8 mechanical system overview](assets/vl53l8-mechanical-system.svg)
+
+## Current Prototype Problem
 
 The photo-based prototype works for firmware bring-up, but it is not suitable
 for a moving RC car:
@@ -13,200 +37,377 @@ for a moving RC car:
 - the SATEL board is held by the wires, not by a mechanical reference;
 - the IOT01A1 header connections can be bumped loose;
 - the sensor has no strain relief, no datum, and no repeatable front/rear
-  pointing angle.
+  pointing angle;
+- the sensor board can move when the car moves, which makes ToF data look like
+  firmware noise even when the driver is healthy.
 
-The deployment target should be a short local solder joint at the SATEL side,
-a flexible locking harness, and a small printed enclosure that mounts to the RC
-car with either tape or screws.
+The deployment target is:
 
-## Critical Electrical Choice: Full Carrier vs. Snap-Off Mini-PCB
+```text
+IOT01A1
+  -> board-side ToF adapter shield
+  -> keyed JST-GH harness
+  -> strain-relieved sensor case
+  -> SATEL board held by PCB edges
+  -> optical aperture facing front or rear
+```
+
+## Source Image References
+
+These images are source references for selecting parts and understanding the
+hardware. They are linked from the vendors rather than copied into the repo.
+If an offline Markdown renderer blocks external images, open the source link.
+
+| Item | Source image / page | Why it matters |
+| --- | --- | --- |
+| SATEL-VL53L8 boards | ![SATEL-VL53L8 board](https://mm.digikey.com/Volume0/opasdata/d220001/derivates/1/001/163/582/SATEL-VL53L8_sml%28200x200%29.jpg) | Shows the full carrier shape and the snap-off sensor section. Source: DigiKey SATEL-VL53L8 product page. |
+| JST-GH connector family | ![JST GH connector](https://www.jst-mfg.com/product/images/pict/GH.jpg) | Shows the locking wire-to-board connector style recommended for the sensor harness. Source: JST GH product page. |
+| JST-GH 10-pin cable assembly | [GNSS Store ELT0482 product images](https://gnss.store/products/elt0482) | Example 0.2 m / 0.4 m JST-GH 10-pin cable assembly. Verify pin order before use. |
+| 28 AWG silicone ribbon wire | [Adafruit product images, ID 3891](https://www.adafruit.com/product/3891) | Good source reference for soft 28 AWG ribbon/pull-apart wire for full-SATEL pigtails. |
+| 30 AWG silicone wire | [Adafruit product images, ID 3166](https://www.adafruit.com/product/3166) | Good source reference for very small flexible wire for mini-PCB edge pads. |
+| Arduino R3 proto shield | [Adafruit product images, ID 2077](https://www.adafruit.com/product/2077) | Example board-side adapter base that can plug into the IOT01A1 Arduino headers. |
+| Arduino stacking headers | [Adafruit product images, ID 85](https://www.adafruit.com/product/85) | Required if the adapter shield needs to stack cleanly on the IOT01A1. |
+| 3M VHB 5952 tape | ![3M VHB 5952](https://multimedia.3m.com/mws/media/2317404J/3m-vhb-tape-5952p-black.jpg) | Good first mounting option for flat case backs on painted/plastic RC car surfaces. Source: 3M 5952 product page. |
+
+## Electrical Interfaces
 
 There are two different SATEL electrical interfaces.
 
-### Full SATEL carrier board
+### Full SATEL Carrier Board
 
 Use this for the current one-sensor and first two-sensor validation:
 
 - accepts `EXT_5V0` on `J2 pin 11`;
 - provides on-board regulators;
 - provides level shifting between the STM32 3.3 V side and the VL53L8 side;
-- exposes comfortable 2.54 mm header pads.
+- exposes comfortable 2.54 mm `J1` and `J2` pads;
+- is easier to probe with a scope or logic analyzer.
 
-This is mechanically larger but much safer for the v1.2.0 validation gate.
+This is the recommended near-term deployment path.
 
-### Broken-off mini-PCB
+### Broken-Off Mini-PCB
 
 The ST data brief says the sensor PCB is perforated and intended for 3.3 V
-flying-wire applications. The schematic makes clear that the mini-PCB exposes
-the DUT-side pads, not the same `J2` carrier interface. The same schematic
-labels the mini-PCB edge pads as 0.8 x 1.6 mm. That means:
+flying-wire applications. The schematic shows that the mini-PCB exposes
+DUT-side pads, not the same `J2` carrier interface. The schematic labels the
+mini-PCB edge pads as 0.8 x 1.6 mm. That means:
 
 - do not connect IOT01A1 5 V to the mini-PCB;
 - do not assume the carrier `J2` pinout still applies;
-- explicitly provide `DUT_AVDD` and `DUT_IOVDD`; STM32 3.3 V GPIO is only a
-  direct match if the sensor I/O domain is intentionally powered at 3.3 V and
-  confirmed against the VL53L8 datasheet;
+- explicitly provide `DUT_AVDD` and `DUT_IOVDD`;
+- STM32 3.3 V GPIO is only a direct match if the sensor I/O domain is
+  intentionally powered at 3.3 V and confirmed against the VL53L8 datasheet;
 - add level shifting if the mini-PCB `DUT_IOVDD` domain is powered below the
   STM32 GPIO voltage;
 - expect hand soldering to 0.8 x 1.6 mm edge pads.
 
-For this project, the recommended sequence is:
+Recommended sequence:
 
-1. Validate v1.2.0 with the full carrier board.
-2. Design a tiny interposer/regulator board for the snap-off mini-PCB.
-3. Only then break off the mini-PCB and solder the final harness.
+1. Validate v1.2.0 with the full SATEL carrier board.
+2. Build the IOT01A1 board-side adapter with locking connectors.
+3. Add a second full-SATEL sensor and verify front/rear behavior.
+4. Design a tiny interposer/regulator board for the snap-off mini-PCB.
+5. Break off one sacrificial mini-PCB, measure it, and fit-check the printed
+   mini case.
+6. Move to the mini-PCB case only after the electrical rails are proven.
 
-## Recommended Harness Architecture
+## Full SATEL Carrier Case
 
-### Sensor End
+The full carrier case protects the complete SATEL board while keeping the safer
+carrier electrical interface. This is the design to print first.
 
-Use a short soldered pigtail from the SATEL board into the printed case:
+![Full SATEL carrier case design](assets/vl53l8-full-satel-case.svg)
 
-- 28 AWG flexible silicone wire for full-carrier board soldering;
-- 30 AWG flexible silicone wire for the snap-off mini-PCB edge pads;
-- heat-shrink or UV resin/epoxy strain relief over the soldered pad row;
-- one locking connector just outside the case, or a connector captured by the
-  case wall.
+CAD artifact:
 
-Avoid using loose Dupont sockets at the moving sensor end.
+```text
+firmware/stm32-mcp/hardware/cad/satel-vl53l8-full-carrier-case/satel_vl53l8_full_carrier_case.scad
+```
 
-### Harness Connector
+### Full Carrier Case Requirements
 
-Preferred connector family: JST GH, 1.25 mm pitch, 10 positions.
+- Hold the full SATEL PCB by its edges, not by the wires.
+- Leave a large aperture around the VL53L8 optical module.
+- Keep the snap-off perforation unbroken.
+- Leave a service bay over the `J1`/`J2` solder/header area.
+- Provide a cable exit at the J1/J2 end.
+- Include strain relief for the pigtail bundle.
+- Include M2 side ears and a flat back for VHB tape.
+- Mark `FRONT` or `REAR` on the lid or with a label.
 
-Reasons:
+### Full Carrier Case Assembly
 
-- locking wire-to-board connector;
-- common in robotics/drone harnesses;
-- supports small-gauge wires;
-- compact enough to mount near a small sensor case.
+1. Do not break the SATEL board.
+2. Decide whether to solder pigtails to `J1`/`J2` pads or install very
+   low-profile headers. For the car, short soldered pigtails are preferred.
+3. Cut 28 AWG silicone wires 60-90 mm long from the SATEL pads to the case
+   harness connector.
+4. Tin each SATEL pad lightly. Do not fill the hole with a large solder blob.
+5. Solder one wire at a time and continuity-check it immediately.
+6. Bundle the pigtails with small heat-shrink, but do not shrink it directly
+   against tall components.
+7. Place the board into the printed base. Confirm it rests on ledges and not on
+   solder joints.
+8. Route the bundle through the rear slot and under the strain bar.
+9. Attach the lid. Confirm it does not press on the sensor, headers, or pigtail
+   solder joints.
+10. Mount using either 3M VHB tape on the flat back or M2 screws through the
+    side ears.
 
-Molex PicoBlade 1.25 mm is also acceptable if you already have tooling or cable
-assemblies. Do not mix JST GH and Molex PicoBlade parts; 1.25 mm pitch alone
-does not make them mechanically compatible.
+### Full Carrier Wiring Pin Order
 
-For the implemented shared-SPI two-sensor plan, use a 10-wire harness per
-sensor:
+Use one 10-wire harness per sensor. Keep the connector pin order identical for
+front and rear; only `NCS`, `LPn`, and `GPIO1` differ at the IOT01A1 adapter.
 
-| Signal | Full SATEL carrier | Rear IOT01A1 target | Front IOT01A1 target |
-| --- | --- | --- | --- |
-| 5V | `J2 pin 11 EXT_5V0` | shared 5V | shared 5V |
-| GND | `J1 bottom` or GND | shared GND | shared GND |
-| SPI/I2C mode | `J2 pin 1 EXT_SPI_I2C_N` | 3V3 for SPI | 3V3 for SPI |
-| SCK | `J2 pin 6 EXT_MCLK_SCL` | D13 / PA5 | D13 / PA5 |
-| MOSI | `J2 pin 5 EXT_MOSI_SDA` | D11 / PA7 | D11 / PA7 |
-| MISO | `J2 pin 4 EXT_MISO` | D12 / PA6 | D12 / PA6 |
-| NCS | `J2 pin 3 EXT_NCS` | D8 / PB2 | D10 / PA2 |
-| LPn | `J2 pin 2 EXT_LPn` | A1 / PC4 | A0 / PC5 |
-| GPIO1 | `J1 top EXT_GPIO1` | A2 / PC3 | A3 / PC2 |
-| PWR_EN | `J2 pin 7 EXT_PWR_EN` | D9 / PA15 or 3V3 | 3V3 first |
+| Harness pin | Signal | Full SATEL carrier pad | Rear IOT01A1 target | Front IOT01A1 target | Suggested color |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 5V | `J2 pin 11 EXT_5V0` | shared 5V | shared 5V | red |
+| 2 | GND | `J1 bottom GND` or SATEL GND | shared GND | shared GND | black |
+| 3 | SPI/I2C mode | `J2 pin 1 EXT_SPI_I2C_N` | 3V3 for SPI | 3V3 for SPI | purple |
+| 4 | SCK/SCL | `J2 pin 6 EXT_MCLK_SCL` | D13 / PA5 | D13 / PA5 | blue |
+| 5 | MOSI/SDA | `J2 pin 5 EXT_MOSI_SDA` | D11 / PA7 | D11 / PA7 | green |
+| 6 | MISO | `J2 pin 4 EXT_MISO` | D12 / PA6 | D12 / PA6 | white |
+| 7 | NCS | `J2 pin 3 EXT_NCS` | D8 / PB2 | D10 / PA2 | yellow |
+| 8 | LPn | `J2 pin 2 EXT_LPn` | A1 / PC4 | A0 / PC5 | orange |
+| 9 | GPIO1 | `J1 top EXT_GPIO1` | A2 / PC3 | A3 / PC2 | brown |
+| 10 | PWR_EN | `J2 pin 7 EXT_PWR_EN` | D9 / PA15 or 3V3 | 3V3 first | gray |
 
-For SPI cable routing, keep the shared bus tidy:
+For first SPI deployment, tie `PWR_EN` high at the adapter unless you need
+firmware-controlled power recovery. Then move it to D9.
 
-- twist or bundle SCK next to GND;
-- route MISO next to GND if the cable is long;
-- keep SCK/MOSI/MISO away from motor PWM wiring;
-- start with 30 cm or less; test longer lengths only after SPI is stable.
+## Snap-Off Mini-PCB Case
 
-For I2C fallback, twist SCL/GND and SDA/GND, keep pullups on the carrier side,
-and prefer shorter cables.
+The mini-PCB case is for the compact final sensor head after the full-carrier
+system is proven. It should not be the first car deployment.
 
-### IOT01A1 End
+![Mini-PCB case design](assets/vl53l8-mini-pcb-case.svg)
 
-Do not deploy with individual Dupont jumpers plugged directly into the IOT01A1.
-Use one of these:
-
-1. **Best prototype path:** Arduino R3 proto shield with stacking headers and
-   two JST-GH 10-pin sensor connectors. This plugs into the IOT01A1 and gives a
-   keyed harness interface.
-2. **Quick path:** small solderable perfboard plugged into the IOT01A1 headers,
-   with JST-GH connectors and strain relief.
-3. **Final path:** custom IOT01A1 ToF adapter PCB with two keyed connectors,
-   shared SPI fanout, separate `NCS`/`LPn`/`GPIO1`, and labeled test pads.
-
-The board-side adapter should label `FRONT` and `REAR` physically. Do not rely
-only on wire colors once the sensors are installed on the car.
-
-## Cable Order List
-
-Order these as general categories:
-
-- 28 AWG stranded silicone wire kit, multiple colors, for full-carrier SATEL
-  harnesses.
-- 30 AWG stranded silicone wire or pre-bonded flexible wire for the snap-off
-  mini-PCB pad soldering.
-- JST-GH 10-pin housings and pre-crimped 28-30 AWG leads, or complete 10-pin
-  JST-GH cable assemblies.
-- JST-GH right-angle or vertical SMT/through-adapter headers for the IOT01A1
-  proto shield.
-- Heat-shrink tubing, 1.5-3 mm range.
-- Small zip-tie anchors or adhesive cable clips for the RC car chassis.
-- 3M VHB 5952 or 4910 tape for no-screw mounting trials.
-- M2 screws, washers, and heat-set inserts or self-tapping plastic screws for
-  repeatable mounting.
-
-For hand assembly, pre-crimped leads are strongly preferred over crimping JST-GH
-contacts manually.
-
-## Enclosure Requirements
-
-The enclosure should:
-
-- hold the sensor PCB by the board edges, not by the soldered wires;
-- leave a large clear aperture around the VL53L8 optical module;
-- provide a rear cable exit and strain-relief channel;
-- include flat underside area for VHB tape;
-- include optional M2 side ears for screw mounting;
-- mark front/rear orientation in the printed part or on an applied label.
-
-The first CAD artifact is parametric OpenSCAD:
+CAD artifact:
 
 ```text
 firmware/stm32-mcp/hardware/cad/satel-vl53l8-mini-case/satel_vl53l8_mini_case.scad
 ```
 
-OpenSCAD is not installed in the current development environment, so the model
-has not been locally exported to STL. Use OpenSCAD or a slicer that can import
-OpenSCAD to export:
+### Mini-PCB Case Requirements
 
-- `part = "base"` for the tray;
-- `part = "lid"` for the optical-window lid;
-- `part = "assembly"` for a preview.
+- Hold only the snapped-off mini-PCB.
+- Leave a large clear optical aperture.
+- Provide direct strain relief next to the pad edge.
+- Route 30 AWG wires into an interposer board or connector bay.
+- Avoid any cable pull on the 0.8 x 1.6 mm pads.
+- Use VHB tape or M2 side ears.
+- Keep the case small enough for front/rear bumper placement.
 
-The default board dimensions are intentionally conservative and must be checked
-with calipers after snapping off a sacrificial SATEL board. Update these
-parameters first:
+### Mini-PCB Electrical Requirements
+
+Before soldering:
+
+1. Download ST STEP/Gerber files or measure a snapped-off board with calipers.
+2. Identify every DUT pad from the schematic.
+3. Decide the `DUT_IOVDD` voltage.
+4. Confirm whether STM32 3.3 V GPIO can connect directly.
+5. Add an interposer board if any rail or logic voltage needs translation.
+6. Only then solder 30 AWG wires to the mini-PCB.
+
+The interposer should include:
+
+- sensor rail input/output labels;
+- level shifting when required;
+- a keyed JST-GH harness connector;
+- test pads for `DUT_AVDD`, `DUT_IOVDD`, `GND`, `SCK`, `MOSI`, `MISO`, `NCS`,
+  `LPn`, and `GPIO1`;
+- a mechanical tie point so the mini-PCB solder pads never carry cable load.
+
+## Board-Side IOT01A1 Adapter
+
+The board-side adapter is the part that replaces loose Dupont jumpers on the
+IOT01A1. It can be an Arduino R3 proto shield for now or a custom PCB later.
+
+![IOT01A1 board-side ToF adapter](assets/vl53l8-board-side-adapter.svg)
+
+### Adapter Layout
+
+Place two keyed connectors:
+
+- `REAR ToF` connector on the left or blue-labeled side.
+- `FRONT ToF` connector on the right or green-labeled side.
+
+Use the same 10-pin order on both connectors. On the adapter:
+
+- fan out shared 5V and GND as short, wide traces or heavier wires;
+- fan out shared SPI `SCK`, `MOSI`, and `MISO`;
+- keep rear/front `NCS`, `LPn`, and `GPIO1` separate;
+- add clear labels beside every connector;
+- add test pads for 5V, 3V3, GND, SCK, MOSI, MISO, rear NCS, and front NCS;
+- route ToF harnesses away from motor PWM and ESC wiring.
+
+### Adapter Build Options
+
+1. **Fastest reliable prototype**
+   - Arduino R3 proto shield with stacking headers.
+   - Two JST-GH 10-pin headers mounted on small breakout boards or a small
+     daughterboard attached to the proto shield.
+   - Hand-wired point-to-point with 28 AWG wire.
+
+2. **Better prototype**
+   - Solderable perfboard plugged into the IOT01A1 Arduino headers.
+   - Two JST-GH connectors at one edge.
+   - Small zip-tie holes or adhesive cable clip near the connector edge.
+
+3. **Final adapter PCB**
+   - Custom shield outline for the IOT01A1 Arduino headers.
+   - Two keyed JST-GH connectors.
+   - Silkscreen labels for `FRONT`, `REAR`, and pin 1.
+   - Test pads and optional series resistors on SPI lines if signal integrity
+     requires tuning.
+
+## Harness And Cable Recommendations
+
+### What To Order
+
+Order these categories:
+
+- 28 AWG stranded silicone wire, multiple colors, for full-SATEL pigtails.
+- 28 AWG silicone ribbon cable if you want tidy pull-apart bundled wires.
+- 30 AWG stranded silicone wire for mini-PCB pad soldering.
+- JST-GH 10-pin housings and pre-crimped 28-30 AWG leads, or complete 10-pin
+  JST-GH cable assemblies.
+- JST-GH right-angle or vertical PCB headers for the IOT01A1 adapter.
+- Heat-shrink tubing, 1.5-3 mm.
+- Small zip-tie anchors or adhesive cable clips.
+- 3M VHB 5952 or 4910 tape for no-screw mounting trials.
+- M2 screws, washers, and heat-set inserts or self-tapping plastic screws.
+
+For hand assembly, pre-crimped leads are strongly preferred over crimping JST-GH
+contacts manually.
+
+### What Not To Order For Deployment
+
+- Loose Dupont jumper wire kits for moving-car sensor harnesses.
+- JST-XH, JST-PH, JST-SH, or generic "JST 1.25" parts without confirming the
+  exact series and pin count.
+- Stiff solid-core wire for the sensor cable.
+- Unlabeled same-color wire bundles.
+- Adhesive tape of unknown type for the first car test.
+
+### Cable Length Guidance
+
+Start short:
+
+- bench: 100-200 mm;
+- first car install: 200-300 mm;
+- only test 400 mm after SPI is stable at shorter lengths.
+
+For SPI:
+
+- keep SCK near a ground conductor;
+- keep MISO near a ground conductor if the cable is long;
+- keep ToF harnesses away from motor PWM and ESC wiring;
+- avoid coiling extra harness length near the STM32 board.
+
+For I2C fallback:
+
+- twist or bundle SCL/GND and SDA/GND;
+- keep cable shorter than SPI;
+- avoid adding extra pullups unless bus rise time is measured.
+
+## Connector Pin-1 Convention
+
+Use this convention everywhere:
 
 ```text
-board_w
-board_h
-board_t
-sensor_x
-sensor_y
-optic_opening
+Looking into the board-side adapter connector from the cable side:
+
+  pin 1 is the red 5V wire
+  pin 2 is black GND
+  pin 10 is gray PWR_EN
+
+The sensor-side connector must match this order after continuity testing.
 ```
 
-## Printing Guidance
+Do not trust wire color alone. Before plugging into the IOT01A1:
 
-- Material: PETG for RC-car use; PLA is acceptable for bench fit checks.
-- Layer height: 0.16-0.20 mm.
-- Perimeters: 3.
-- Infill: 25% or higher.
-- Print base with the tape surface on the bed.
-- Print lid with the outside face on the bed.
-- Deburr the optical aperture; no plastic should protrude into the 65 deg
-  diagonal field of view.
+1. Mark pin 1 on the adapter silkscreen or with paint.
+2. Mark pin 1 on the sensor case.
+3. Use a multimeter continuity test from adapter pin 1 to SATEL `EXT_5V0`.
+4. Verify no continuity between 5V and GND.
+5. Verify `EXT_SPI_I2C_N` is either tied to GND for I2C or 3V3 for SPI.
+
+## Front And Rear Mounting Convention
+
+Use the same mechanical convention as the firmware and iOS debug view:
+
+| Role | Case label | Physical location | Sensor direction | Firmware slot |
+| --- | --- | --- | --- | --- |
+| Rear | `REAR` / blue | rear bumper or rear chassis face | points backward | rear slot, D8 NCS first |
+| Front | `FRONT` / green | front bumper or front chassis face | points forward | front slot, D10 NCS |
+
+Use the full-SATEL case first on both ends. If the full board is too large for
+the final car layout, migrate only the sensor head to the mini-PCB case after
+the full-carrier behavior is proven.
+
+## Print And Fit Check
+
+### Full SATEL Case
+
+1. Measure the intact carrier width, height, board thickness, and sensor center.
+2. Update `satel_vl53l8_full_carrier_case.scad`.
+3. Print a PLA test part first.
+4. Dry-fit without wires.
+5. Confirm the sensor is centered in the aperture.
+6. Confirm the lid clears headers and components.
+7. Print PETG for car use.
+8. Install pigtails and repeat fit check.
+
+### Mini-PCB Case
+
+1. Do not snap a production sensor first. Use a sacrificial board if possible.
+2. Measure snapped-off board width, height, thickness, and sensor center.
+3. Update `satel_vl53l8_mini_case.scad`.
+4. Print a PLA fit-check part.
+5. Verify pad access and strain-relief clearance.
+6. Add interposer board only after electrical validation.
+7. Print PETG for car use.
+
+## Mounting With 3M VHB
+
+Use VHB for early car tests if the mounting surface is reasonably flat:
+
+1. Clean the case back and car surface with isopropyl alcohol.
+2. Let both surfaces dry completely.
+3. Apply tape to the case first.
+4. Press firmly for at least 30 seconds.
+5. Route the cable so it does not peel the case away from the car.
+6. Add a secondary cable tie-down within 30-50 mm of the case.
+7. Use screws if the bumper surface is curved, dusty, oily, or flexible.
+
+VHB is strong in shear but weaker if the cable applies peel force. The case must
+have a separate harness strain-relief path.
+
+## Mounting With Screws
+
+Use screws for repeatable long-term mounting:
+
+- M2 screws through side ears are the default.
+- Use washers if the RC car plastic is soft.
+- Use heat-set inserts only if the receiving plastic can tolerate heat.
+- Do not drill near batteries, wiring, or structural suspension parts.
+- Put screw heads outside the optical field of view.
 
 ## Validation Checklist
 
 1. Dry-fit the PCB without soldered wires.
 2. Confirm the optical module is centered in the aperture and not shadowed.
-3. Add soldered pigtail and strain relief.
+3. Add soldered pigtails and strain relief.
 4. Fit the lid without compressing components or pulling wires.
-5. Mount with VHB tape on the bench and pull-test the cable lightly.
-6. Verify UART VL53L8 frame logs before installing on the RC car.
-7. After car installation, repeat FE63 health and iOS depth-map checks for rear
-   and front roles.
+5. Continuity-test every harness pin.
+6. Confirm no 5V/GND short.
+7. Confirm mode pin state before power.
+8. Mount with VHB tape or screws.
+9. Pull-test the cable lightly.
+10. Verify UART VL53L8 frame logs before installing on the RC car.
+11. After car installation, repeat FE63 health and iOS depth-map checks for rear
+    and front roles.
 
 ## Sources
 
@@ -218,9 +419,23 @@ optic_opening
   <https://www.st.com/resource/en/schematic_pack/satel-vl53l8-schematic.pdf>
 - ST AN5945:
   <https://www.st.com/resource/en/application_note/an5945-how-to-connect-the-satelvl53l8-to-an-stm32-nucleo64-board-stmicroelectronics.pdf>
+- DigiKey SATEL-VL53L8 product page:
+  <https://www.digikey.com/en/products/detail/stmicroelectronics/SATEL-VL53L8/18110499>
 - JST GH connector family:
+  <https://www.jst-mfg.com/product/detail_e.php?series=105>
+- JST GH connector family, JST Sales America:
   <https://www.jst.com/products/crimp-style-connectors-wire-to-board-type/gh-connector/>
+- GNSS Store JST-GH 10-pin cable example:
+  <https://gnss.store/products/elt0482>
 - Molex PicoBlade connector family:
   <https://www.digikey.com/en/product-highlight/m/molex-connector/picoblade-connector-system>
+- Adafruit 28 AWG silicone ribbon cable:
+  <https://www.adafruit.com/product/3891>
+- Adafruit 30 AWG silicone wire:
+  <https://www.adafruit.com/product/3166>
+- Adafruit Arduino R3 proto shield:
+  <https://www.adafruit.com/product/2077>
+- Adafruit Arduino R3 stacking headers:
+  <https://www.adafruit.com/product/85>
 - 3M VHB 5952:
-  <https://www.3m.com/3M/en_US/p/dc/v100808791/>
+  <https://www.3m.com/3M/en_US/p/dc/v000172783/>
