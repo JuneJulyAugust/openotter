@@ -1,27 +1,37 @@
 # SATEL-VL53L8 Full-Carrier Case
 
-This directory contains a first parametric enclosure for using the complete
-SATEL-VL53L8 carrier board on the RC car.
+This directory contains generated artifacts for a bottom-mounted case that
+keeps the complete SATEL-VL53L8 carrier board intact.
 
 The full carrier is the safer near-term deployment path because it keeps the
 SATEL regulators, level translators, and 2.54 mm J1/J2 carrier pads in use.
 
-## Files
+## Source
 
-- `satel_vl53l8_full_carrier_case.scad` - OpenSCAD source for a two-piece
-  full-carrier tray, optical-window lid, and optional mount plate.
+The source model is the repo-level CadQuery generator:
+
+```text
+../vl53l8_cases_cadquery.py
+```
+
+CadQuery or build123d should be used for future repo-native case updates.
+
+Coordinate convention:
+
+- `Z=0` is the flat bottom mounting face against the car.
+- `+Z` is the VL53L8 optical direction through the lid aperture.
+- `+Y` is the harness exit direction.
 
 ## Mechanical Features
 
-- Printed PCB ledges, side rails, and an end stop keep the SATEL carrier steady
-  without drilling the board.
-- Underside lid retainer pads lightly capture PCB edge areas when the case is
-  screwed closed.
-- Harness tie slots and a printed rear strain bar keep cable load away from
-  the soldered pigtails.
-- Side ears accept M2 case/mount screws.
-- `part = "assembly"` shows preview-only harness wires, car mount surface, and
-  field-of-view cone. Do not export the assembly as a printable part.
+- Flat bottom face for VHB tape or direct car-surface mounting.
+- Side ears with M2 through-holes for screw mounting.
+- PCB ledges, side rails, and an end stop keep the SATEL carrier steady without
+  drilling the board.
+- Lid retainer pads lightly capture PCB edge areas when the case is closed.
+- Harness tie slots and a printed rear strain bar keep cable load away from the
+  soldered pigtails.
+- The harness exits behind the sensor and outside the field-of-view cone.
 
 ## Status
 
@@ -30,54 +40,34 @@ resources, but the ST ZIP download timed out from this development environment.
 The defaults are therefore approximate and must be updated from either the ST
 CAD/Gerber package or caliper measurements before final printing.
 
-Edit these OpenSCAD parameters first:
+## Generate
 
-```scad
-board_w = 30.5;
-board_h = 66.0;
-board_t = 1.6;
-sensor_x = 0.0;
-sensor_y = -21.0;
-header_clearance_z = 8.0;
-optic_opening = 18.0;
-```
-
-## Export
-
-Install OpenSCAD, then export each printable part:
+Install the CAD dependencies in the project `.venv`, then regenerate all
+full-carrier and mini-PCB artifacts from the shared script:
 
 ```bash
-openscad --export-format binstl -D 'part="base"' -o stl/satel_vl53l8_full_carrier_case_base.stl satel_vl53l8_full_carrier_case.scad
-openscad --export-format binstl -D 'part="lid"'  -o stl/satel_vl53l8_full_carrier_case_lid.stl  satel_vl53l8_full_carrier_case.scad
-openscad --export-format binstl -D 'part="mount_plate"' -o stl/satel_vl53l8_full_carrier_mount_plate.stl satel_vl53l8_full_carrier_case.scad
+/Users/fang/projects/openotter/.venv/bin/python -m pip install \
+  -r ../requirements.txt
 ```
-
-Use `part = "assembly"` inside OpenSCAD for a visual fit preview. The assembly
-preview includes the harness path, a gray car mounting plane, and a transparent
-field-of-view cone to catch obvious occlusion issues.
-
-Generated exports are stored in:
-
-```text
-stl/satel_vl53l8_full_carrier_case_base.stl
-stl/satel_vl53l8_full_carrier_case_lid.stl
-stl/satel_vl53l8_full_carrier_mount_plate.stl
-renders/satel_vl53l8_full_carrier_stl_preview.png
-```
-
-The PNG preview is rendered from the OpenSCAD STL exports by:
 
 ```bash
 MPLCONFIGDIR=/private/tmp/matplotlib-openotter \
   /Users/fang/projects/openotter/.venv/bin/python \
-  ../render_stl_previews.py
+  ../vl53l8_cases_cadquery.py
 ```
 
-Native OpenSCAD PNG rendering needs a local macOS OpenGL context. It failed in
-the remote session with `Unable to create NSOpenGLContext`, so the committed PNG
-preview uses the STL-based renderer above.
+## Generated Artifacts
 
-![Full carrier STL preview](renders/satel_vl53l8_full_carrier_stl_preview.png)
+```text
+stl/satel_vl53l8_full_carrier_base.stl
+stl/satel_vl53l8_full_carrier_lid.stl
+step/satel_vl53l8_full_carrier_base.step
+step/satel_vl53l8_full_carrier_lid.step
+step/satel_vl53l8_full_carrier_assembly.step
+renders/satel_vl53l8_full_carrier_cadquery_preview.png
+```
+
+![Full carrier CadQuery preview](renders/satel_vl53l8_full_carrier_cadquery_preview.png)
 
 ## Intended Harness
 
@@ -91,7 +81,7 @@ For car use, avoid tall loose Dupont jumpers. Preferred assembly:
 
 ## Print
 
-- Print the base with the flat mounting face on the bed.
+- Print the base with the flat bottom mounting face on the bed.
 - Print the lid with the outside optical face on the bed.
 - PETG is preferred for car installation.
 - Do not let the lid touch solder joints, installed pin headers, or the optical
@@ -99,5 +89,4 @@ For car use, avoid tall loose Dupont jumpers. Preferred assembly:
 - Confirm the lid retainer pads contact only PCB edge areas.
 - Keep screw heads, bumper lips, wires, and tape edges outside the FOV preview
   cone.
-- Use M2 screws through the side ears, or use 3M VHB tape on the flat rear
-  mounting plate.
+- Use M2 screws through the side ears, or use 3M VHB tape on the flat bottom.

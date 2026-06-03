@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Directional safety projection tests**: Added host coverage for mapping front-sensor forward motion into the existing reverse-safety model without changing the core stopping-distance invariant.
 - **VL53L8 debug role metadata**: FE61 now accepts a front/rear debug role byte, FE63 reports selected role plus available-slot mask, and host tests cover the packed status metadata.
 - **VL53L8 debug-role regression tests**: Host tests now cover legacy 8-byte FE61 compatibility, invalid 9-byte role rejection, null/short-payload guards, defensive FE63 role-bit decoding, and drive-safety null projection paths.
-- **SATEL-VL53L8 mechanical integration plan**: Added harness recommendations, source image references, full-SATEL and snap-off mini-PCB deployment visuals, car installation/assembly diagrams, parametric OpenSCAD enclosures with board retention, harness strain relief, mount previews, FOV keepout previews, OpenSCAD-generated STL exports, and rendered STL preview PNGs.
+- **SATEL-VL53L8 mechanical integration plan**: Added harness recommendations, source image references, full-SATEL and snap-off mini-PCB deployment visuals, car installation/assembly diagrams, and bottom-mounted CadQuery enclosures with board retention, harness strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
 
 ### Changed
 - **VL53L8 runtime driver**: Refactored the single VL53L8 runtime into rear/front slots. Rear probes I2C3 first, then SPI1 with D8 `NCS`; front probes SPI1 with D10 `NCS`.

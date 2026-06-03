@@ -49,6 +49,7 @@ IOT01A1
   -> keyed JST-GH harness
   -> strain-relieved sensor case
   -> SATEL board held by PCB edges
+  -> flat case bottom mounted to car
   -> optical aperture facing front or rear
 ```
 
@@ -60,35 +61,39 @@ IOT01A1
 
 These rules apply to both case designs:
 
-- mount the flat case back against a vertical front or rear car surface;
-- keep the lid and optical aperture facing outward;
+- mount the flat case bottom against the car surface;
+- keep the lid and optical aperture facing away from the car;
 - route wires out the rear/cable-exit side and immediately back toward the
   chassis;
 - add a tie-down within 30-50 mm of each sensor case;
 - do not let cable loops, screw heads, tape edges, bumper lips, or printed case
   walls enter the VL53L8 field of view;
 - hold the PCB by edges or printed retainers, never by soldered wires;
-- use case screws through side ears or a separate mount plate; do not drill the
-  SATEL PCB unless the official board drawing confirms safe mounting holes.
+- use case screws through side ears or VHB tape on the flat bottom; do not
+  drill the SATEL PCB unless the official board drawing confirms safe mounting
+  holes.
 
-The case models include assembly-preview geometry for the car mount plane,
-harness path, and field-of-view cone. These preview objects are only shown by
-`part = "assembly"` and are not exported when `part = "base"`, `part = "lid"`,
-or `part = "mount_plate"` is selected.
+The case models define `Z=0` as the bottom mounting face, `+Z` as the ToF
+optical direction, and `+Y` as the harness exit direction.
 
 ## CAD Tooling Note
 
-OpenSCAD is installed on the Mac and was used to generate the committed STL
-files. It should not be the long-term visual rendering tool for this project:
-the Homebrew cask is Intel-only, Homebrew warns about Gatekeeper/deprecation,
-and native PNG rendering failed in the remote session with
-`Unable to create NSOpenGLContext`.
+CadQuery is now the active CAD tool for the case models. It is installed in the
+project `.venv` and generates bottom-mount STL, STEP, assembly STEP, and PNG
+preview artifacts. Use CadQuery or build123d for future repo-native CAD work;
+do not add new OpenSCAD case sources.
+
+Install or refresh the CAD dependencies with:
+
+```bash
+/Users/fang/projects/openotter/.venv/bin/python -m pip install \
+  -r firmware/stm32-mcp/hardware/cad/requirements.txt
+```
 
 Recommended path:
 
-1. Keep the current OpenSCAD models and STL exports as v0 printable artifacts.
-2. Migrate the parametric case models to CadQuery or build123d when the measured
-   board dimensions are known.
+1. Keep the current CadQuery models as the repo source of truth.
+2. Update the CadQuery parameters after caliper or ST STEP/Gerber measurement.
 3. Use FreeCAD, Fusion 360, or Onshape for human GUI refinement if the printed
    case needs screw bosses, curved bumper adapters, or precise assemblies.
 
@@ -96,7 +101,7 @@ Tool fit:
 
 | Tool | Best use | Tradeoff |
 | --- | --- | --- |
-| CadQuery / build123d | Repo-native Python parametric CAD, STEP/STL export | Needs Python CAD dependency setup |
+| CadQuery / build123d | Repo-native Python parametric CAD, STEP/STL export | Active repo path; requires `.venv` CAD dependencies |
 | FreeCAD | Free GUI CAD, STEP/STL, Python scripting | Heavier UI and scripting model |
 | Fusion 360 | Best practical GUI for enclosures and assemblies | Closed-source; license constraints |
 | Onshape | Browser CAD and collaboration | Free plan stores public documents |
@@ -117,7 +122,7 @@ If an offline Markdown renderer blocks external images, open the source link.
 | 30 AWG silicone wire | [Adafruit product images, ID 3166](https://www.adafruit.com/product/3166) | Good source reference for very small flexible wire for mini-PCB edge pads. |
 | Arduino R3 proto shield | [Adafruit product images, ID 2077](https://www.adafruit.com/product/2077) | Example board-side adapter base that can plug into the IOT01A1 Arduino headers. |
 | Arduino stacking headers | [Adafruit product images, ID 85](https://www.adafruit.com/product/85) | Required if the adapter shield needs to stack cleanly on the IOT01A1. |
-| 3M VHB 5952 tape | ![3M VHB 5952](https://multimedia.3m.com/mws/media/2317404J/3m-vhb-tape-5952p-black.jpg) | Good first mounting option for flat case backs on painted/plastic RC car surfaces. Source: 3M 5952 product page. |
+| 3M VHB 5952 tape | ![3M VHB 5952](https://multimedia.3m.com/mws/media/2317404J/3m-vhb-tape-5952p-black.jpg) | Good first mounting option for flat case bottoms on painted/plastic RC car surfaces. Source: 3M 5952 product page. |
 
 ## Electrical Interfaces
 
@@ -171,12 +176,12 @@ carrier electrical interface. This is the design to print first.
 CAD artifact:
 
 ```text
-firmware/stm32-mcp/hardware/cad/satel-vl53l8-full-carrier-case/satel_vl53l8_full_carrier_case.scad
+firmware/stm32-mcp/hardware/cad/vl53l8_cases_cadquery.py
 ```
 
-Rendered OpenSCAD STL preview:
+Rendered CadQuery preview:
 
-![Full carrier OpenSCAD STL preview](../../hardware/cad/satel-vl53l8-full-carrier-case/renders/satel_vl53l8_full_carrier_stl_preview.png)
+![Full carrier CadQuery preview](../../hardware/cad/satel-vl53l8-full-carrier-case/renders/satel_vl53l8_full_carrier_cadquery_preview.png)
 
 ### Full Carrier Case Requirements
 
@@ -191,7 +196,7 @@ Rendered OpenSCAD STL preview:
 - Provide a cable exit at the J1/J2 end.
 - Include strain relief for the pigtail bundle: printed strain bar plus tie
   slots in the base.
-- Include M2 side ears and a flat back for VHB tape.
+- Include M2 side ears and a flat bottom for VHB tape.
 - Mark `FRONT` or `REAR` on the lid or with a label.
 
 ### Full Carrier Case Assembly
@@ -211,7 +216,7 @@ Rendered OpenSCAD STL preview:
    tie-down or heat-shrink sleeve.
 9. Attach the lid. Confirm the lid retainer pads contact only PCB edge areas,
    not components.
-10. Mount the case back to a vertical car surface using either 3M VHB tape or
+10. Mount the flat case bottom to the car surface using either 3M VHB tape or
     M2 screws through the side ears.
 11. Check from the sensor side that no cable, screw head, bumper lip, or case
     wall is visible through the optical aperture.
@@ -247,12 +252,12 @@ system is proven. It should not be the first car deployment.
 CAD artifact:
 
 ```text
-firmware/stm32-mcp/hardware/cad/satel-vl53l8-mini-case/satel_vl53l8_mini_case.scad
+firmware/stm32-mcp/hardware/cad/vl53l8_cases_cadquery.py
 ```
 
-Rendered OpenSCAD STL preview:
+Rendered CadQuery preview:
 
-![Mini-PCB OpenSCAD STL preview](../../hardware/cad/satel-vl53l8-mini-case/renders/satel_vl53l8_mini_stl_preview.png)
+![Mini-PCB CadQuery preview](../../hardware/cad/satel-vl53l8-mini-case/renders/satel_vl53l8_mini_cadquery_preview.png)
 
 ### Mini-PCB Case Requirements
 
@@ -403,9 +408,10 @@ Common failure modes:
 - A screw head beside the aperture clips the FOV when the car vibrates.
 - A deeply recessed optical window creates a tunnel and shadows edge zones.
 
-For the printed models, use `part = "assembly"` to preview the FOV cone and
-harness path. If the cone intersects a mount plate or planned bumper surface,
-do not print the deployment part until the mount is adjusted.
+For the printed models, inspect the assembly STEP file and rendered PNG preview
+to check the FOV cone and harness path. If the cone intersects a bumper surface,
+cable loop, screw head, or tape edge, do not print the deployment part until
+the case location or aperture clearance is adjusted.
 
 ## Connector Pin-1 Convention
 
@@ -447,7 +453,7 @@ the full-carrier behavior is proven.
 ### Full SATEL Case
 
 1. Measure the intact carrier width, height, board thickness, and sensor center.
-2. Update `satel_vl53l8_full_carrier_case.scad`.
+2. Update `firmware/stm32-mcp/hardware/cad/vl53l8_cases_cadquery.py`.
 3. Print a PLA test part first.
 4. Dry-fit without wires.
 5. Confirm the sensor is centered in the aperture and the FOV cone is clear.
@@ -460,7 +466,7 @@ the full-carrier behavior is proven.
 
 1. Do not snap a production sensor first. Use a sacrificial board if possible.
 2. Measure snapped-off board width, height, thickness, and sensor center.
-3. Update `satel_vl53l8_mini_case.scad`.
+3. Update `firmware/stm32-mcp/hardware/cad/vl53l8_cases_cadquery.py`.
 4. Print a PLA fit-check part.
 5. Verify pad access, board retention, and strain-relief clearance.
 6. Add interposer board only after electrical validation.
@@ -470,7 +476,7 @@ the full-carrier behavior is proven.
 
 Use VHB for early car tests if the mounting surface is reasonably flat:
 
-1. Clean the case back and car surface with isopropyl alcohol.
+1. Clean the flat case bottom and car surface with isopropyl alcohol.
 2. Let both surfaces dry completely.
 3. Apply tape to the case first.
 4. Press firmly for at least 30 seconds.

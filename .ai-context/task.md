@@ -69,13 +69,13 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add host-test coverage for VL53L8 config, transport, frame codec, BLE ToF policy, and two-sensor topology; HAL-free host line coverage reached 99.4%.
 - [x] Add iOS STM32 Control front/rear ToF selector, FE61 debug role byte, and FE63 available-role mask decoding.
 - [x] Add regression tests for FE61 debug role compatibility/rejection, FE63 defensive decoding, and iOS stale-frame clearing when switching ToF roles.
-- [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB enclosure CAD with board retention, strain relief, mount previews, FOV keepout previews, OpenSCAD-generated STL exports, and rendered STL preview PNGs.
+- [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB CadQuery enclosure CAD with bottom-mount case orientation, board retention, strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
 - [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
 - [ ] Re-flash the current feature firmware and re-verify one rear SATEL-VL53L8 hardware bring-up after a board power cycle.
 - [ ] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
 - [ ] Decide the v1.2.0 scope: either ship as "one rear SATEL verified, two-sensor code ready" or wait for physical two-sensor SPI verification.
-- [ ] Measure intact SATEL carrier dimensions with calipers or ST STEP/Gerber files and update the full-carrier OpenSCAD defaults before printing the final car case.
-- [ ] Measure snapped-off SATEL mini-PCB dimensions with calipers and update the mini-PCB OpenSCAD defaults before printing the final compact case.
+- [ ] Measure intact SATEL carrier dimensions with calipers or ST STEP/Gerber files and update the full-carrier CadQuery defaults before printing the final car case.
+- [ ] Measure snapped-off SATEL mini-PCB dimensions with calipers and update the mini-PCB CadQuery defaults before printing the final compact case.
 - [ ] Build a board-side IOT01A1 ToF harness adapter using locking connectors before car deployment.
 - [ ] Physically verify the second front SATEL-VL53L8 on shared SPI1 with D10 `NCS`, A0 `LPn`, and A3 `GPIO1`.
 - [ ] Run vehicle-level autonomous validation with rear/front VL53L8 health visible in Self Driving.
