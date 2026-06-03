@@ -31,6 +31,60 @@ correct SATEL wiring
   -> valid-status center-zone data available to reverse safety
 ```
 
+## Dual-Transport Update
+
+The firmware will support both SATEL-VL53L8 wiring modes in one image:
+
+- I2C mode: `J2 pin 1 EXT_SPI_I2C_N` tied to GND.
+- SPI mode: `J2 pin 1 EXT_SPI_I2C_N` tied to 3V3.
+
+The firmware does not hot-swap modes. The user powers off the IOT01A1 and SATEL
+board before changing wiring. At the next boot, firmware probes the configured
+transports and uses whichever one responds. The mode pin is not treated as a
+runtime software switch because it is a SATEL input, not a guaranteed MCU-readable
+signal in the current wiring.
+
+The transport invariant is:
+
+```text
+SATEL wiring selects I2C or SPI
+  -> firmware probes I2C3, then SPI1
+  -> exactly one transport should answer for a single populated sensor
+  -> VL53L8CX ULD receives transport callbacks through one platform object
+  -> ranging, safety, BLE, and iOS-facing frame semantics stay unchanged
+```
+
+If no transport answers, firmware reports `TOF_STATUS_NO_SENSOR` and logs both
+probe attempts. If both transports answer for the same single-sensor slot, that
+is treated as a wiring/configuration fault rather than a feature: the expected
+SATEL mode wiring should make only one protocol usable.
+
+The ST VL53L8CX ULD already exposes the right seam: `VL53L8CX_Platform` contains
+`Write`, `Read`, `Wait`, and `handle` fields. The project wrapper should move raw
+I2C access out of `tof_l8.c` into a narrow transport module, then add SPI1 access
+behind the same callback contract. The rest of `tof_l8.c` should keep owning
+sensor boot, configuration, polling, frame conversion, and logging.
+
+For SPI, use SPI1 on the Arduino header. Do not use SPI3; SPI3 is owned by the
+BlueNRG-MS BLE middleware and must remain isolated from ToF.
+
+| SATEL SPI signal | IOT01A1 pin | MCU pin | Notes |
+| --- | --- | --- | --- |
+| `EXT_SPI_I2C_N` / J2 pin 1 | 3V3 | board 3V3 | Select SPI mode. |
+| `EXT_MCLK_SCL` / J2 pin 6 | D13 | PA5 / SPI1_SCK | Shared clock for one or two SPI sensors. |
+| `EXT_MOSI_SDA` / J2 pin 5 | D11 | PA7 / SPI1_MOSI | Shared MOSI. |
+| `EXT_MISO` / J2 pin 4 | D12 | PA6 / SPI1_MISO | Shared MISO; only selected sensor may drive it. |
+| `EXT_NCS` / J2 pin 3 | D8 for rear | PB2 GPIO output | Dedicated chip-select, idle high. |
+| `EXT_LPn` / J2 pin 2 | A1 for rear | PC4 GPIO output | Dedicated reset/recovery control. |
+| `EXT_GPIO1` / J1 top pad | A2 for rear | PC3 GPIO input | Optional interrupt; polling remains valid. |
+| `EXT_PWR_EN` / J2 pin 7 | D9 or 3V3 | PA15 or board 3V3 | GPIO is better for recovery; 3V3 is simpler. |
+| `EXT_5V0` / J2 pin 11 | 5V | board 5V | SATEL regulator input. |
+| GND | GND | board GND | Common ground. |
+
+SPI timing starts conservatively: SPI mode 3, MSB first, 8-bit words, no hardware
+NSS, and an SPI1 baud rate at or below the VL53L8CX 3 MHz limit. Higher clocking
+can be considered only after one-sensor SPI bring-up is stable.
+
 ## Hardware Findings
 
 The current SATEL-VL53L8 wiring is not fully correct if the pin numbers are
@@ -150,7 +204,21 @@ bring-up.
 
 ## Two-Sensor Ready Design
 
-The preferred two-sensor topology uses separate I2C buses:
+The preferred two-sensor deployment topology is now shared SPI1 with independent
+chip-select and reset lines. This matches ST's multi-sensor SPI guidance and
+avoids I2C default-address sequencing for the production front/rear pair:
+
+- rear SATEL-VL53L8 on SPI1 `D13/D12/D11`, rear `NCS` on D8, rear `LPn` on A1;
+- front SATEL-VL53L8 on the same SPI1 pins, front `NCS` on D10, front `LPn` on
+  A0;
+- both sensors keep separate optional `GPIO1` interrupt inputs.
+
+The SPI topology lets both sensors remain online and ranging without assigning
+runtime I2C addresses. The firmware still reads them sequentially, because one
+SPI controller talks to one selected sensor at a time, but the protocol no
+longer has an address collision at boot.
+
+The previous separate-I2C topology remains a supported fallback:
 
 - rear SATEL-VL53L8 on I2C3 (`A5/PC0` SCL, `A4/PC1` SDA);
 - front SATEL-VL53L8 on I2C1 (`D15/PB8` SCL, `D14/PB9` SDA).
@@ -182,8 +250,9 @@ Future sequencing:
 
 1. Hold both SATEL `LPn` lines low.
 2. Hold PC6 `VL53L0X_XSHUT` low.
-3. Enable and release rear SATEL, then initialize it on I2C3.
-4. Enable and release front SATEL, then initialize it on I2C1.
+3. Probe and initialize one rear SATEL over the selected transport first.
+4. After one-sensor SPI is verified, enable and initialize the front SATEL using
+   the same transport family and a separate slot descriptor.
 5. Start both sensors ranging.
 6. Poll/process each slot independently. Forward safety consumes the front
    slot; reverse safety consumes the rear slot.
