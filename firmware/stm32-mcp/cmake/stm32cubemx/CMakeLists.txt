@@ -45,6 +45,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_l8.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_transport.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_status.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_config.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_topology.c

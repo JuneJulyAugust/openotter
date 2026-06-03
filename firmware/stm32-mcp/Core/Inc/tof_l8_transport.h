@@ -63,6 +63,14 @@ TofL8TransportKind_t TofL8Transport_ChooseProbe(int i2c_alive, int spi_alive);
 uint16_t TofL8Transport_SpiWriteHeader(uint16_t register_addr);
 uint16_t TofL8Transport_SpiReadHeader(uint16_t register_addr);
 
+#ifdef STM32L475xx
+uint8_t TofL8Transport_Write(void *handle, uint16_t register_addr,
+                             uint8_t *data, uint32_t size);
+uint8_t TofL8Transport_Read(void *handle, uint16_t register_addr,
+                            uint8_t *data, uint32_t size);
+uint8_t TofL8Transport_Wait(void *handle, uint32_t time_ms);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

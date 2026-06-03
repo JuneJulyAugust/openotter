@@ -9,15 +9,16 @@
 #include "main.h"
 #include "stm32l4xx_hal.h"
 #include "firmware_watchdog.h"
+#include "tof_l8_transport.h"
 #include "tof_l8_status.h"
 #include "vl53l8cx_api.h"
 
 extern UART_HandleTypeDef huart1;
-extern I2C_HandleTypeDef hi2c3;
 
 static Tof_Frame_t g_frame_latest;
 static VL53L8CX_Configuration g_dev;
 static VL53L8CX_ResultsData g_results;
+static TofL8TransportHandle_t g_transport;
 static volatile uint8_t g_has_new_frame;
 static uint8_t g_initialized;
 static uint8_t g_streaming;
@@ -26,11 +27,8 @@ static uint32_t g_seq;
 static uint32_t g_last_configure_tick;
 static uint32_t g_last_frame_log_tick;
 static uint32_t g_last_frame_log_seq;
-static uint16_t g_i2c_addr = TOF_L8_DEFAULT_I2C_ADDR_8BIT;
 
 /* TOF_L8_RECONFIGURE_DEBOUNCE_MS is owned by tof_l8_debounce.h. */
-#define TOF_L8_I2C_MIN_TIMEOUT_MS       1000u
-#define TOF_L8_I2C_MAX_TIMEOUT_MS       15000u
 #define TOF_L8_FRAME_LOG_INTERVAL_MS    1000u
 static Tof_Config_t g_cfg = {
     .sensor_type = TOF_SENSOR_VL53L8CX,
@@ -152,63 +150,52 @@ static uint16_t integration_for_config(const Tof_Config_t *cfg)
   return (period_ms > 2u) ? (uint16_t)(period_ms - 1u) : 2u;
 }
 
-/* ULD downloads ~85 KB of firmware in large single-shot chunks. At 100 kHz
- * plus sensor clock-stretching, large transfers need seconds, but a cold
- * power-on bus fault must not trap the firmware forever.
- */
-static uint32_t i2c_timeout_for_size(uint16_t size)
+static const char *transport_name(TofL8TransportKind_t kind)
 {
-  uint32_t timeout = TOF_L8_I2C_MIN_TIMEOUT_MS + ((uint32_t)size / 4u);
-  return (timeout > TOF_L8_I2C_MAX_TIMEOUT_MS)
-             ? TOF_L8_I2C_MAX_TIMEOUT_MS
-             : timeout;
+  if (kind == TOF_L8_TRANSPORT_I2C) return "i2c3";
+  if (kind == TOF_L8_TRANSPORT_SPI) return "spi1";
+  if (kind == TOF_L8_TRANSPORT_AMBIGUOUS) return "ambiguous";
+  return "none";
 }
 
-static uint16_t platform_i2c_addr(void *handle)
+static void apply_transport(TofL8TransportHandle_t *transport)
 {
-  return (handle != NULL) ? *((uint16_t *)handle) : TOF_L8_DEFAULT_I2C_ADDR_8BIT;
+  g_dev.platform.address = (transport->kind == TOF_L8_TRANSPORT_I2C)
+                               ? transport->i2c.addr_8bit
+                               : 0u;
+  g_dev.platform.Write = TofL8Transport_Write;
+  g_dev.platform.Read = TofL8Transport_Read;
+  g_dev.platform.Wait = TofL8Transport_Wait;
+  g_dev.platform.handle = transport;
 }
 
-/* The VL53L8CX firmware download issues multi-KB I2C writes. Without
- * refreshing the IWDG inside these platform callbacks the watchdog can fire
- * mid-init. Refreshing at op start gives every blocking HAL_I2C_Mem_* call a
- * fresh window; l8_wait refreshes during ULD polls. */
-static uint8_t l8_i2c_write(void *handle, uint16_t reg_addr, uint8_t *data,
-                            uint32_t size)
+typedef struct {
+  TofL8TransportHandle_t transport;
+  uint8_t pre_stop;
+  uint8_t alive_read;
+  uint8_t alive;
+} TofL8ProbeResult_t;
+
+static void probe_transport(const TofL8TransportHandle_t *candidate,
+                            TofL8ProbeResult_t *result)
 {
-  if (size > UINT16_MAX) return VL53L8CX_MCU_ERROR;
+  memset(result, 0, sizeof(*result));
+  result->transport = *candidate;
+  memset(&g_dev, 0, sizeof(g_dev));
+  apply_transport(&result->transport);
 
-  FwWatchdog_Refresh();
-  uint16_t tx_size = (uint16_t)size;
-  HAL_StatusTypeDef s =
-      HAL_I2C_Mem_Write(&hi2c3, platform_i2c_addr(handle), reg_addr,
-                        I2C_MEMADD_SIZE_16BIT, data, tx_size,
-                        i2c_timeout_for_size(tx_size));
-  return (s == HAL_OK) ? VL53L8CX_STATUS_OK : VL53L8CX_MCU_ERROR;
-}
+  log_fmt("VL53L8 probe transport=%s phase=stop_ranging\r\n",
+          transport_name(result->transport.kind));
+  result->pre_stop = vl53l8cx_stop_ranging(&g_dev);
+  HAL_Delay(5);
 
-static uint8_t l8_i2c_read(void *handle, uint16_t reg_addr, uint8_t *data,
-                           uint32_t size)
-{
-  if (size > UINT16_MAX) return VL53L8CX_MCU_ERROR;
-
-  FwWatchdog_Refresh();
-  uint16_t rx_size = (uint16_t)size;
-  HAL_StatusTypeDef s =
-      HAL_I2C_Mem_Read(&hi2c3, platform_i2c_addr(handle), reg_addr,
-                       I2C_MEMADD_SIZE_16BIT, data, rx_size,
-                       i2c_timeout_for_size(rx_size));
-  return (s == HAL_OK) ? VL53L8CX_STATUS_OK : VL53L8CX_MCU_ERROR;
-}
-
-static uint8_t l8_wait(void *handle, uint32_t time_ms)
-{
-  (void)handle;
-  uint32_t start = HAL_GetTick();
-  while ((HAL_GetTick() - start) < time_ms) {
-    FwWatchdog_Refresh();
-  }
-  return VL53L8CX_STATUS_OK;
+  log_fmt("VL53L8 probe transport=%s phase=is_alive\r\n",
+          transport_name(result->transport.kind));
+  result->alive_read = vl53l8cx_is_alive(&g_dev, &result->alive);
+  log_fmt("VL53L8 probe transport=%s pre_stop=%u alive_rd=%u alive=%u tick=%lu\r\n",
+          transport_name(result->transport.kind), (unsigned)result->pre_stop,
+          (unsigned)result->alive_read, (unsigned)result->alive,
+          (unsigned long)HAL_GetTick());
 }
 
 static int stop_stream(void)
@@ -227,6 +214,20 @@ static int stop_stream(void)
 static void configure_gpio(void)
 {
   GPIO_InitTypeDef gpio = {0};
+
+  gpio.Pin = ARD_D8_Pin;
+  gpio.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(ARD_D8_GPIO_Port, &gpio);
+  HAL_GPIO_WritePin(ARD_D8_GPIO_Port, ARD_D8_Pin, GPIO_PIN_SET);
+
+  gpio.Pin = ARD_D10_Pin;
+  gpio.Mode = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(ARD_D10_GPIO_Port, &gpio);
+  HAL_GPIO_WritePin(ARD_D10_GPIO_Port, ARD_D10_Pin, GPIO_PIN_SET);
 
   gpio.Pin = ARD_A1_Pin;
   gpio.Mode = GPIO_MODE_OUTPUT_PP;
@@ -261,36 +262,46 @@ int TofL8_Init(void)
   pulse_reset();
   stamp_empty_frame();
 
-  memset(&g_dev, 0, sizeof(g_dev));
-  g_i2c_addr = TOF_L8_DEFAULT_I2C_ADDR_8BIT;
-  g_dev.platform.address = TOF_L8_DEFAULT_I2C_ADDR_8BIT;
-  g_dev.platform.Write = l8_i2c_write;
-  g_dev.platform.Read = l8_i2c_read;
-  g_dev.platform.Wait = l8_wait;
-  g_dev.platform.handle = &g_i2c_addr;
+  TofL8ProbeResult_t i2c_probe;
+  TofL8ProbeResult_t spi_probe;
+  TofL8TransportHandle_t candidate;
 
-  /* LPn normally returns SATEL-VL53L8 to a quiet boot state. Keep the
-   * best-effort stop because it also protects benches where LPn is not wired
-   * yet and the sensor survived an STM32-only reset while still ranging. */
-  log_fmt("VL53L8 init phase=stop_ranging\r\n");
-  uint8_t pre_stop = vl53l8cx_stop_ranging(&g_dev);
-  HAL_Delay(5);
+  TofL8Transport_InitI2c(&candidate, TOF_L8_I2C_BUS_3,
+                         TOF_L8_DEFAULT_I2C_ADDR_8BIT);
+  probe_transport(&candidate, &i2c_probe);
 
-  log_fmt("VL53L8 init phase=is_alive\r\n");
-  uint8_t alive = 0;
-  uint8_t s = vl53l8cx_is_alive(&g_dev, &alive);
-  log_fmt("VL53L8 pre-stop=%u alive_rd=%u alive=%u tick=%lu\r\n",
-          (unsigned)pre_stop, (unsigned)s, (unsigned)alive,
-          (unsigned long)HAL_GetTick());
-  if (s != VL53L8CX_STATUS_OK || alive == 0u) {
-    log_fmt("VL53L8 probe: no sensor addr=0x%02X\r\n",
-            TOF_L8_DEFAULT_I2C_ADDR_8BIT);
+  TofL8Transport_InitSpi(&candidate, TOF_L8_SPI_BUS_1, TOF_L8_GPIO_PB2_D8);
+  probe_transport(&candidate, &spi_probe);
+
+  int i2c_alive = (i2c_probe.alive_read == VL53L8CX_STATUS_OK &&
+                   i2c_probe.alive != 0u);
+  int spi_alive = (spi_probe.alive_read == VL53L8CX_STATUS_OK &&
+                   spi_probe.alive != 0u);
+  TofL8TransportKind_t selected =
+      TofL8Transport_ChooseProbe(i2c_alive, spi_alive);
+  if (selected == TOF_L8_TRANSPORT_NONE) {
+    log_fmt("VL53L8 probe: no sensor i2c_rd=%u i2c_alive=%u "
+            "spi_rd=%u spi_alive=%u\r\n",
+            (unsigned)i2c_probe.alive_read, (unsigned)i2c_probe.alive,
+            (unsigned)spi_probe.alive_read, (unsigned)spi_probe.alive);
     return TOF_STATUS_NO_SENSOR;
   }
+  if (selected == TOF_L8_TRANSPORT_AMBIGUOUS) {
+    log_fmt("VL53L8 probe: ambiguous transport i2c_alive=%u spi_alive=%u\r\n",
+            (unsigned)i2c_probe.alive, (unsigned)spi_probe.alive);
+    return TOF_STATUS_IO;
+  }
+
+  g_transport = (selected == TOF_L8_TRANSPORT_I2C)
+                    ? i2c_probe.transport
+                    : spi_probe.transport;
+  memset(&g_dev, 0, sizeof(g_dev));
+  apply_transport(&g_transport);
+  log_fmt("VL53L8 selected transport=%s\r\n", transport_name(selected));
 
   log_fmt("VL53L8 init phase=fw_download tick=%lu\r\n",
           (unsigned long)HAL_GetTick());
-  s = vl53l8cx_init(&g_dev);
+  uint8_t s = vl53l8cx_init(&g_dev);
   if (s != VL53L8CX_STATUS_OK) {
     log_fmt("VL53L8 init failed status=%u\r\n", (unsigned)s);
     return TOF_STATUS_BOOT_FAILED;

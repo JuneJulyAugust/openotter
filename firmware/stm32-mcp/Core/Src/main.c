@@ -55,6 +55,8 @@ I2C_HandleTypeDef hi2c3;
 
 QSPI_HandleTypeDef hqspi;
 
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
@@ -72,6 +74,7 @@ static void MX_GPIO_Init(void);
 static void MX_DFSDM1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_I2C3_Init(void);
+static void MX_SPI1_Init(void);
 static void MX_QUADSPI_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
@@ -183,6 +186,7 @@ int main(void) {
   MX_DFSDM1_Init();
   MX_I2C2_Init();
   MX_I2C3_Init();
+  MX_SPI1_Init();
   MX_QUADSPI_Init();
   /* SPI3 is owned by the BLE middleware (hw_spi.c) — do NOT init here */
   MX_TIM3_Init();
@@ -196,16 +200,6 @@ int main(void) {
   boot_log_reset_cause(s_boot_reset_flags);
   boot_log_fmt("BOOT phase=peripherals_done tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
-  /* LD1 (PA5) heartbeat LED */
-  {
-    GPIO_InitTypeDef led = {0};
-    led.Pin = GPIO_PIN_5;
-    led.Mode = GPIO_MODE_OUTPUT_PP;
-    led.Pull = GPIO_NOPULL;
-    led.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOA, &led);
-  }
-
   /* Start TIM3 PWM on CH1 (throttle PB4) and CH4 (steering PB1) */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
@@ -286,13 +280,6 @@ int main(void) {
     /* BLE_Tof_Process is mode-gated: in Drive mode (default) frame
      * notifications are suppressed; in Debug mode they stream normally. */
     BLE_Tof_Process();
-
-    /* Toggle LD1 (PA5) every 500ms to show the board is alive */
-    static uint32_t last_toggle = 0;
-    if (HAL_GetTick() - last_toggle > 500) {
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-      last_toggle = HAL_GetTick();
-    }
 
     /* Toggle LED2 (PB14) at 1 Hz while VL53L8CX frames are arriving. */
     static uint32_t last_l8_seq = 0;
@@ -477,6 +464,32 @@ static void MX_I2C3_Init(void) {
     Error_Handler();
   }
   if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK) {
+    Error_Handler();
+  }
+}
+
+/**
+ * @brief SPI1 Initialization Function - SATEL-VL53L8 on Arduino D13/D12/D11.
+ * @retval None
+ */
+static void MX_SPI1_Init(void) {
+  __HAL_RCC_SPI1_CLK_ENABLE();
+
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 7;
+  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK) {
     Error_Handler();
   }
 }
