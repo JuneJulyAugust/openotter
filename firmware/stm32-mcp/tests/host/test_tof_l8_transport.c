@@ -32,10 +32,19 @@ static void test_probe_choice_prefers_i2c_then_spi(void)
   assert(TofL8Transport_ChooseProbe(1, 1) == TOF_L8_TRANSPORT_AMBIGUOUS);
 }
 
+static void test_spi_register_headers_follow_vl53l8_protocol(void)
+{
+  assert(TofL8Transport_SpiWriteHeader(0x000Fu) == 0x800Fu);
+  assert(TofL8Transport_SpiWriteHeader(0x1234u) == 0x9234u);
+  assert(TofL8Transport_SpiReadHeader(0x800Fu) == 0x000Fu);
+  assert(TofL8Transport_SpiReadHeader(0x9234u) == 0x1234u);
+}
+
 int main(void)
 {
   test_i2c_handle_configures_default_address();
   test_spi_handle_configures_chip_select();
   test_probe_choice_prefers_i2c_then_spi();
+  test_spi_register_headers_follow_vl53l8_protocol();
   return 0;
 }

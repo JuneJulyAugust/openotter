@@ -32,3 +32,13 @@ TofL8TransportKind_t TofL8Transport_ChooseProbe(int i2c_alive, int spi_alive)
   if (spi_alive) return TOF_L8_TRANSPORT_SPI;
   return TOF_L8_TRANSPORT_NONE;
 }
+
+uint16_t TofL8Transport_SpiWriteHeader(uint16_t register_addr)
+{
+  return (uint16_t)(register_addr | 0x8000u);
+}
+
+uint16_t TofL8Transport_SpiReadHeader(uint16_t register_addr)
+{
+  return (uint16_t)(register_addr & 0x7FFFu);
+}

@@ -60,6 +60,8 @@ void TofL8Transport_InitI2c(TofL8TransportHandle_t *handle,
 void TofL8Transport_InitSpi(TofL8TransportHandle_t *handle,
                             TofL8SpiBus_t bus, TofL8GpioTag_t ncs);
 TofL8TransportKind_t TofL8Transport_ChooseProbe(int i2c_alive, int spi_alive);
+uint16_t TofL8Transport_SpiWriteHeader(uint16_t register_addr);
+uint16_t TofL8Transport_SpiReadHeader(uint16_t register_addr);
 
 #ifdef __cplusplus
 }
