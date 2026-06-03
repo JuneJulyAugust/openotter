@@ -47,14 +47,37 @@ optic_opening = 18.0;
 Install OpenSCAD, then export each printable part:
 
 ```bash
-openscad -D 'part="base"' -o satel_vl53l8_full_carrier_case_base.stl satel_vl53l8_full_carrier_case.scad
-openscad -D 'part="lid"'  -o satel_vl53l8_full_carrier_case_lid.stl  satel_vl53l8_full_carrier_case.scad
-openscad -D 'part="mount_plate"' -o satel_vl53l8_full_carrier_mount_plate.stl satel_vl53l8_full_carrier_case.scad
+openscad --export-format binstl -D 'part="base"' -o stl/satel_vl53l8_full_carrier_case_base.stl satel_vl53l8_full_carrier_case.scad
+openscad --export-format binstl -D 'part="lid"'  -o stl/satel_vl53l8_full_carrier_case_lid.stl  satel_vl53l8_full_carrier_case.scad
+openscad --export-format binstl -D 'part="mount_plate"' -o stl/satel_vl53l8_full_carrier_mount_plate.stl satel_vl53l8_full_carrier_case.scad
 ```
 
 Use `part = "assembly"` inside OpenSCAD for a visual fit preview. The assembly
 preview includes the harness path, a gray car mounting plane, and a transparent
 field-of-view cone to catch obvious occlusion issues.
+
+Generated exports are stored in:
+
+```text
+stl/satel_vl53l8_full_carrier_case_base.stl
+stl/satel_vl53l8_full_carrier_case_lid.stl
+stl/satel_vl53l8_full_carrier_mount_plate.stl
+renders/satel_vl53l8_full_carrier_stl_preview.png
+```
+
+The PNG preview is rendered from the OpenSCAD STL exports by:
+
+```bash
+MPLCONFIGDIR=/private/tmp/matplotlib-openotter \
+  /Users/fang/projects/openotter/.venv/bin/python \
+  ../render_stl_previews.py
+```
+
+Native OpenSCAD PNG rendering needs a local macOS OpenGL context. It failed in
+the remote session with `Unable to create NSOpenGLContext`, so the committed PNG
+preview uses the STL-based renderer above.
+
+![Full carrier STL preview](renders/satel_vl53l8_full_carrier_stl_preview.png)
 
 ## Intended Harness
 

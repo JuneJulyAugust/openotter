@@ -76,6 +76,32 @@ harness path, and field-of-view cone. These preview objects are only shown by
 `part = "assembly"` and are not exported when `part = "base"`, `part = "lid"`,
 or `part = "mount_plate"` is selected.
 
+## CAD Tooling Note
+
+OpenSCAD is installed on the Mac and was used to generate the committed STL
+files. It should not be the long-term visual rendering tool for this project:
+the Homebrew cask is Intel-only, Homebrew warns about Gatekeeper/deprecation,
+and native PNG rendering failed in the remote session with
+`Unable to create NSOpenGLContext`.
+
+Recommended path:
+
+1. Keep the current OpenSCAD models and STL exports as v0 printable artifacts.
+2. Migrate the parametric case models to CadQuery or build123d when the measured
+   board dimensions are known.
+3. Use FreeCAD, Fusion 360, or Onshape for human GUI refinement if the printed
+   case needs screw bosses, curved bumper adapters, or precise assemblies.
+
+Tool fit:
+
+| Tool | Best use | Tradeoff |
+| --- | --- | --- |
+| CadQuery / build123d | Repo-native Python parametric CAD, STEP/STL export | Needs Python CAD dependency setup |
+| FreeCAD | Free GUI CAD, STEP/STL, Python scripting | Heavier UI and scripting model |
+| Fusion 360 | Best practical GUI for enclosures and assemblies | Closed-source; license constraints |
+| Onshape | Browser CAD and collaboration | Free plan stores public documents |
+| Blender | Visual rendering and mesh inspection | Not engineering CAD for dimensions |
+
 ## Source Image References
 
 These images are source references for selecting parts and understanding the
@@ -148,6 +174,10 @@ CAD artifact:
 firmware/stm32-mcp/hardware/cad/satel-vl53l8-full-carrier-case/satel_vl53l8_full_carrier_case.scad
 ```
 
+Rendered OpenSCAD STL preview:
+
+![Full carrier OpenSCAD STL preview](../../hardware/cad/satel-vl53l8-full-carrier-case/renders/satel_vl53l8_full_carrier_stl_preview.png)
+
 ### Full Carrier Case Requirements
 
 - Hold the full SATEL PCB by its edges, not by the wires.
@@ -219,6 +249,10 @@ CAD artifact:
 ```text
 firmware/stm32-mcp/hardware/cad/satel-vl53l8-mini-case/satel_vl53l8_mini_case.scad
 ```
+
+Rendered OpenSCAD STL preview:
+
+![Mini-PCB OpenSCAD STL preview](../../hardware/cad/satel-vl53l8-mini-case/renders/satel_vl53l8_mini_stl_preview.png)
 
 ### Mini-PCB Case Requirements
 
@@ -502,3 +536,13 @@ Use screws for repeatable long-term mounting:
   <https://www.adafruit.com/product/85>
 - 3M VHB 5952:
   <https://www.3m.com/3M/en_US/p/dc/v000172783/>
+- Homebrew cask acceptability / Gatekeeper notes:
+  <https://docs.brew.sh/Acceptable-Casks>
+- CadQuery documentation:
+  <https://cadquery.readthedocs.io/en/latest/>
+- CadQuery import/export documentation:
+  <https://cadquery.readthedocs.io/en/latest/importexport.html>
+- FreeCAD manual:
+  <https://www.freecad.org/manual/a-freecad-manual.pdf>
+- Onshape pricing / free-plan notes:
+  <https://www.onshape.com/en/pricing>

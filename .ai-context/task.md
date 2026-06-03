@@ -69,7 +69,7 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add host-test coverage for VL53L8 config, transport, frame codec, BLE ToF policy, and two-sensor topology; HAL-free host line coverage reached 99.4%.
 - [x] Add iOS STM32 Control front/rear ToF selector, FE61 debug role byte, and FE63 available-role mask decoding.
 - [x] Add regression tests for FE61 debug role compatibility/rejection, FE63 defensive decoding, and iOS stale-frame clearing when switching ToF roles.
-- [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB enclosure CAD with board retention, strain relief, mount previews, and FOV keepout previews.
+- [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB enclosure CAD with board retention, strain relief, mount previews, FOV keepout previews, OpenSCAD-generated STL exports, and rendered STL preview PNGs.
 - [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
 - [ ] Re-flash the current feature firmware and re-verify one rear SATEL-VL53L8 hardware bring-up after a board power cycle.
 - [ ] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
