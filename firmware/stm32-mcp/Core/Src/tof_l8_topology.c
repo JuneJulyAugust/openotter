@@ -3,9 +3,11 @@
 
 static const TofL8SlotTopology_t kRear = {
     .sensor_id = TOF_L8_SENSOR_REAR,
-    .bus_id = TOF_L8_BUS_I2C3,
+    .transport = TOF_L8_TRANSPORT_SPI,
+    .bus_id = TOF_L8_BUS_SPI1,
     .boot_addr_8bit = TOF_L8_DEFAULT_I2C_ADDR_8BIT,
     .run_addr_8bit = TOF_L8_DEFAULT_I2C_ADDR_8BIT,
+    .ncs = TOF_L8_GPIO_PB2_D8,
     .lpn = TOF_L8_GPIO_PC4_A1,
     .gpio1 = TOF_L8_GPIO_PC3_A2,
     .pwr_en = TOF_L8_GPIO_PA15_D9,
@@ -13,12 +15,14 @@ static const TofL8SlotTopology_t kRear = {
 
 static const TofL8SlotTopology_t kFront = {
     .sensor_id = TOF_L8_SENSOR_FRONT,
-    .bus_id = TOF_L8_BUS_I2C1,
+    .transport = TOF_L8_TRANSPORT_SPI,
+    .bus_id = TOF_L8_BUS_SPI1,
     .boot_addr_8bit = TOF_L8_DEFAULT_I2C_ADDR_8BIT,
     .run_addr_8bit = TOF_L8_DEFAULT_I2C_ADDR_8BIT,
+    .ncs = TOF_L8_GPIO_PA2_D10,
     .lpn = TOF_L8_GPIO_PC5_A0,
     .gpio1 = TOF_L8_GPIO_PC2_A3,
-    .pwr_en = TOF_L8_GPIO_PA2_D10,
+    .pwr_en = TOF_L8_GPIO_NONE,
 };
 
 const TofL8SlotTopology_t *TofL8_TopologyDefaultRear(void)
@@ -49,8 +53,16 @@ int TofL8_TopologyValidatePair(const TofL8SlotTopology_t *a,
     return TOF_L8_TOPOLOGY_ERR_SHARED_GPIO1;
   }
 
-  if (a->bus_id == b->bus_id && a->run_addr_8bit == b->run_addr_8bit) {
+  if (a->transport == TOF_L8_TRANSPORT_I2C &&
+      b->transport == TOF_L8_TRANSPORT_I2C &&
+      a->bus_id == b->bus_id && a->run_addr_8bit == b->run_addr_8bit) {
     return TOF_L8_TOPOLOGY_ERR_SAME_BUS_DUP_ADDR;
+  }
+
+  if (a->transport == TOF_L8_TRANSPORT_SPI &&
+      b->transport == TOF_L8_TRANSPORT_SPI &&
+      a->bus_id == b->bus_id && a->ncs == b->ncs) {
+    return TOF_L8_TOPOLOGY_ERR_SHARED_NCS;
   }
 
   return TOF_L8_TOPOLOGY_OK;

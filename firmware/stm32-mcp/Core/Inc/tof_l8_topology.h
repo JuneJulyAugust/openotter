@@ -17,27 +17,23 @@ extern "C" {
 #define TOF_L8_TOPOLOGY_ERR_SHARED_LPN        4
 #define TOF_L8_TOPOLOGY_ERR_SHARED_GPIO1      5
 #define TOF_L8_TOPOLOGY_ERR_SAME_BUS_DUP_ADDR 6
+#define TOF_L8_TOPOLOGY_ERR_SHARED_NCS        7
+
+#include "tof_l8_transport.h"
 
 typedef enum {
   TOF_L8_BUS_I2C1 = 1,
   TOF_L8_BUS_I2C3 = 3,
+  TOF_L8_BUS_SPI1 = 101,
 } TofL8BusId_t;
-
-typedef enum {
-  TOF_L8_GPIO_NONE = 0,
-  TOF_L8_GPIO_PC2_A3,
-  TOF_L8_GPIO_PC3_A2,
-  TOF_L8_GPIO_PC4_A1,
-  TOF_L8_GPIO_PC5_A0,
-  TOF_L8_GPIO_PA15_D9,
-  TOF_L8_GPIO_PA2_D10,
-} TofL8GpioTag_t;
 
 typedef struct {
   TofL8SensorId_t sensor_id;
+  TofL8TransportKind_t transport;
   TofL8BusId_t bus_id;
   uint16_t boot_addr_8bit;
   uint16_t run_addr_8bit;
+  TofL8GpioTag_t ncs;
   TofL8GpioTag_t lpn;
   TofL8GpioTag_t gpio1;
   TofL8GpioTag_t pwr_en;

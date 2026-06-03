@@ -36,7 +36,7 @@ $(BUILD_DIR)/test_tof_frame_codec: test_tof_frame_codec.c ../../Core/Src/tof_fra
 $(BUILD_DIR)/test_tof_l8_config: test_tof_l8_config.c ../../Core/Src/tof_l8_config.c ../../Core/Inc/tof_l8.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_l8_config.c ../../Core/Src/tof_l8_config.c -o $@
 
-$(BUILD_DIR)/test_tof_l8_topology: test_tof_l8_topology.c ../../Core/Src/tof_l8_topology.c ../../Core/Inc/tof_l8_topology.h ../../Core/Inc/tof_l8.h | dirs
+$(BUILD_DIR)/test_tof_l8_topology: test_tof_l8_topology.c ../../Core/Src/tof_l8_topology.c ../../Core/Inc/tof_l8_topology.h ../../Core/Inc/tof_l8_transport.h ../../Core/Inc/tof_l8.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_l8_topology.c ../../Core/Src/tof_l8_topology.c -o $@
 
 $(BUILD_DIR)/test_tof_l8_transport: test_tof_l8_transport.c ../../Core/Src/tof_l8_transport.c ../../Core/Inc/tof_l8_transport.h ../../Core/Inc/tof_l8.h | dirs
