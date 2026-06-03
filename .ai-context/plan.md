@@ -61,7 +61,7 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 
 - The project was formally rebranded to OpenOtter on 2026-04-16.
 - Version 1.0.0 established the first complete iPhone + STM32 safety milestone: forward LiDAR safety, rear ToF firmware safety, Telegram Park/Drive control, Self Driving emergency UI parity, and repeatable simulator test workflow.
-- Version 1.2.0 is prepared as a release candidate, not yet merged or tagged. It migrates the active STM32 ToF deployment path to one SATEL-VL53L8, fixes the SATEL wiring contract, verifies live 4x4 firmware frames on IOT01A1, updates iOS diagnostics plus rear ToF health presentation, and captures the future two-sensor plan as rear I2C3 plus front I2C1.
+- Version 1.2.0 is prepared as a release candidate, not yet merged or tagged. It migrates the active STM32 ToF deployment path to one SATEL-VL53L8, fixes the SATEL wiring contract, verifies live 4x4 firmware frames on IOT01A1, updates iOS diagnostics plus rear ToF health presentation, and captures the future two-sensor plan as shared SPI1 with separate chip selects and reset lines.
 
 ## 3. Product Direction
 
@@ -81,8 +81,8 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 
 - Sensor, command, and telemetry timestamps are monotonic.
 - Safety overrides performance.
-- SATEL-VL53L8 wiring is safety-critical: `SPI_I2C_N` is tied low for I2C, `EXT_5V0` receives 5V, and `EXT_PWR_EN` receives 3V3.
-- Future dual SATEL-VL53L8 wiring should share 5V, GND, and `SPI_I2C_N=GND`, but use separate I2C buses and separate `LPn` lines. Shared SCL/SDA is only a fallback that requires deterministic address sequencing.
+- SATEL-VL53L8 wiring is safety-critical: `EXT_5V0` receives 5V, `EXT_PWR_EN` receives 3V3, and `SPI_I2C_N` is tied low for I2C or high for SPI.
+- Future dual SATEL-VL53L8 wiring should share 5V, GND, SPI1 SCK/MOSI/MISO, and `SPI_I2C_N=3V3`, but use separate `NCS` and separate `LPn` lines. Shared I2C SCL/SDA is only a fallback that requires deterministic address sequencing.
 - Core math stays deterministic and testable.
 - Transport, protocol, and UI stay separated.
 - Coordinate transforms are explicit and validated.

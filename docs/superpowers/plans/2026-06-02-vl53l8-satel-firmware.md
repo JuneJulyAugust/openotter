@@ -74,7 +74,7 @@ SATEL wiring selects I2C or SPI
 
 Add transport files, tests, and commit checkpoints for the SPI/I2C work.
 
-- [ ] **Step 3: Commit documentation**
+- [x] **Step 3: Commit documentation**
 
 Run:
 
@@ -85,6 +85,8 @@ git commit -m "Docs: Plan VL53L8 dual transport"
 ```
 
 Expected: one docs-only commit.
+
+Actual: committed as `0e2a267 Docs: Plan VL53L8 dual transport`.
 
 ## Task 1: Preserve Baseline
 
@@ -362,7 +364,7 @@ Every filtered module except the host-only `Firmware_Panic` spin stub reached
 
 ## Task 9: Add Pure Transport Model
 
-- [ ] **Step 1: Write the failing transport test**
+- [x] **Step 1: Write the failing transport test**
 
 Create `firmware/stm32-mcp/tests/host/test_tof_l8_transport.c`:
 
@@ -410,7 +412,7 @@ int main(void)
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -421,18 +423,20 @@ make build/test_tof_l8_transport
 
 Expected: FAIL because `tof_l8_transport.h` does not exist.
 
-- [ ] **Step 3: Add the HAL-free transport model**
+Actual: failed first because the transport source/header did not exist.
+
+- [x] **Step 3: Add the HAL-free transport model**
 
 Create `firmware/stm32-mcp/Core/Inc/tof_l8_transport.h` and
 `firmware/stm32-mcp/Core/Src/tof_l8_transport.c` with only value types and the
 pure probe-choice function. This task must not call HAL.
 
-- [ ] **Step 4: Wire the host Makefile**
+- [x] **Step 4: Wire the host Makefile**
 
 Add `test_tof_l8_transport` to `TESTS` and compile it with
 `../../Core/Src/tof_l8_transport.c`.
 
-- [ ] **Step 5: Verify transport host tests**
+- [x] **Step 5: Verify transport host tests**
 
 Run:
 
@@ -444,7 +448,9 @@ build/test_tof_l8_transport
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+Actual: passed on 2026-06-02, and the full host suite passed.
+
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -456,9 +462,11 @@ git add firmware/stm32-mcp/Core/Inc/tof_l8_transport.h \
 git commit -m "Firmware: Add VL53L8 transport model"
 ```
 
+Actual: committed as `687b625 Firmware: Add VL53L8 transport model`.
+
 ## Task 10: Extend Topology For SPI
 
-- [ ] **Step 1: Write the failing topology expectations**
+- [x] **Step 1: Write the failing topology expectations**
 
 Update `firmware/stm32-mcp/tests/host/test_tof_l8_topology.c` so the default
 future pair uses SPI1, distinct chip-selects, distinct `LPn`, and distinct
@@ -476,7 +484,7 @@ assert(rear->ncs != front->ncs);
 
 Also add a rejection test for two SPI sensors sharing `NCS`.
 
-- [ ] **Step 2: Run topology test to verify it fails**
+- [x] **Step 2: Run topology test to verify it fails**
 
 Run:
 
@@ -487,13 +495,16 @@ make build/test_tof_l8_topology
 
 Expected: FAIL because topology has no SPI fields yet.
 
-- [ ] **Step 3: Implement minimal topology changes**
+Actual: failed first because the topology type had no transport, bus, or chip
+select fields.
+
+- [x] **Step 3: Implement minimal topology changes**
 
 Extend `tof_l8_topology.h` with `TOF_L8_BUS_SPI1`, `transport`, and `ncs`.
 Change defaults to SPI1. Keep the I2C duplicate-address validation only for
 I2C slots on the same bus. Reject duplicate `NCS` for SPI slots on the same bus.
 
-- [ ] **Step 4: Verify topology test**
+- [x] **Step 4: Verify topology test**
 
 Run:
 
@@ -505,7 +516,9 @@ build/test_tof_l8_topology
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+Actual: passed on 2026-06-02, and the full host suite passed.
+
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -516,21 +529,47 @@ git add firmware/stm32-mcp/Core/Inc/tof_l8_topology.h \
 git commit -m "Firmware: Prefer SPI topology for dual VL53L8"
 ```
 
+Actual: committed as `67ef100 Firmware: Prefer SPI topology for dual VL53L8`.
+
+## Task 10.5: Add SPI Protocol Header Tests
+
+- [x] **Step 1: Add failing SPI header assertions**
+
+Extend `test_tof_l8_transport.c` to prove that write transfers set register
+bit 15 and read transfers clear register bit 15, matching the local VL53L8CX
+ULD wrapper macros `SPI_WRITE_MASK()` and `SPI_READ_MASK()`.
+
+Actual: failed first because the helper functions were not declared.
+
+- [x] **Step 2: Implement pure SPI header helpers**
+
+Add `TofL8Transport_SpiWriteHeader()` and `TofL8Transport_SpiReadHeader()` to
+`tof_l8_transport.{h,c}`.
+
+- [x] **Step 3: Verify and commit**
+
+Actual: `make build/test_tof_l8_transport`, `build/test_tof_l8_transport`, and
+`make test` passed. Committed as
+`8b35aa1 Firmware: Add VL53L8 SPI header helpers`.
+
 ## Task 11: Add Target SPI Transport
 
-- [ ] **Step 1: Refactor current I2C callbacks behind transport**
+- [x] **Step 1: Refactor current I2C callbacks behind transport**
 
 Move the current I2C callback logic from `tof_l8.c` to target-only functions in
 `tof_l8_transport.c`. Keep the public callback signatures compatible with
 `VL53L8CX_Platform`.
 
-- [ ] **Step 2: Add SPI1 init**
+- [x] **Step 2: Add SPI1 init**
 
 Add `SPI_HandleTypeDef hspi1`, `MX_SPI1_Init()`, and SPI1 clock enable. SPI1
 uses `D13/PA5` SCK, `D12/PA6` MISO, and `D11/PA7` MOSI. Use SPI mode 3, MSB
 first, 8-bit data, software NSS, and a prescaler that stays at or below 3 MHz.
+PA5/D13 is SPI1 SCK, so the old LD1 PA5 main-loop heartbeat must not reclaim
+that pin in SPI mode. The remaining UART `LOOP` log and LED2 frame indicator
+are the runtime heartbeat signals.
 
-- [ ] **Step 3: Add SPI callbacks**
+- [x] **Step 3: Add SPI callbacks**
 
 Implement VL53L8CX SPI read/write framing:
 
@@ -541,14 +580,14 @@ read:  assert NCS low, send 16-bit register with bit 15 clear, receive payload, 
 
 Refresh the watchdog before each blocking transfer.
 
-- [ ] **Step 4: Probe I2C then SPI at boot**
+- [x] **Step 4: Probe I2C then SPI at boot**
 
 In `TofL8_Init()`, build an I2C platform and call `vl53l8cx_is_alive()`. If it
 answers, keep I2C. Otherwise build an SPI platform and call `vl53l8cx_is_alive()`.
 If SPI answers, keep SPI. If neither answers, return `TOF_STATUS_NO_SENSOR`.
 Log every transport attempt and the selected transport.
 
-- [ ] **Step 5: Build target firmware**
+- [x] **Step 5: Build target firmware**
 
 Run:
 
@@ -559,7 +598,11 @@ cd firmware/stm32-mcp
 
 Expected: target firmware builds.
 
-- [ ] **Step 6: Run host tests**
+Actual: passed on 2026-06-02. Built
+`firmware/stm32-mcp/build/Debug/stm32-mcp.elf`; memory summary was 164616 bytes
+FLASH and 17128 bytes RAM.
+
+- [x] **Step 6: Run host tests**
 
 Run:
 
@@ -570,7 +613,9 @@ make test
 
 Expected: all host tests pass.
 
-- [ ] **Step 7: Commit**
+Actual: passed on 2026-06-02.
+
+- [x] **Step 7: Commit**
 
 Run:
 
@@ -578,26 +623,27 @@ Run:
 git add firmware/stm32-mcp/Core/Inc/main.h \
         firmware/stm32-mcp/Core/Inc/tof_l8_transport.h \
         firmware/stm32-mcp/Core/Src/main.c \
-        firmware/stm32-mcp/Core/Src/stm32l4xx_hal_msp.c \
         firmware/stm32-mcp/Core/Src/tof_l8.c \
         firmware/stm32-mcp/Core/Src/tof_l8_transport.c \
         firmware/stm32-mcp/cmake/stm32cubemx/CMakeLists.txt
-git commit -m "Firmware: Probe VL53L8 over I2C or SPI"
+git commit -m "Firmware: Add VL53L8 I2C SPI runtime probe"
 ```
+
+Actual: committed as `77cdcf6 Firmware: Add VL53L8 I2C SPI runtime probe`.
 
 ## Task 12: Update Bring-Up Docs
 
-- [ ] **Step 1: Add SPI wiring table**
+- [x] **Step 1: Add SPI wiring table**
 
 Update `firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md` with the
 single-sensor SPI wiring table and the boot-time probe logs.
 
-- [ ] **Step 2: Add two-sensor SPI plan**
+- [x] **Step 2: Add two-sensor SPI plan**
 
 Document shared SPI1 with separate rear/front `NCS`, `LPn`, and optional
 `GPIO1`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 Run:
 
@@ -605,3 +651,5 @@ Run:
 git add firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md
 git commit -m "Docs: Add VL53L8 SPI bring-up wiring"
 ```
+
+Actual: committed as `e8ae27e Docs: Add VL53L8 SPI bring-up plan`.

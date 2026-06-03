@@ -163,7 +163,8 @@ shape:
 
 | Unit | Responsibility |
 | --- | --- |
-| `tof_l8.{h,c}` | Own one active VL53L8CX ULD instance, I2C platform callbacks, sensor boot, config, polling, and latest-frame buffering. |
+| `tof_l8.{h,c}` | Own one active VL53L8CX ULD instance, transport probing, sensor boot, config, polling, and latest-frame buffering. |
+| `tof_l8_transport.{h,c}` | Own the narrow VL53L8CX platform callback bridge for I2C3 or SPI1. |
 | `tof_l8_config.c` | Pure config validation for 4x4/8x8, frequency, and integration-time invariants. |
 | `tof_l8_debounce.{h,c}` | Preserve the existing stop/start debounce invariant. |
 | `rev_safety_l8.{h,c}` | Select the rear safety reading from a 4x4 VL53L8 frame. |
@@ -233,7 +234,21 @@ The I2C1 caveat is the on-board VL53L0X. It also uses default address `0x29`,
 so firmware must keep `VL53L0X_XSHUT` / PC6 low whenever the front SATEL lives
 on I2C1 at its default address.
 
-The future two-sensor topology is:
+The preferred future two-sensor SPI topology is:
+
+| Signal | Rear sensor | Front sensor |
+| --- | --- | --- |
+| `EXT_SPI_I2C_N` | Tie to 3V3 for SPI mode | Tie to 3V3 for SPI mode |
+| `EXT_MCLK_SCL` / SPI clock | Shared D13 / PA5 / SPI1_SCK -> J2 pin 6 | Shared D13 / PA5 / SPI1_SCK -> J2 pin 6 |
+| `EXT_MOSI_SDA` / MOSI | Shared D11 / PA7 / SPI1_MOSI -> J2 pin 5 | Shared D11 / PA7 / SPI1_MOSI -> J2 pin 5 |
+| `EXT_MISO` / MISO | Shared D12 / PA6 / SPI1_MISO -> J2 pin 4 | Shared D12 / PA6 / SPI1_MISO -> J2 pin 4 |
+| `EXT_NCS` | Dedicated D8 / PB2 -> J2 pin 3 | Dedicated D10 / PA2 -> J2 pin 3 |
+| `EXT_LPn` | Dedicated A1 / PC4 -> J2 pin 2 | Dedicated A0 / PC5 -> J2 pin 2 |
+| `EXT_GPIO1` / INT | Dedicated A2 / PC3 -> J1 top pad | Dedicated A3 / PC2 -> J1 top pad |
+| `EXT_PWR_EN` | D9 / PA15, or tied high to 3V3 | Separate GPIO preferred, or tied high to 3V3 |
+| `EXT_5V0`, GND | Shared 5V to J2 pin 11 and common ground | Shared 5V to J2 pin 11 and common ground |
+
+The fallback separate-I2C topology is:
 
 | Signal | Rear sensor | Front sensor |
 | --- | --- | --- |
@@ -242,14 +257,14 @@ The future two-sensor topology is:
 | 5V, 3V3, GND | Shared rails; 5V to J2 pin 11 | Shared rails; 5V to J2 pin 11 |
 | `SPI_I2C_N` | Tied low to GND | Tied low to GND |
 | `PWR_EN` | D9 / PA15, or tied high to 3V3 | D10 / PA2, or tied high to 3V3 |
-| `LPn` | Dedicated GPIO, suggested A1 / PC4 | Dedicated GPIO, suggested A0 / PC5 |
-| `GPIO1 / INT` | Dedicated GPIO, suggested A2 / PC3 to J1 top pad | Dedicated GPIO, suggested A3 / PC2 to J1 top pad |
+| `LPn` | Dedicated A1 / PC4 -> J2 pin 2 | Dedicated A0 / PC5 -> J2 pin 2 |
+| `GPIO1 / INT` | Dedicated A2 / PC3 to J1 top pad | Dedicated A3 / PC2 to J1 top pad |
 | I2C address | Default `0x29` is acceptable on I2C3 | Default `0x29` is acceptable on I2C1 while PC6 holds the on-board VL53L0X off |
 
 Future sequencing:
 
 1. Hold both SATEL `LPn` lines low.
-2. Hold PC6 `VL53L0X_XSHUT` low.
+2. Keep both SPI `NCS` lines high.
 3. Probe and initialize one rear SATEL over the selected transport first.
 4. After one-sensor SPI is verified, enable and initialize the front SATEL using
    the same transport family and a separate slot descriptor.
@@ -264,6 +279,9 @@ A shared-bus fallback is still possible if I2C1 cannot be used, but then
 independent `LPn` is mandatory and the first sensor must be reassigned before
 the second sensor is released. Two awake sensors must never share address
 `0x29` on the same I2C bus.
+
+For the separate-I2C fallback, hold PC6 `VL53L0X_XSHUT` low while the front
+SATEL uses I2C1 at the default address.
 
 ### Shared SCL/SDA Answer
 
@@ -307,12 +325,14 @@ Shared-bus boot sequence:
    poll/read the two slots sequentially.
 
 Implementation status: the current firmware implements one active rear VL53L8CX
-on I2C3. The topology module and host tests already encode the shared-bus rule:
-same bus plus same runtime address is rejected; same bus plus unique runtime
-addresses is accepted; missing or shared `LPn` is rejected. Runtime shared-bus
-address sequencing is not implemented yet. The default future topology remains
-separate I2C buses because it avoids boot-time address reassignment and gives
-better fault isolation.
+with boot-time probing for I2C3 first and SPI1 second. The selected transport is
+installed into the VL53L8CX platform callbacks before firmware download and
+ranging. The topology module and host tests encode the production preference:
+shared SPI1 with unique chip-selects, unique `LPn`, and unique `GPIO1` inputs.
+The I2C shared-bus rule is also preserved for fallback work: same bus plus same
+runtime address is rejected; same bus plus unique runtime addresses is accepted;
+missing or shared `LPn` is rejected. Runtime shared-bus I2C address sequencing is
+not implemented yet.
 
 ## Deprecation
 

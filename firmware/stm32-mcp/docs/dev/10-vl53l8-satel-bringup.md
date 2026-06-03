@@ -1,7 +1,10 @@
 # 10 — SATEL-VL53L8 Firmware Bring-Up
 
-This deployment uses SATEL-VL53L8 on the B-L475E-IOT01A1 over I2C3. VL53L0X,
-VL53L1CB, and VL53L5CX are deprecated for this deployment path.
+This deployment uses SATEL-VL53L8 on the B-L475E-IOT01A1. The firmware probes
+one rear sensor over I2C3 first, then SPI1, and keeps whichever transport
+answers at boot. Power off before changing `EXT_SPI_I2C_N` or any signal
+wiring; hot-swap is not supported. VL53L0X, VL53L1CB, and VL53L5CX are
+deprecated for this deployment path.
 
 ## Source Documents
 
@@ -66,8 +69,8 @@ is used, because the carrier provides the required regulators and level shifters
 The full SATEL carrier board expects two different kinds of connections:
 
 - one power input: IOT01A1 5V to `J2` pin 11 `EXT_5V0`;
-- one mode-select low: IOT01A1 GND to `J2` pin 1 `EXT_SPI_I2C_N`
-  for I2C mode;
+- one mode-select level: IOT01A1 GND to `J2` pin 1 `EXT_SPI_I2C_N`
+  for I2C mode, or IOT01A1 3V3 to `J2` pin 1 for SPI mode;
 - one 3.3 V logic high: IOT01A1 3V3 to `J2` pin 7 `EXT_PWR_EN`;
 - 3.3 V open-drain I2C signals: A5/SCL and A4/SDA;
 - common ground.
@@ -110,7 +113,7 @@ not fully correct.
 | IOT01A1 A2 -> pin 12 `GPIO1 / INT` | Correct only if pin 12 means the top pad of `J1`. | Keep for optional data-ready interrupt input. Firmware can poll first. |
 | IOT01A1 A1 -> pin 13 `GPIO2` | The middle pad of `J1` is GPIO2, but GPIO2 is not the reset/enable line. | Prefer A1 / PC4 -> J2 pin 2 `EXT_LPn`. Leave GPIO2 unconnected unless using sync later. |
 
-## Correct One-Sensor Wiring
+## Correct One-Sensor I2C Wiring
 
 | IOT01A1 | MCU pin | SATEL-VL53L8 | Purpose |
 | --- | --- | --- | --- |
@@ -125,6 +128,28 @@ not fully correct.
 
 `SPI_I2C_N` must be low for I2C mode. `PWR_EN` should be high for the full
 SATEL board regulators unless the board assembly already straps it high.
+
+## Correct One-Sensor SPI Wiring
+
+Use this wiring when testing the ST-recommended SPI transport. The same firmware
+image will probe I2C3 first, then SPI1; in this wiring only SPI1 should answer.
+
+| IOT01A1 | MCU pin | SATEL-VL53L8 | Purpose |
+| --- | --- | --- | --- |
+| 5V | board 5V | J2 pin 11 `EXT_5V0` | SATEL regulator input |
+| GND | board GND | SATEL GND | Common ground |
+| 3V3 | board 3V3 | J2 pin 1 `EXT_SPI_I2C_N` | Select SPI mode |
+| 3V3 or D9 | board 3V3 or PA15 | J2 pin 7 `EXT_PWR_EN` | Enable SATEL regulators |
+| D13 | PA5 / SPI1_SCK | J2 pin 6 `EXT_MCLK_SCL` | SPI clock |
+| D11 | PA7 / SPI1_MOSI | J2 pin 5 `EXT_MOSI_SDA` | SPI MOSI |
+| D12 | PA6 / SPI1_MISO | J2 pin 4 `EXT_MISO` | SPI MISO |
+| D8 | PB2 | J2 pin 3 `EXT_NCS` | Rear sensor chip select, idle high |
+| A1 | PC4 | J2 pin 2 `EXT_LPn` | Sensor low-power/reset control |
+| A2 | PC3 | J1 top pad `EXT_GPIO1` | Data-ready interrupt input; firmware can poll first |
+
+SPI1 uses D13/PA5 as the clock. That means LD1 on PA5 is no longer a firmware
+heartbeat when SPI wiring is used. Use the UART `LOOP` log as the main-loop
+heartbeat and LED2 as the VL53L8 frame-arrival indicator.
 
 ## Connection Diagrams
 
@@ -159,7 +184,7 @@ J1, 3-pad header
     bottom square pad GND       <- IOT01A1 GND
 ```
 
-### One-Sensor Wiring
+### One-Sensor I2C Wiring
 
 ```mermaid
 flowchart LR
@@ -198,22 +223,7 @@ Do not add wires to `J2` pin 10 `EXT_1V8`, pin 9 `EXT_3V3`, or pin 8
 `EXT_IOVDD` for this bring-up. The full SATEL carrier board derives the sensor
 rails from `EXT_5V0` and uses level shifters for the IOT01A1 3.3 V signals.
 
-### Two-Sensor Recommended Topology
-
-Use separate I2C buses for the front and rear SATEL boards. This avoids the
-VL53L8 default-address collision at boot and gives each sensor its own read
-bandwidth while both sensors range continuously.
-
-Shared connections are still safe for power and mode:
-
-- both SATEL `J2 pin 11 EXT_5V0` pins share IOT01A1 `5V`;
-- both SATEL grounds share IOT01A1 `GND`;
-- both SATEL `J2 pin 1 EXT_SPI_I2C_N` pins tie to `GND` for I2C mode.
-
-Do not share `LPn`. Separate `LPn` lets firmware reset or recover one sensor
-without disturbing the other. Separate `PWR_EN` is recommended if the extra
-wires are acceptable; tying both `PWR_EN` pins to IOT01A1 `3V3` is simpler but
-removes per-sensor hard-power recovery.
+### One-Sensor SPI Wiring
 
 ```mermaid
 flowchart LR
@@ -221,24 +231,86 @@ flowchart LR
         I5V["5V"]
         I3V3["3V3"]
         IGND["GND"]
-        RSCL["A5 / PC0 / rear I2C3_SCL"]
-        RSDA["A4 / PC1 / rear I2C3_SDA"]
-        FSCL["D15 / PB8 / front I2C1_SCL"]
-        FSDA["D14 / PB9 / front I2C1_SDA"]
+        D13["D13 / PA5 / SPI1_SCK"]
+        D11["D11 / PA7 / SPI1_MOSI"]
+        D12["D12 / PA6 / SPI1_MISO"]
+        D8["D8 / PB2"]
+        IA2["A2 / PC3"]
+        IA1["A1 / PC4"]
+    end
+
+    subgraph SATEL["Rear SATEL-VL53L8 carrier board"]
+        P11["J2 pin 11 / EXT_5V0"]
+        P1["J2 pin 1 / EXT_SPI_I2C_N"]
+        P7["J2 pin 7 / EXT_PWR_EN"]
+        P6["J2 pin 6 / EXT_MCLK_SCL"]
+        P5["J2 pin 5 / EXT_MOSI_SDA"]
+        P4["J2 pin 4 / EXT_MISO"]
+        P3["J2 pin 3 / EXT_NCS"]
+        P2["J2 pin 2 / EXT_LPn"]
+        J1TOP["J1 top pad / EXT_GPIO1"]
+        J1GND["J1 bottom square pad / GND"]
+    end
+
+    I5V -->|"power input"| P11
+    I3V3 -->|"select SPI mode"| P1
+    I3V3 -->|"enable regulators"| P7
+    D13 -->|"SPI clock"| P6
+    D11 -->|"SPI MOSI"| P5
+    D12 -->|"SPI MISO"| P4
+    D8 -->|"chip select, idle high"| P3
+    IA1 -->|"reset / low-power control"| P2
+    IA2 -->|"optional interrupt"| J1TOP
+    IGND -->|"common ground"| J1GND
+```
+
+### Two-Sensor Recommended Topology
+
+Use shared SPI1 for the front and rear SATEL boards. This avoids the VL53L8
+default I2C address collision at boot and lets both sensors stay online without
+runtime address reassignment. The SPI clock, MOSI, and MISO wires are shared;
+each sensor needs its own `EXT_NCS` chip select and its own `EXT_LPn` reset
+line.
+
+Shared connections:
+
+- both SATEL `J2 pin 11 EXT_5V0` pins share IOT01A1 `5V`;
+- both SATEL grounds share IOT01A1 `GND`;
+- both SATEL `J2 pin 1 EXT_SPI_I2C_N` pins tie to `3V3` for SPI mode;
+- both SATEL `J2 pin 6 EXT_MCLK_SCL` pins share D13 / PA5 / SPI1_SCK;
+- both SATEL `J2 pin 5 EXT_MOSI_SDA` pins share D11 / PA7 / SPI1_MOSI;
+- both SATEL `J2 pin 4 EXT_MISO` pins share D12 / PA6 / SPI1_MISO.
+
+Do not share `EXT_NCS` or `LPn`. A shared `NCS` would select two sensors at
+once and make MISO contention possible. Separate `LPn` lets firmware reset or
+recover one sensor without disturbing the other.
+
+```mermaid
+flowchart LR
+    subgraph IOT["B-L475E-IOT01A1"]
+        I5V["5V"]
+        I3V3["3V3"]
+        IGND["GND"]
+        SCK["D13 / PA5 / SPI1_SCK"]
+        MOSI["D11 / PA7 / SPI1_MOSI"]
+        MISO["D12 / PA6 / SPI1_MISO"]
+        RNCS["D8 / PB2 / rear NCS"]
+        FNCS["D10 / PA2 / front NCS"]
         RLP["A1 / PC4 / rear LPn"]
         FLP["A0 / PC5 / front LPn"]
         RINT["A2 / PC3 / rear GPIO1"]
         FINT["A3 / PC2 / front GPIO1"]
         RPWR["D9 / PA15 / rear PWR_EN"]
-        FPWR["D10 / PA2 / front PWR_EN"]
     end
 
     subgraph REAR["Rear SATEL-VL53L8"]
         R5V["J2 pin 11 / EXT_5V0"]
-        R3V3MODE["J2 pin 1 / EXT_SPI_I2C_N"]
+        RSPIMODE["J2 pin 1 / EXT_SPI_I2C_N"]
         R3V3PWR["J2 pin 7 / EXT_PWR_EN"]
-        RSCLPIN["J2 pin 6 / EXT_MCLK_SCL"]
-        RSDAPIN["J2 pin 5 / EXT_MOSI_SDA"]
+        RSCKPIN["J2 pin 6 / EXT_MCLK_SCL"]
+        RMOSIPIN["J2 pin 5 / EXT_MOSI_SDA"]
+        RMISOPIN["J2 pin 4 / EXT_MISO"]
+        RNCSPIN["J2 pin 3 / EXT_NCS"]
         RLPIN["J2 pin 2 / EXT_LPn"]
         RG1["J1 top pad / EXT_GPIO1"]
         RGND["J1 bottom square pad / GND"]
@@ -246,10 +318,12 @@ flowchart LR
 
     subgraph FRONT["Front SATEL-VL53L8"]
         F5V["J2 pin 11 / EXT_5V0"]
-        F3V3MODE["J2 pin 1 / EXT_SPI_I2C_N"]
+        FSPIMODE["J2 pin 1 / EXT_SPI_I2C_N"]
         F3V3PWR["J2 pin 7 / EXT_PWR_EN"]
-        FSCLPIN["J2 pin 6 / EXT_MCLK_SCL"]
-        FSDAPIN["J2 pin 5 / EXT_MOSI_SDA"]
+        FSCKPIN["J2 pin 6 / EXT_MCLK_SCL"]
+        FMOSIPIN["J2 pin 5 / EXT_MOSI_SDA"]
+        FMISOPIN["J2 pin 4 / EXT_MISO"]
+        FNCSPIN["J2 pin 3 / EXT_NCS"]
         FLPIN["J2 pin 2 / EXT_LPn"]
         FG1["J1 top pad / EXT_GPIO1"]
         FGND["J1 bottom square pad / GND"]
@@ -257,16 +331,20 @@ flowchart LR
 
     I5V --> R5V
     I5V --> F5V
-    IGND --> R3V3MODE
-    IGND --> F3V3MODE
+    I3V3 --> RSPIMODE
+    I3V3 --> FSPIMODE
     RPWR --> R3V3PWR
-    FPWR --> F3V3PWR
+    I3V3 --> F3V3PWR
     IGND --> RGND
     IGND --> FGND
-    RSCL --> RSCLPIN
-    FSCL --> FSCLPIN
-    RSDA --> RSDAPIN
-    FSDA --> FSDAPIN
+    SCK --> RSCKPIN
+    SCK --> FSCKPIN
+    MOSI --> RMOSIPIN
+    MOSI --> FMOSIPIN
+    MISO --> RMISOPIN
+    MISO --> FMISOPIN
+    RNCS --> RNCSPIN
+    FNCS --> FNCSPIN
     RLP --> RLPIN
     FLP --> FLPIN
     RINT --> RG1
@@ -278,7 +356,8 @@ flowchart LR
 The active firmware path is:
 
 ```text
-I2C3 on A5/A4
+I2C3 on A5/A4 or SPI1 on D13/D12/D11
+  -> boot-time transport probe
   -> VL53L8CX Ultra Lite Driver
   -> Tof_Frame_t 4x4/8x8 frame
   -> reverse safety selector using 4x4 row-3 center zones
@@ -286,7 +365,8 @@ I2C3 on A5/A4
 ```
 
 The STM32 HAL uses 8-bit I2C addresses. The VL53L8 default 7-bit address is
-`0x29`, represented as `0x52` in HAL calls.
+`0x29`, represented as `0x52` in HAL calls. SPI mode does not use the I2C
+address field; it selects the target with `EXT_NCS`.
 
 ## Two-Sensor Wiring Plan
 
@@ -310,16 +390,17 @@ The preferred ToF pins avoid those PWM outputs and avoid the BLE SPI3 pins:
 
 | Role | IOT01A1 pin | MCU pin | Reason |
 | --- | --- | --- | --- |
-| Rear SCL | A5 | PC0 / I2C3_SCL | Already verified with one SATEL |
-| Rear SDA | A4 | PC1 / I2C3_SDA | Already verified with one SATEL |
-| Front SCL | D15 | PB8 / I2C1_SCL | Separate I2C bus exposed on Arduino header |
-| Front SDA | D14 | PB9 / I2C1_SDA | Separate I2C bus exposed on Arduino header |
+| Shared SPI clock | D13 | PA5 / SPI1_SCK | ST-recommended SPI transport; shared by both SATEL boards |
+| Shared MOSI | D11 | PA7 / SPI1_MOSI | Shared by both SATEL boards |
+| Shared MISO | D12 | PA6 / SPI1_MISO | Shared, but only the selected sensor may drive it |
+| Rear `NCS` | D8 | PB2 | Dedicated rear chip select, idle high |
+| Front `NCS` | D10 | PA2 | Dedicated front chip select, idle high |
 | Rear `LPn` | A1 | PC4 | Verified as reset/control for the one-sensor bring-up |
 | Front `LPn` | A0 | PC5 | Free Arduino analog pin, usable as GPIO output |
 | Rear `GPIO1` | A2 | PC3 | Free Arduino analog pin, usable as data-ready input |
 | Front `GPIO1` | A3 | PC2 | Free Arduino analog pin, usable as data-ready input |
 | Rear `PWR_EN` | D9 | PA15 | Free GPIO output in current firmware |
-| Front `PWR_EN` | D10 | PA2 | Free GPIO output in current firmware |
+| Front `PWR_EN` | 3V3, or future free GPIO | board 3V3 | Keep high for initial SPI testing; add a separate GPIO later if hard recovery is needed |
 
 Pins to avoid for this ToF expansion:
 
@@ -327,41 +408,43 @@ Pins to avoid for this ToF expansion:
 - PB6/PB7 are the ST-LINK UART log.
 - PC10/PC11/PC12, PD13, PA8, and PE6 are the BlueNRG-MS BLE SPI/control pins.
 - PA13/PA14 are SWD.
-- PC6 must stay low to keep the on-board VL53L0X off when the front SATEL uses
-  I2C1 at default address `0x29`.
+- PC6 must stay low only for the fallback I2C1 plan, where the front SATEL
+  shares the on-board VL53L0X default address.
 
-Recommended wiring keeps them on separate buses:
+Recommended wiring keeps them on shared SPI1 with distinct chip selects:
 
 | Signal | Rear SATEL | Front SATEL |
 | --- | --- | --- |
-| `EXT_MCLK_SCL` | A5 / PC0 / I2C3_SCL -> J2 pin 6 | D15 / PB8 / I2C1_SCL -> J2 pin 6 |
-| `EXT_MOSI_SDA` | A4 / PC1 / I2C3_SDA -> J2 pin 5 | D14 / PB9 / I2C1_SDA -> J2 pin 5 |
+| `EXT_SPI_I2C_N` | 3V3 -> J2 pin 1 | 3V3 -> J2 pin 1 |
+| `EXT_MCLK_SCL` | D13 / PA5 / SPI1_SCK -> J2 pin 6 | D13 / PA5 / SPI1_SCK -> J2 pin 6 |
+| `EXT_MOSI_SDA` | D11 / PA7 / SPI1_MOSI -> J2 pin 5 | D11 / PA7 / SPI1_MOSI -> J2 pin 5 |
+| `EXT_MISO` | D12 / PA6 / SPI1_MISO -> J2 pin 4 | D12 / PA6 / SPI1_MISO -> J2 pin 4 |
+| `EXT_NCS` | D8 / PB2 -> J2 pin 3 | D10 / PA2 -> J2 pin 3 |
 | `EXT_5V0` | Shared 5V -> J2 pin 11 | Shared 5V -> J2 pin 11 |
-| `EXT_SPI_I2C_N` | Shared GND | Shared GND |
-| `EXT_PWR_EN` | D9 / PA15 -> J2 pin 7, or 3V3 | D10 / PA2 -> J2 pin 7, or 3V3 |
+| `EXT_PWR_EN` | D9 / PA15 -> J2 pin 7, or 3V3 | 3V3 -> J2 pin 7 for first dual-SPI test |
 | GND | Shared GND | Shared GND |
 | `EXT_LPn` | Dedicated A1 / PC4 -> J2 pin 2 | Dedicated A0 / PC5 -> J2 pin 2 |
 | `EXT_GPIO1` | Dedicated A2 / PC3 -> J1 top pad | Dedicated A3 / PC2 -> J1 top pad |
 
-I2C1 caveat: the IOT01A1 on-board VL53L0X also sits on I2C1 at default
-address `0x29`. This firmware keeps `VL53L0X_XSHUT` / PC6 low so that on-board
-sensor remains disabled. Do not release PC6 while a front SATEL-VL53L8 is on
-I2C1 at the default address.
-
 Recommended boot sequence:
 
-1. Drive both SATEL `LPn` lines low and both SATEL `PWR_EN` lines low if they
-   are wired to GPIO.
-2. Assert PC6 `VL53L0X_XSHUT` low and keep it low.
-3. Enable rear `PWR_EN`, release rear `LPn`, and initialize rear on I2C3 at
-   default address `0x29` / HAL address `0x52`.
-4. Enable front `PWR_EN`, release front `LPn`, and initialize front on I2C1 at
-   default address `0x29` / HAL address `0x52`.
+1. Drive both SATEL `LPn` lines low.
+2. Keep both `NCS` lines high.
+3. Enable rear `PWR_EN`, release rear `LPn`, select rear with D8 only, and
+   initialize rear over SPI1.
+4. Enable front `PWR_EN`, release front `LPn`, select front with D10 only, and
+   initialize front over SPI1.
 5. Start both sensors ranging.
 6. In each main-loop pass, process the rear slot and front slot independently.
 
-With separate buses, unique runtime addresses are optional because each bus has
-only one active SATEL at `0x29`.
+Only one `NCS` may be low at a time. That invariant prevents two sensors from
+driving MISO at once.
+
+Fallback I2C1 caveat: the IOT01A1 on-board VL53L0X also sits on I2C1 at default
+address `0x29`. If the front SATEL is ever wired on I2C1 instead of SPI1, this
+firmware must keep `VL53L0X_XSHUT` / PC6 low so that on-board sensor remains
+disabled. Do not release PC6 while a front SATEL-VL53L8 is on I2C1 at the
+default address.
 
 ### Shared SCL/SDA Fallback
 
@@ -396,8 +479,9 @@ The shared-bus boot sequence is:
    sensor, then poll the slots sequentially.
 
 This is not the active runtime implementation yet. Today the firmware runs one
-rear SATEL on I2C3. The topology tests already enforce the invariant: two slots
-on the same bus must not have the same runtime address, and two online sensors
+rear SATEL and probes I2C3 first, then SPI1, at boot. The topology tests already
+enforce the invariant: SPI slots sharing a bus must not share `NCS`; I2C slots
+on the same bus must not have the same runtime address; and two online sensors
 must not share `LPn`.
 
 Do not wire two SATEL boards with shared `LPn` unless only one is populated or
@@ -406,12 +490,14 @@ only one is powered. Do not let both sensors be awake at `0x52` on the same bus.
 ## Bring-Up Checklist
 
 1. Power off the IOT01A1 before changing wires.
-2. Wire according to the corrected one-sensor table.
+2. Wire according to either corrected one-sensor table.
 3. Confirm SATEL J2 pin 11 has 5V relative to GND.
-4. Confirm J2 pin 1 is at GND and J2 pin 7 is high at 3V3.
+4. Confirm J2 pin 1 is at GND for I2C mode or 3V3 for SPI mode, and J2 pin 7
+   is high at 3V3.
 5. Confirm J2 pin 10 `EXT_1V8` and J2 pin 8 `EXT_IOVDD` have no external
    IOT01A1 wire attached.
-6. Confirm A5/SCL and A4/SDA are not swapped.
+6. For I2C, confirm A5/SCL and A4/SDA are not swapped. For SPI, confirm D13
+   clock, D11 MOSI, D12 MISO, and D8 `NCS`.
 7. Flash firmware.
 8. Watch UART1 for a `VL53L8` probe line.
 9. If the probe fails, check `PWR_EN`, ground, SCL/SDA order, and whether
@@ -488,8 +574,13 @@ path. You should see lines like:
 ```text
 [1000] BLE_Tof safety_config fire mode=0 tick=1000
 [1000] VL53L8 init phase=gpio tick=1000
-[1012] VL53L8 init phase=is_alive
-[1018] VL53L8 probe: no sensor addr=0x52
+[1012] VL53L8 probe transport=i2c3 phase=stop_ranging
+[1018] VL53L8 probe transport=i2c3 phase=is_alive
+[1020] VL53L8 probe transport=i2c3 pre_stop=... alive_rd=... alive=0 tick=1020
+[1021] VL53L8 probe transport=spi1 phase=stop_ranging
+[1026] VL53L8 probe transport=spi1 phase=is_alive
+[1028] VL53L8 probe transport=spi1 pre_stop=... alive_rd=... alive=0 tick=1028
+[1028] VL53L8 probe: no sensor i2c_rd=... i2c_alive=0 spi_rd=... spi_alive=0
 ```
 
 That is expected before the SATEL board has power. It proves the firmware is
@@ -501,12 +592,21 @@ After applying the corrected wiring and powering the SATEL board, the retry path
 should eventually reach firmware download, configuration, and frame logs:
 
 ```text
-[4000] VL53L8 init phase=is_alive
-[4010] VL53L8 pre-stop=... alive_rd=0 alive=1 tick=4010
-[4010] VL53L8 init phase=fw_download tick=4010
+[4000] VL53L8 probe transport=i2c3 phase=is_alive
+[4010] VL53L8 probe transport=i2c3 pre_stop=... alive_rd=0 alive=1 tick=4010
+[4010] VL53L8 probe transport=spi1 phase=is_alive
+[4020] VL53L8 probe transport=spi1 pre_stop=... alive_rd=... alive=0 tick=4020
+[4020] VL53L8 selected transport=i2c3
+[4020] VL53L8 init phase=fw_download tick=4020
 [9000] VL53L8 init phase=fw_done tick=9000
 [9020] VL53L8 stream start layout=4 zones=16 hz=30 it=20 readBytes=...
 [9050] VL53L8 frame layout=4 zones=16 seq=1 fps=... targetZones=...
+```
+
+For SPI wiring, the selected line should instead be:
+
+```text
+VL53L8 selected transport=spi1
 ```
 
 Drive mode uses `layout=4` because reverse safety intentionally runs the sensor

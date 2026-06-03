@@ -19,8 +19,8 @@ The B-L475E-IOT01A is a single PCB with two USB-C micro-B connectors:
 │                                                                    │
 │   [CN7  ST-LINK USB]  ◀── host Mac (power + SWD + ST-LINK VCP)     │
 │                                                                    │
-│      LED  LD1  (green, PA5)     ← heartbeat, blinks ~1 Hz          │
-│      LED  LD2  (green, PB14)    ← user LED, unused by firmware     │
+│      LED  LD1  (green, PA5)     ← SPI1 SCK in VL53L8 SPI mode      │
+│      LED  LD2  (green, PB14)    ← VL53L8 frame activity indicator  │
 │      LED  LD3  (orange, PC9)    ← WiFi/BLE combo status (unused)   │
 │      LED  LD4  (blue)           ← power indicator on ST-LINK       │
 │      LED  LD6  (red)            ← ST-LINK communication activity   │
@@ -132,18 +132,29 @@ This runs the bundled `STLinkUpgrade` routine. Re-run `--list` afterwards.
 Once `--list` confirms the probe sees the target, build & flash the
 firmware (see `01-toolchain-and-build.md`) and verify the MCU is running:
 
-### 3.1 Heartbeat LED (LD1, PA5)
+### 3.1 UART Main-Loop Heartbeat
 
-The firmware toggles PA5 every 500 ms in the main loop (`main.c:160`).
-After `./build.sh flash` finishes with `[OK] Flash and verify complete.`:
+Current firmware reserves PA5 / Arduino D13 for SPI1 SCK so SATEL-VL53L8 can
+run in SPI mode. Do not use LD1 as a firmware heartbeat in this branch.
 
-- LD1 should start blinking at ~1 Hz within 2 seconds.
-- If LD1 is **off** → MCU did not reach the main loop. Likely a HardFault;
+After `./build.sh flash` finishes with `[OK] Flash and verify complete.`, open
+the ST-LINK VCP serial log at 115200 baud and look for a 1 Hz `LOOP` line:
+
+```text
+LOOP iter=... tick=...
+```
+
+- If `LOOP` appears once per second, the MCU reached the main loop.
+- If no boot or `LOOP` lines appear, the MCU may not have reached the main loop.
+  Likely causes include a HardFault or early init error;
   attach with `arm-none-eabi-gdb` to inspect.
-- If LD1 is **solid on or solid off** and flash succeeded →
+- If the serial log stops after a `BOOT phase=...` line and flash succeeded,
   `Error_Handler()` was hit during one of the `MX_*_Init` calls. Run
   under gdb and break at `Error_Handler`.
-- If LD1 blinks but BLE never advertises, see 3.3.
+- If `LOOP` continues but BLE never advertises, see 3.3.
+
+LED2 / PB14 toggles while VL53L8 frames are arriving. It is a sensor-frame
+indicator, not a general boot heartbeat.
 
 ### 3.2 UART trace over ST-LINK VCP
 
@@ -190,7 +201,7 @@ A successful scan proves:
 - The HCI transport layer synchronized.
 - `aci_gap_set_discoverable` succeeded.
 
-If the heartbeat LED blinks but no advertisement is seen:
+If the UART `LOOP` heartbeat continues but no advertisement is seen:
 - Verify the SPBTLE-RF module is not physically damaged (visual check).
 - Check `ble_config.h` — `CFG_ADV_BD_ADDRESS` must be non-zero.
 - Connect gdb and break inside `BLE_InitStack` to verify
@@ -204,7 +215,7 @@ Once all the above pass, a final end-to-end test without any external
 hardware:
 
 1. Flash Debug firmware: `./build.sh all`.
-2. Confirm LD1 blinks (section 3.1).
+2. Confirm the UART `LOOP` heartbeat appears once per second (section 3.1).
 3. Use nRF Connect on iOS to scan, **connect** to `OPENOTTER-MCP`, and
    locate service `0xFE40` with characteristic `0xFE41` (write) and
    `0xFE42` (notify).
@@ -230,7 +241,7 @@ self-powers from the CN7 USB cable and the BLE module runs from the same
 |---------------------------------------------------|-------------------------------------------------------------------|
 | `--list` → `No STLink device detected`            | Charge-only cable, bad USB port, or probe FW too old — see 2.4.   |
 | `--list` OK, flash → `Error: Data mismatch`       | Flash wear or stale cache — try `--fullchip-erase` then reflash.  |
-| LD1 off after flash                                | `Error_Handler()` hit — attach gdb, break on `Error_Handler`.     |
-| LD1 blinks but no BLE advert                       | SPI3 / SPBTLE-RF wiring fault, or BlueNRG reset hold time too low.|
+| No `LOOP` line after flash                         | `Error_Handler()` or fault before the main loop; attach gdb.      |
+| `LOOP` continues but no BLE advert                 | SPI3 / SPBTLE-RF wiring fault, or BlueNRG reset hold time too low.|
 | Advert seen as "BlueNRG"                           | Old firmware on flash — reflash latest Debug build.               |
 | iOS app connects once, then refuses to reconnect   | GAP name mismatch with iOS cache — see BLE doc for cache notes.   |
