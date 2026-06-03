@@ -3,12 +3,13 @@
  * BLE GATT service for ToF debug data.
  *
  *   Service 0xFE60
- *     Char 0xFE61  Config (write-w/o-resp + write)         8 B
+ *     Char 0xFE61  Config (write-w/o-resp + write)         9 B
  *     Char 0xFE62  Frame  (notify, fixed chunks)          20 B
  *     Char 0xFE63  Status (notify + read)                  4 B
  *
- * FE61 accepts the generic Tof_Config_t payload when byte 0 is
- * TOF_SENSOR_VL53L8CX. Deprecated VL53L1/VL53L5 payloads are rejected.
+ * FE61 accepts a VL53L8 debug config: the generic 8-byte Tof_Config_t prefix
+ * plus byte 8 selecting the debug frame role (0=rear, 1=front). Deprecated
+ * VL53L1/VL53L5 payloads are rejected.
  * FE62 emits generic V2 chunks.
  ******************************************************************************/
 #ifndef __BLE_TOF_H
@@ -25,23 +26,25 @@ extern "C" {
 #define OPENOTTER_TOF_FRAME_CHAR_UUID   0xFE62
 #define OPENOTTER_TOF_STATUS_CHAR_UUID  0xFE63
 
-/* Deprecated legacy payload kept only for ABI-size documentation. */
 typedef struct __attribute__((packed)) {
-  uint8_t  layout;        /* 1, 3, 4 */
-  uint8_t  dist_mode;     /* 1=SHORT, 2=MEDIUM, 3=LONG */
-  uint8_t  _reserved[2];  /* must be 0 */
-  uint32_t budget_us;     /* per-zone timing budget [8000..1000000] */
+  uint8_t  sensor_type;     /* TOF_SENSOR_VL53L8CX */
+  uint8_t  layout;          /* 4 or 8 for VL53L8 */
+  uint8_t  profile;         /* TOF_PROFILE_L8_CONTINUOUS */
+  uint8_t  frequency_hz;    /* 0 = firmware default */
+  uint16_t integration_ms;  /* 0 = firmware default */
+  uint16_t budget_ms;       /* reserved for VL53L8, keep 0 */
+  uint8_t  debug_role;      /* 0=rear, 1=front */
 } BLE_TofConfigPayload_t;
 
-_Static_assert(sizeof(BLE_TofConfigPayload_t) == 8,
-               "BLE_TofConfigPayload_t must be 8 B on wire");
+_Static_assert(sizeof(BLE_TofConfigPayload_t) == 9,
+               "BLE_TofConfigPayload_t must be 9 B on wire");
 
 /* MCU -> iOS status notification (4 B). */
 typedef struct __attribute__((packed)) {
   uint8_t state;         /* 0=idle, 1=running, 2=error */
   uint8_t last_error;    /* Tof_Status_t code; 0 = none */
   uint8_t scan_hz;       /* observed scan rate, integer Hz, clamped 0..255 */
-  uint8_t _pad;
+  uint8_t debug;         /* bits 0..1 selected role, bits 4..5 available mask */
 } BLE_TofStatusPayload_t;
 
 _Static_assert(sizeof(BLE_TofStatusPayload_t) == 4,

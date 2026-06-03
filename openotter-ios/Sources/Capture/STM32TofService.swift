@@ -19,6 +19,8 @@ public final class STM32TofService: NSObject, ObservableObject {
     @Published public private(set) var state: TofState = .unknown
     @Published public private(set) var lastError: UInt8 = 0
     @Published public private(set) var scanHz: UInt8 = 0
+    @Published public private(set) var selectedSensorRole: TofSensorRole = .rear
+    @Published public private(set) var availableSensorRoles: Set<TofSensorRole> = []
     @Published public private(set) var droppedFrameChunks: UInt32 = 0
     @Published public private(set) var framesParsed: UInt32 = 0
     @Published public private(set) var chunksReceived: UInt32 = 0
@@ -33,7 +35,8 @@ public final class STM32TofService: NSObject, ObservableObject {
                                             distMode: 1,
                                             budgetUs: 0,
                                             frequencyHz: 10,
-                                            integrationMs: 20)
+                                            integrationMs: 20,
+                                            role: .rear)
     var preferredConfigForTesting: TofConfig { preferredConfig }
     var debugStreamingEnabledForTesting: Bool { debugStreamingEnabled }
 
@@ -63,6 +66,8 @@ public final class STM32TofService: NSObject, ObservableObject {
             self.state = .unknown
             self.lastError = 0
             self.scanHz = 0
+            self.selectedSensorRole = .rear
+            self.availableSensorRoles = []
             self.droppedFrameChunks = 0
         }
     }
@@ -80,7 +85,8 @@ public final class STM32TofService: NSObject, ObservableObject {
                    profile: distMode,
                    frequencyHz: preferredConfig.frequencyHz,
                    integrationMs: preferredConfig.integrationMs,
-                   budgetMs: budgetMs)
+                   budgetMs: budgetMs,
+                   role: preferredConfig.role)
     }
 
     public func sendConfig(sensor: TofSensorType,
@@ -88,13 +94,24 @@ public final class STM32TofService: NSObject, ObservableObject {
                            profile: UInt8,
                            frequencyHz: UInt8,
                            integrationMs: UInt16,
-                           budgetMs: UInt16) {
+                           budgetMs: UInt16,
+                           role: TofSensorRole) {
+        let previousRole = preferredConfig.role
         preferredConfig = TofConfig(sensor: sensor,
                                     layout: layout,
                                     distMode: profile,
                                     budgetUs: UInt32(budgetMs) * 1000,
                                     frequencyHz: frequencyHz,
-                                    integrationMs: integrationMs)
+                                    integrationMs: integrationMs,
+                                    role: role)
+        if previousRole != role {
+            resetFrameReassembly()
+            updateOnMain {
+                self.latestFrame = nil
+                self.scanHz = 0
+                self.selectedSensorRole = role
+            }
+        }
         writePreferredConfig()
     }
 
@@ -108,7 +125,8 @@ public final class STM32TofService: NSObject, ObservableObject {
             profile: preferredConfig.distMode,
             frequencyHz: preferredConfig.frequencyHz,
             integrationMs: preferredConfig.integrationMs,
-            budgetMs: UInt16(min(UInt32(UInt16.max), preferredConfig.budgetUs / 1000))
+            budgetMs: UInt16(min(UInt32(UInt16.max), preferredConfig.budgetUs / 1000)),
+            role: preferredConfig.role
         )
 
         let writeType: CBCharacteristicWriteType =
@@ -147,8 +165,9 @@ public final class STM32TofService: NSObject, ObservableObject {
                                          profile: UInt8,
                                          frequencyHz: UInt8,
                                          integrationMs: UInt16,
-                                         budgetMs: UInt16) -> Data {
-        var payload = Data(count: 8)
+                                         budgetMs: UInt16,
+                                         role: TofSensorRole) -> Data {
+        var payload = Data(count: 9)
         payload.withUnsafeMutableBytes { raw in
             let p = raw.baseAddress!
             p.storeBytes(of: sensor.rawValue, toByteOffset: 0, as: UInt8.self)
@@ -157,6 +176,7 @@ public final class STM32TofService: NSObject, ObservableObject {
             p.storeBytes(of: frequencyHz, toByteOffset: 3, as: UInt8.self)
             p.storeBytes(of: integrationMs.littleEndian, toByteOffset: 4, as: UInt16.self)
             p.storeBytes(of: budgetMs.littleEndian, toByteOffset: 6, as: UInt16.self)
+            p.storeBytes(of: role.rawValue, toByteOffset: 8, as: UInt8.self)
         }
         return payload
     }
@@ -178,6 +198,13 @@ public final class STM32TofService: NSObject, ObservableObject {
         case unknown
         case v1
         case v2
+    }
+
+    private func resetFrameReassembly() {
+        rxNext = 0
+        rxV2Next = 0
+        rxV2SeqLow = 0
+        rxMode = .unknown
     }
 
     private func updateOnMain(_ update: @escaping () -> Void) {
@@ -232,9 +259,10 @@ public final class STM32TofService: NSObject, ObservableObject {
 
         if last {
             if let frame = STM32TofService.parseFrame(Data(rxBuf)) {
+                let taggedFrame = frame.tagged(role: selectedSensorRole)
                 framesParsed &+= 1
                 updateOnMain {
-                    self.latestFrame = frame
+                    self.latestFrame = taggedFrame
                 }
             }
             rxNext = 0
@@ -271,9 +299,10 @@ public final class STM32TofService: NSObject, ObservableObject {
             }
             if frameLen <= copied,
                let frame = Self.parseFrameV2(Data(rxV2Buf.prefix(frameLen))) {
+                let taggedFrame = frame.tagged(role: selectedSensorRole)
                 framesParsed &+= 1
                 updateOnMain {
-                    self.latestFrame = frame
+                    self.latestFrame = taggedFrame
                 }
             } else {
                 droppedFrameChunks += 1
@@ -286,11 +315,22 @@ public final class STM32TofService: NSObject, ObservableObject {
     public func handleStatusNotification(_ data: Data) {
         guard data.count >= 4 else { return }
         let bytes = [UInt8](data)
+        let role = TofSensorRole(raw: bytes[3] & 0x03)
+        let available = Self.decodeAvailableRoles(mask: (bytes[3] >> 4) & 0x03)
         updateOnMain {
             self.state     = TofState(raw: bytes[0])
             self.lastError = bytes[1]
             self.scanHz    = bytes[2]
+            self.selectedSensorRole = role
+            self.availableSensorRoles = available
         }
+    }
+
+    private static func decodeAvailableRoles(mask: UInt8) -> Set<TofSensorRole> {
+        var roles = Set<TofSensorRole>()
+        if (mask & 0x01) != 0 { roles.insert(.rear) }
+        if (mask & 0x02) != 0 { roles.insert(.front) }
+        return roles
     }
 
     // MARK: - Pure parser (testable)

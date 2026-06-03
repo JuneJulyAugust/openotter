@@ -25,6 +25,8 @@ class STM32ControlViewModel: ObservableObject {
     @Published var tofState: TofState = .unknown
     @Published var tofScanHz: UInt8 = 0
     @Published var tofLastError: UInt8 = 0
+    @Published var tofSelectedSensorRole: TofSensorRole = .rear
+    @Published var tofAvailableSensorRoles: Set<TofSensorRole> = []
     @Published var tofDroppedFrameChunks: UInt32 = 0
     @Published var tofFramesParsed: UInt32 = 0
     @Published var tofChunksReceived: UInt32 = 0
@@ -37,7 +39,8 @@ class STM32ControlViewModel: ObservableObject {
                                          distMode: 1,
                                          budgetUs: 0,
                                          frequencyHz: 10,
-                                         integrationMs: 20)
+                                         integrationMs: 20,
+                                         role: .rear)
 
     // MARK: - Private
 
@@ -134,6 +137,14 @@ class STM32ControlViewModel: ObservableObject {
         scheduleTofSend()
     }
 
+    func setTofSensorRole(_ role: TofSensorRole) {
+        guard role == .rear || role == .front else { return }
+        tofConfig.role = role
+        tofFrame = nil
+        tofScanHz = 0
+        scheduleTofSend()
+    }
+
     func setTofDistMode(_ mode: UInt8) {
         tofConfig.distMode = mode
         tofConfig.budgetUs = TofConfig.clampBudget(tofConfig.budgetUs,
@@ -178,7 +189,8 @@ class STM32ControlViewModel: ObservableObject {
                               profile: tofConfig.distMode,
                               frequencyHz: tofConfig.frequencyHz,
                               integrationMs: tofConfig.integrationMs,
-                              budgetMs: UInt16(min(UInt32(UInt16.max), tofConfig.budgetUs / 1000)))
+                              budgetMs: UInt16(min(UInt32(UInt16.max), tofConfig.budgetUs / 1000)),
+                              role: tofConfig.role)
     }
 
     // MARK: - Send Logic
@@ -295,6 +307,14 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$lastError
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofLastError)
+
+        tofService.$selectedSensorRole
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofSelectedSensorRole)
+
+        tofService.$availableSensorRoles
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofAvailableSensorRoles)
 
         tofService.$droppedFrameChunks
             .receive(on: DispatchQueue.main)

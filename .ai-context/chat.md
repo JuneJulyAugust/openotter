@@ -7,15 +7,16 @@ This file stores the historical context, milestones, and prompts to resume devel
 ## 2026-06-02 - SATEL-VL53L8 v1.2.0 Release Candidate
 
 ### Summary
-Prepared the STM32 firmware and iOS app for a synchronized `1.2.0` release candidate. The active ToF deployment path now targets one SATEL-VL53L8 on B-L475E-IOT01A1, with iOS diagnostics rendering live VL53L8 data from the board.
+Prepared the STM32 firmware and iOS app for a synchronized `1.2.0` release candidate. The active ToF deployment path now targets one SATEL-VL53L8 on B-L475E-IOT01A1, with iOS diagnostics rendering live VL53L8 data from the board and able to select one rear/front debug stream at a time.
 
 ### Achievements
 1. **SATEL wiring contract fixed:** Documented `J2 pin 1 EXT_SPI_I2C_N` to GND for I2C mode, `J2 pin 11 EXT_5V0` to 5V, `J2 pin 7 EXT_PWR_EN` to 3V3, SCL on `J2 pin 6`, and SDA on `J2 pin 5`.
 2. **Firmware migration:** Active STM32 ToF logic, reverse safety selection, BLE ToF config/status path, and host tests now use VL53L8-facing names and status semantics.
 3. **Hardware proof:** ST-LINK serial showed stable 4x4 depth frames at about 30 Hz after the sensor was mounted away from the table.
 4. **iOS diagnostics:** `STM32ControlView` deployed from the feature worktree and rendered live VL53L8 ToF data in one pass.
-5. **Release metadata:** iOS and STM32 metadata are prepared at `1.2.0`; merge and tags are intentionally deferred for more testing.
-6. **Verification note:** Firmware host/build checks and the iOS release build passed; the full iOS simulator suite still has one residual Telegram agent failure outside the VL53L8 path.
+5. **Debug stream selection:** STM32 Control can select `Rear` or `Front`; FE61 byte 8 carries the selected role and FE63 byte 3 reports selected role plus available-role mask. Rear is the current backward-facing bench sensor; front is the future forward-facing SATEL.
+6. **Release metadata:** iOS and STM32 metadata are prepared at `1.2.0`; merge and tags are intentionally deferred for more testing.
+7. **Verification note:** Firmware host/build checks and the iOS device build pass. The iOS simulator suite passed before the final frame-role regression test was added, but the current rerun is blocked by CoreSimulatorService launch/preflight failures rather than test assertions.
 
 ### Current State
 - **iOS App:** `v1.2.0` release-candidate metadata is current.
@@ -23,7 +24,7 @@ Prepared the STM32 firmware and iOS app for a synchronized `1.2.0` release candi
 - **Next Step:** Run more physical autonomous validation before merge/tag; then tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
 
 ### Prompt Context for Next Session
-"OpenOtter is on a SATEL-VL53L8 `1.2.0` release candidate branch. Firmware build/host tests passed, IOT01A1 serial showed valid 4x4 VL53L8 frames, and the iOS STM32 Control diagnostics view rendered live ToF data. The iOS release build passes, but the full simulator suite still has one existing Telegram agent assertion failure. Do more vehicle-level autonomous validation before merging or tagging."
+"OpenOtter is on a SATEL-VL53L8 `1.2.0` release candidate branch. Firmware build/host tests passed, IOT01A1 serial showed valid 4x4 VL53L8 rear frames, and the iOS STM32 Control diagnostics view can select Rear or Front FE62 debug depth streams. Rear is the current backward-facing bench sensor; Front is the future forward-facing SATEL. Do more vehicle-level autonomous validation before merging or tagging."
 
 ---
 

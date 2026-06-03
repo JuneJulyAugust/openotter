@@ -22,10 +22,36 @@ final class STM32TofServiceTests: XCTestCase {
             profile: 1,
             frequencyHz: 10,
             integrationMs: 20,
-            budgetMs: 0
+            budgetMs: 0,
+            role: .rear
         )
 
-        XCTAssertEqual([UInt8](payload), [2, 8, 1, 10, 20, 0, 0, 0])
+        XCTAssertEqual([UInt8](payload), [2, 8, 1, 10, 20, 0, 0, 0, 0])
+    }
+
+    func testVL53L8CXConfigEncodesFrontDebugRole() {
+        let payload = STM32TofService.makeConfigPayload(
+            sensor: .vl53l8cx,
+            layout: 4,
+            profile: 1,
+            frequencyHz: 30,
+            integrationMs: 20,
+            budgetMs: 0,
+            role: .front
+        )
+
+        XCTAssertEqual([UInt8](payload), [2, 4, 1, 30, 20, 0, 0, 0, 1])
+    }
+
+    func testStatusPayloadDecodesSelectedRoleAndAvailableMask() {
+        let service = STM32TofService()
+
+        service.handleStatusNotification(Data([1, 0, 31, 0x31]))
+
+        XCTAssertEqual(service.state, .running)
+        XCTAssertEqual(service.scanHz, 31)
+        XCTAssertEqual(service.selectedSensorRole, .front)
+        XCTAssertEqual(service.availableSensorRoles, [.rear, .front])
     }
 
     func testConfigSentBeforeAttachIsRemembered() {
@@ -36,12 +62,14 @@ final class STM32TofServiceTests: XCTestCase {
                            profile: 1,
                            frequencyHz: 1,
                            integrationMs: 100,
-                           budgetMs: 0)
+                           budgetMs: 0,
+                           role: .front)
 
         XCTAssertEqual(service.preferredConfigForTesting.sensor, .vl53l8cx)
         XCTAssertEqual(service.preferredConfigForTesting.layout, 8)
         XCTAssertEqual(service.preferredConfigForTesting.frequencyHz, 1)
         XCTAssertEqual(service.preferredConfigForTesting.integrationMs, 100)
+        XCTAssertEqual(service.preferredConfigForTesting.role, .front)
     }
 
     func testDebugStreamingDefaultsDisabled() {
@@ -127,8 +155,33 @@ final class STM32TofServiceTests: XCTestCase {
         service.$latestFrame
             .compactMap { $0 }
             .sink { frame in
+                XCTAssertEqual(frame.role, .rear)
                 XCTAssertEqual(frame.layout, 4)
                 XCTAssertEqual(frame.numZones, 16)
+                update.fulfill()
+            }
+            .store(in: &cancellables)
+
+        for chunk in chunks {
+            service.handleFrameNotification(Data(chunk))
+        }
+
+        wait(for: [update], timeout: 1.0)
+        XCTAssertEqual(service.droppedFrameChunks, 0)
+    }
+
+    func testInOrderV2ChunksPublishSelectedFrontRole() {
+        let service = STM32TofService()
+        let payload = makeV2Payload(layout: 4)
+        let chunks = makeChunks(payload: payload, seqLow: 0x79)
+        let update = expectation(description: "front frame update")
+
+        service.handleStatusNotification(Data([1, 0, 30, 0x31]))
+        service.$latestFrame
+            .compactMap { $0 }
+            .sink { frame in
+                XCTAssertEqual(frame.role, .front)
+                XCTAssertEqual(frame.layout, 4)
                 update.fulfill()
             }
             .store(in: &cancellables)

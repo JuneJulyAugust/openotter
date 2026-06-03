@@ -8,10 +8,12 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Adaptive VL53L8 safety slots**: Firmware now supports rear and front VL53L8 runtime slots. A single rear sensor still enables reverse ToF safety, a single front sensor can enable forward ToF safety, and two sensors can run independently when both are available.
 - **Directional safety projection tests**: Added host coverage for mapping front-sensor forward motion into the existing reverse-safety model without changing the core stopping-distance invariant.
+- **VL53L8 debug role metadata**: FE61 now accepts a front/rear debug role byte, FE63 reports selected role plus available-slot mask, and host tests cover the packed status metadata.
 
 ### Changed
 - **VL53L8 runtime driver**: Refactored the single VL53L8 runtime into rear/front slots. Rear probes I2C3 first, then SPI1 with D8 `NCS`; front probes SPI1 with D10 `NCS`.
 - **Drive throttle arbitration**: Drive mode now clamps reverse throttle only when the rear safety context is braking, and clamps forward throttle only when the front safety context is braking.
+- **ToF debug frame selection**: FE62 now streams the selected rear or front VL53L8 slot instead of always using the default available slot.
 
 ## [1.2.0] - 2026-06-02
 

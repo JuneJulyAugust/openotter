@@ -14,8 +14,8 @@ Use the same firmware image for both wiring modes:
 
 | Mode | `J2 pin 1 EXT_SPI_I2C_N` | Main wires | Expected boot log |
 | --- | --- | --- | --- |
-| I2C, proven on bench | GND | A5 SCL, A4 SDA | `VL53L8 selected transport=i2c3` |
-| SPI, ST-recommended next test | 3V3 | D13 SCK, D11 MOSI, D12 MISO, D8 NCS | `VL53L8 selected transport=spi1` |
+| I2C, proven on bench | GND | A5 SCL, A4 SDA | `VL53L8 rear selected transport=i2c3` |
+| SPI, ST-recommended next test | 3V3 | D13 SCK, D11 MOSI, D12 MISO, D8 NCS | `VL53L8 rear selected transport=spi1` |
 
 The connected IOT01A1 and one SATEL board were verified in I2C mode on
 2026-06-03. The boot log showed `i2c3` alive, `spi1` not alive, and stable
@@ -312,6 +312,56 @@ Safety adapts to the available slots:
 - No available VL53L8 slot: Drive throttle stays gated by the ToF safety-config
   readiness policy.
 
+## Front/Rear Convention
+
+Use these labels everywhere: wiring, firmware logs, BLE protocol, and the iOS
+STM32 Control view.
+
+| Role | Physical meaning | Current/future wiring |
+| --- | --- | --- |
+| `rear` / role byte `0` | Sensor faces backward; reverse safety uses it while the robot backs up. This is the current one-sensor bench setup. | I2C3 A5/A4 now, or SPI1 with D8 `NCS`; A1 `LPn`; A2 `GPIO1` |
+| `front` / role byte `1` | Sensor faces forward; forward safety uses it while the robot drives forward. | SPI1 with D10 `NCS`; A0 `LPn`; A3 `GPIO1` |
+
+The iOS debug selector chooses which role is published on FE62. It does not
+turn the other sensor off. In Drive mode the firmware still keeps all detected
+VL53L8 slots configured and the safety supervisor independently uses rear for
+reverse motion and front for forward motion when each slot is available.
+
+If the iOS app selects `front` while only the rear sensor is connected, the grid
+stays blank and the app shows the selected front role as not online. That is the
+expected one-sensor bench result, not a rear sensor failure.
+
+## BLE Debug Protocol
+
+FE61 is the iOS-to-firmware debug config. It is fixed-length 9 bytes:
+
+| Offset | Field | Meaning |
+| --- | --- | --- |
+| 0 | `sensor_type` | `2` = `TOF_SENSOR_VL53L8CX` |
+| 1 | `layout` | `4` or `8` |
+| 2 | `profile` | `1` = continuous |
+| 3 | `frequency_hz` | Debug ranging frequency |
+| 4..5 | `integration_ms` | Little-endian integration time |
+| 6..7 | `budget_ms` | Reserved for VL53L8; keep `0` |
+| 8 | `debug_role` | `0` = rear FE62 stream, `1` = front FE62 stream |
+
+The first eight bytes are the generic `Tof_Config_t` prefix. Firmware accepts
+legacy 8-byte writes as rear-role writes for compatibility, but the current iOS
+app writes all 9 bytes.
+
+FE63 remains 4 bytes:
+
+| Offset | Field | Meaning |
+| --- | --- | --- |
+| 0 | `state` | `0` idle, `1` running, `2` error |
+| 1 | `last_error` | `Tof_Status_t`; `0` means no error |
+| 2 | `scan_hz` | Observed debug-stream scan rate for the selected role |
+| 3 | `debug` | bits 0..1 selected role; bits 4..5 available-role mask |
+
+Available-role mask bits are bit 0 = rear online, bit 1 = front online. The iOS
+STM32 Control view decodes this byte and shows the selected role as online or
+not online.
+
 ## Build, Flash, And Serial Logs
 
 Build and flash from the feature worktree:
@@ -371,6 +421,7 @@ firmware to Debug mode and write the VL53L8 config:
 | Field | Value |
 | --- | --- |
 | sensor | `VL53L8CX` |
+| role | `rear` for the current bench sensor, `front` after the second sensor is connected |
 | layout | `8` |
 | profile | continuous |
 | frequency | `10 Hz` or `15 Hz` |
@@ -386,6 +437,12 @@ VL53L8 frame layout=8 zones=64 seq=23 fps=11 targetZones=34
 If serial shows `layout=8 zones=64` but iOS does not render the grid, debug the
 BLE frame reassembly path next. If serial never reaches `layout=8 zones=64`,
 debug the firmware config write or sensor transport path first.
+
+The 1 Hz debug log should also show the selected role and available mask:
+
+```text
+L8 dbg: seen=... snap=... push=... fail=... mode=1 role=rear avail=0x01 ...
+```
 
 ## Two-Sensor Runtime
 
@@ -455,6 +512,11 @@ select and reset line.
 
 Invariant: only one `NCS` may be low at a time. That prevents both sensors from
 driving MISO at once.
+
+The iOS STM32 Control view uses the same table: the `Rear` selector maps to the
+rear SATEL wiring, and the `Front` selector maps to the front SATEL wiring. With
+both sensors online, switching the selector changes only the debug depth map;
+both physical sensors continue ranging for safety.
 
 Expected two-sensor SPI logs:
 

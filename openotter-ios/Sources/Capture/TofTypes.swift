@@ -22,10 +22,45 @@ public extension TofSensorType {
     }
 }
 
-public enum TofSensorRole: Equatable, Sendable {
-    case rear
-    case front
-    case unknown
+public enum TofSensorRole: UInt8, CaseIterable, Hashable, Sendable {
+    case rear = 0
+    case front = 1
+    case unknown = 255
+
+    public init(raw: UInt8) {
+        self = TofSensorRole(rawValue: raw) ?? .unknown
+    }
+}
+
+public extension TofSensorRole {
+    static let selectableCases: [TofSensorRole] = [.rear, .front]
+
+    var displayName: String {
+        switch self {
+        case .rear: return "Rear"
+        case .front: return "Front"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .rear: return "arrow.down.circle.fill"
+        case .front: return "arrow.up.circle.fill"
+        case .unknown: return "questionmark.circle.fill"
+        }
+    }
+
+    var wiringSummary: String {
+        switch self {
+        case .rear:
+            return "Rear: I2C3 A5/A4 now, or SPI1 D8 NCS; A1 LPn, A2 GPIO1"
+        case .front:
+            return "Front: SPI1 D10 NCS; A0 LPn, A3 GPIO1"
+        case .unknown:
+            return "Unknown ToF wiring role"
+        }
+    }
 }
 
 /// VL53L1 range-status codes — subset we surface in the UI.
@@ -114,19 +149,23 @@ public struct TofConfig: Equatable, Sendable {
     public var frequencyHz: UInt8
     /// VL53L8 integration time in ms; 0 lets firmware choose default.
     public var integrationMs: UInt16
+    /// VL53L8 debug stream role: 0 = rear, 1 = front.
+    public var role: TofSensorRole
 
     public init(sensor: TofSensorType = .vl53l1cb,
                 layout: UInt8,
                 distMode: UInt8,
                 budgetUs: UInt32,
                 frequencyHz: UInt8 = 0,
-                integrationMs: UInt16 = 0) {
+                integrationMs: UInt16 = 0,
+                role: TofSensorRole = .rear) {
         self.sensor = sensor
         self.layout = layout
         self.distMode = distMode
         self.budgetUs = budgetUs
         self.frequencyHz = frequencyHz
         self.integrationMs = integrationMs
+        self.role = role
     }
 
     /// Minimum per-zone budget (µs) that the firmware will accept for a given
@@ -212,6 +251,7 @@ public enum TofState: UInt8, Equatable, Sendable {
 /// Decoded view of the 76-byte FE62 notification.
 public struct TofFrame: Equatable, Sendable {
     public let sensor: TofSensorType
+    public let role: TofSensorRole
     public let seq: UInt32
     public let budgetUsPerZone: UInt16
     public let layout: UInt8
@@ -220,6 +260,7 @@ public struct TofFrame: Equatable, Sendable {
     public let zones: [ZoneReading]
 
     public init(sensor: TofSensorType = .vl53l1cb,
+                role: TofSensorRole = .unknown,
                 seq: UInt32,
                 budgetUsPerZone: UInt16,
                 layout: UInt8,
@@ -227,11 +268,23 @@ public struct TofFrame: Equatable, Sendable {
                 numZones: UInt8,
                 zones: [ZoneReading]) {
         self.sensor = sensor
+        self.role = role
         self.seq = seq
         self.budgetUsPerZone = budgetUsPerZone
         self.layout = layout
         self.distMode = distMode
         self.numZones = numZones
         self.zones = zones
+    }
+
+    public func tagged(role: TofSensorRole) -> TofFrame {
+        TofFrame(sensor: sensor,
+                 role: role,
+                 seq: seq,
+                 budgetUsPerZone: budgetUsPerZone,
+                 layout: layout,
+                 distMode: distMode,
+                 numZones: numZones,
+                 zones: zones)
     }
 }
