@@ -15,21 +15,34 @@
 
 extern UART_HandleTypeDef huart1;
 
-static Tof_Frame_t g_frame_latest;
-static VL53L8CX_Configuration g_dev;
-static VL53L8CX_ResultsData g_results;
-static TofL8TransportHandle_t g_transport;
-static volatile uint8_t g_has_new_frame;
+typedef struct {
+  Tof_Frame_t frame_latest;
+  VL53L8CX_Configuration dev;
+  VL53L8CX_ResultsData results;
+  TofL8TransportHandle_t transport;
+  uint8_t initialized;
+  uint8_t streaming;
+  uint8_t driver_dead;
+  volatile uint8_t has_new_frame;
+  uint32_t seq;
+  uint32_t last_frame_log_tick;
+  uint32_t last_frame_log_seq;
+} TofL8SlotRuntime_t;
+
+typedef struct {
+  TofL8TransportHandle_t transport;
+  uint8_t pre_stop;
+  uint8_t alive_read;
+  uint8_t alive;
+} TofL8ProbeResult_t;
+
+static TofL8SlotRuntime_t g_slots[TOF_L8_SENSOR_COUNT];
 static uint8_t g_initialized;
-static uint8_t g_streaming;
-static uint8_t g_driver_dead;
-static uint32_t g_seq;
 static uint32_t g_last_configure_tick;
-static uint32_t g_last_frame_log_tick;
-static uint32_t g_last_frame_log_seq;
 
 /* TOF_L8_RECONFIGURE_DEBOUNCE_MS is owned by tof_l8_debounce.h. */
-#define TOF_L8_FRAME_LOG_INTERVAL_MS    1000u
+#define TOF_L8_FRAME_LOG_INTERVAL_MS 1000u
+
 static Tof_Config_t g_cfg = {
     .sensor_type = TOF_SENSOR_VL53L8CX,
     .layout = 4,
@@ -65,22 +78,55 @@ static void log_fmt(const char *fmt, ...)
   }
 }
 
-static uint16_t logged_range_at(uint8_t idx)
+static const char *sensor_name(TofL8SensorId_t sensor_id)
 {
-  return (idx < g_frame_latest.zone_count) ? g_frame_latest.zones[idx].range_mm
-                                           : 0u;
+  return (sensor_id == TOF_L8_SENSOR_FRONT) ? "front" : "rear";
 }
 
-static uint8_t logged_status_at(uint8_t idx)
+static const char *transport_name(TofL8TransportKind_t kind)
 {
-  return (idx < g_frame_latest.zone_count) ? g_frame_latest.zones[idx].status
-                                           : 0u;
+  if (kind == TOF_L8_TRANSPORT_I2C) return "i2c3";
+  if (kind == TOF_L8_TRANSPORT_SPI) return "spi1";
+  if (kind == TOF_L8_TRANSPORT_AMBIGUOUS) return "ambiguous";
+  return "none";
 }
 
-static uint8_t logged_flags_at(uint8_t idx)
+static TofL8SlotRuntime_t *slot_for(TofL8SensorId_t sensor_id)
 {
-  return (idx < g_frame_latest.zone_count) ? g_frame_latest.zones[idx].flags
-                                           : 0u;
+  if ((uint8_t)sensor_id >= (uint8_t)TOF_L8_SENSOR_COUNT) return 0;
+  return &g_slots[(uint8_t)sensor_id];
+}
+
+static TofL8SlotRuntime_t *default_slot(void)
+{
+  if (TofL8_IsSensorAvailable(TOF_L8_SENSOR_REAR)) {
+    return slot_for(TOF_L8_SENSOR_REAR);
+  }
+  if (TofL8_IsSensorAvailable(TOF_L8_SENSOR_FRONT)) {
+    return slot_for(TOF_L8_SENSOR_FRONT);
+  }
+  return slot_for(TOF_L8_SENSOR_REAR);
+}
+
+static uint16_t logged_range_at(const TofL8SlotRuntime_t *slot, uint8_t idx)
+{
+  return (slot && idx < slot->frame_latest.zone_count)
+             ? slot->frame_latest.zones[idx].range_mm
+             : 0u;
+}
+
+static uint8_t logged_status_at(const TofL8SlotRuntime_t *slot, uint8_t idx)
+{
+  return (slot && idx < slot->frame_latest.zone_count)
+             ? slot->frame_latest.zones[idx].status
+             : 0u;
+}
+
+static uint8_t logged_flags_at(const TofL8SlotRuntime_t *slot, uint8_t idx)
+{
+  return (slot && idx < slot->frame_latest.zone_count)
+             ? slot->frame_latest.zones[idx].flags
+             : 0u;
 }
 
 static void append_grid_text(char *buf, size_t len, size_t *off,
@@ -98,13 +144,19 @@ static void append_grid_text(char *buf, size_t len, size_t *off,
   *off += (wrote >= (len - *off)) ? (len - *off - 1u) : wrote;
 }
 
-static void log_4x4_grid(void)
+static void log_4x4_grid(TofL8SensorId_t sensor_id,
+                         const TofL8SlotRuntime_t *slot)
 {
-  if (g_frame_latest.layout != 4u || g_frame_latest.zone_count < 16u) return;
+  if (!slot ||
+      slot->frame_latest.layout != 4u ||
+      slot->frame_latest.zone_count < 16u) {
+    return;
+  }
 
   char buf[256];
   size_t off = 0u;
-  append_grid_text(buf, sizeof(buf), &off, "VL53L8 grid r/s/f: ");
+  append_grid_text(buf, sizeof(buf), &off, "VL53L8 %s grid r/s/f: ",
+                   sensor_name(sensor_id));
   for (uint8_t row = 0u; row < 4u; ++row) {
     if (row > 0u) {
       append_grid_text(buf, sizeof(buf), &off, " | ");
@@ -112,9 +164,9 @@ static void log_4x4_grid(void)
     for (uint8_t col = 0u; col < 4u; ++col) {
       uint8_t idx = (uint8_t)(row * 4u + col);
       append_grid_text(buf, sizeof(buf), &off, "%u/%u/%u%s",
-                       (unsigned)logged_range_at(idx),
-                       (unsigned)logged_status_at(idx),
-                       (unsigned)logged_flags_at(idx),
+                       (unsigned)logged_range_at(slot, idx),
+                       (unsigned)logged_status_at(slot, idx),
+                       (unsigned)logged_flags_at(slot, idx),
                        (col == 3u) ? "" : " ");
     }
   }
@@ -125,15 +177,16 @@ static void log_4x4_grid(void)
   }
 }
 
-static void stamp_empty_frame(void)
+static void stamp_empty_frame(TofL8SlotRuntime_t *slot)
 {
-  memset(&g_frame_latest, 0, sizeof(g_frame_latest));
-  g_frame_latest.sensor_type = TOF_SENSOR_VL53L8CX;
-  g_frame_latest.layout = g_cfg.layout;
-  g_frame_latest.zone_count = (uint8_t)(g_cfg.layout * g_cfg.layout);
-  g_frame_latest.profile = g_cfg.profile;
-  g_frame_latest.tick_ms = HAL_GetTick();
-  g_has_new_frame = 0;
+  if (!slot) return;
+  memset(&slot->frame_latest, 0, sizeof(slot->frame_latest));
+  slot->frame_latest.sensor_type = TOF_SENSOR_VL53L8CX;
+  slot->frame_latest.layout = g_cfg.layout;
+  slot->frame_latest.zone_count = (uint8_t)(g_cfg.layout * g_cfg.layout);
+  slot->frame_latest.profile = g_cfg.profile;
+  slot->frame_latest.tick_ms = HAL_GetTick();
+  slot->has_new_frame = 0;
 }
 
 static uint8_t resolution_for_layout(uint8_t layout)
@@ -150,64 +203,60 @@ static uint16_t integration_for_config(const Tof_Config_t *cfg)
   return (period_ms > 2u) ? (uint16_t)(period_ms - 1u) : 2u;
 }
 
-static const char *transport_name(TofL8TransportKind_t kind)
+static void apply_transport(VL53L8CX_Configuration *dev,
+                            TofL8TransportHandle_t *transport)
 {
-  if (kind == TOF_L8_TRANSPORT_I2C) return "i2c3";
-  if (kind == TOF_L8_TRANSPORT_SPI) return "spi1";
-  if (kind == TOF_L8_TRANSPORT_AMBIGUOUS) return "ambiguous";
-  return "none";
+  dev->platform.address = (transport->kind == TOF_L8_TRANSPORT_I2C)
+                              ? transport->i2c.addr_8bit
+                              : 0u;
+  dev->platform.Write = TofL8Transport_Write;
+  dev->platform.Read = TofL8Transport_Read;
+  dev->platform.Wait = TofL8Transport_Wait;
+  dev->platform.handle = transport;
 }
 
-static void apply_transport(TofL8TransportHandle_t *transport)
-{
-  g_dev.platform.address = (transport->kind == TOF_L8_TRANSPORT_I2C)
-                               ? transport->i2c.addr_8bit
-                               : 0u;
-  g_dev.platform.Write = TofL8Transport_Write;
-  g_dev.platform.Read = TofL8Transport_Read;
-  g_dev.platform.Wait = TofL8Transport_Wait;
-  g_dev.platform.handle = transport;
-}
-
-typedef struct {
-  TofL8TransportHandle_t transport;
-  uint8_t pre_stop;
-  uint8_t alive_read;
-  uint8_t alive;
-} TofL8ProbeResult_t;
-
-static void probe_transport(const TofL8TransportHandle_t *candidate,
+static void probe_transport(TofL8SensorId_t sensor_id,
+                            TofL8SlotRuntime_t *slot,
+                            const TofL8TransportHandle_t *candidate,
                             TofL8ProbeResult_t *result)
 {
   memset(result, 0, sizeof(*result));
   result->transport = *candidate;
-  memset(&g_dev, 0, sizeof(g_dev));
-  apply_transport(&result->transport);
+  memset(&slot->dev, 0, sizeof(slot->dev));
+  apply_transport(&slot->dev, &result->transport);
 
-  log_fmt("VL53L8 probe transport=%s phase=stop_ranging\r\n",
-          transport_name(result->transport.kind));
-  result->pre_stop = vl53l8cx_stop_ranging(&g_dev);
+  log_fmt("VL53L8 %s probe transport=%s phase=stop_ranging\r\n",
+          sensor_name(sensor_id), transport_name(result->transport.kind));
+  result->pre_stop = vl53l8cx_stop_ranging(&slot->dev);
   HAL_Delay(5);
 
-  log_fmt("VL53L8 probe transport=%s phase=is_alive\r\n",
-          transport_name(result->transport.kind));
-  result->alive_read = vl53l8cx_is_alive(&g_dev, &result->alive);
-  log_fmt("VL53L8 probe transport=%s pre_stop=%u alive_rd=%u alive=%u tick=%lu\r\n",
-          transport_name(result->transport.kind), (unsigned)result->pre_stop,
-          (unsigned)result->alive_read, (unsigned)result->alive,
-          (unsigned long)HAL_GetTick());
+  log_fmt("VL53L8 %s probe transport=%s phase=is_alive\r\n",
+          sensor_name(sensor_id), transport_name(result->transport.kind));
+  result->alive_read = vl53l8cx_is_alive(&slot->dev, &result->alive);
+  log_fmt("VL53L8 %s probe transport=%s pre_stop=%u alive_rd=%u "
+          "alive=%u tick=%lu\r\n",
+          sensor_name(sensor_id), transport_name(result->transport.kind),
+          (unsigned)result->pre_stop, (unsigned)result->alive_read,
+          (unsigned)result->alive, (unsigned long)HAL_GetTick());
 }
 
-static int stop_stream(void)
+static int probe_alive(const TofL8ProbeResult_t *probe)
 {
-  if (!g_streaming) return TOF_STATUS_OK;
-  uint8_t s = vl53l8cx_stop_ranging(&g_dev);
+  return probe->alive_read == VL53L8CX_STATUS_OK && probe->alive != 0u;
+}
+
+static int stop_stream(TofL8SensorId_t sensor_id, TofL8SlotRuntime_t *slot)
+{
+  if (!slot || !slot->streaming) return TOF_STATUS_OK;
+  uint8_t s = vl53l8cx_stop_ranging(&slot->dev);
   if (s != VL53L8CX_STATUS_OK) {
-    log_fmt("VL53L8 stop failed status=%u\r\n", (unsigned)s);
-    g_streaming = 0;
+    log_fmt("VL53L8 %s stop failed status=%u\r\n",
+            sensor_name(sensor_id), (unsigned)s);
+    slot->streaming = 0;
+    slot->driver_dead = 1u;
     return TOF_STATUS_IO;
   }
-  g_streaming = 0;
+  slot->streaming = 0;
   return TOF_STATUS_OK;
 }
 
@@ -215,111 +264,229 @@ static void configure_gpio(void)
 {
   GPIO_InitTypeDef gpio = {0};
 
-  gpio.Pin = ARD_D8_Pin;
   gpio.Mode = GPIO_MODE_OUTPUT_PP;
   gpio.Pull = GPIO_NOPULL;
   gpio.Speed = GPIO_SPEED_FREQ_LOW;
+
+  gpio.Pin = ARD_D8_Pin;
   HAL_GPIO_Init(ARD_D8_GPIO_Port, &gpio);
   HAL_GPIO_WritePin(ARD_D8_GPIO_Port, ARD_D8_Pin, GPIO_PIN_SET);
 
   gpio.Pin = ARD_D10_Pin;
-  gpio.Mode = GPIO_MODE_OUTPUT_PP;
-  gpio.Pull = GPIO_NOPULL;
-  gpio.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(ARD_D10_GPIO_Port, &gpio);
   HAL_GPIO_WritePin(ARD_D10_GPIO_Port, ARD_D10_Pin, GPIO_PIN_SET);
 
   gpio.Pin = ARD_A1_Pin;
-  gpio.Mode = GPIO_MODE_OUTPUT_PP;
-  gpio.Pull = GPIO_NOPULL;
-  gpio.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(ARD_A1_GPIO_Port, &gpio);
+  HAL_GPIO_WritePin(ARD_A1_GPIO_Port, ARD_A1_Pin, GPIO_PIN_RESET);
 
-  gpio.Pin = ARD_A2_Pin;
+  gpio.Pin = ARD_A0_Pin;
+  HAL_GPIO_Init(ARD_A0_GPIO_Port, &gpio);
+  HAL_GPIO_WritePin(ARD_A0_GPIO_Port, ARD_A0_Pin, GPIO_PIN_RESET);
+
   gpio.Mode = GPIO_MODE_INPUT;
-  gpio.Pull = GPIO_NOPULL;
-  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  gpio.Pin = ARD_A2_Pin;
   HAL_GPIO_Init(ARD_A2_GPIO_Port, &gpio);
+
+  gpio.Pin = ARD_A3_Pin;
+  HAL_GPIO_Init(ARD_A3_GPIO_Port, &gpio);
 }
 
-static void pulse_reset(void)
+static void pulse_reset(TofL8SensorId_t sensor_id)
 {
-  /* SATEL VL53L8 LPn is active low: hold low, then release high. */
-  HAL_GPIO_WritePin(ARD_A1_GPIO_Port, ARD_A1_Pin, GPIO_PIN_RESET);
+  GPIO_TypeDef *port = (sensor_id == TOF_L8_SENSOR_FRONT)
+                           ? ARD_A0_GPIO_Port
+                           : ARD_A1_GPIO_Port;
+  uint16_t pin = (sensor_id == TOF_L8_SENSOR_FRONT) ? ARD_A0_Pin : ARD_A1_Pin;
+
+  HAL_GPIO_WritePin(port, pin, GPIO_PIN_RESET);
   HAL_Delay(2);
-  HAL_GPIO_WritePin(ARD_A1_GPIO_Port, ARD_A1_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(port, pin, GPIO_PIN_SET);
   HAL_Delay(10);
 }
 
-int TofL8_Init(void)
+static int init_slot_from_probe(TofL8SensorId_t sensor_id,
+                                TofL8SlotRuntime_t *slot,
+                                const TofL8ProbeResult_t *probe)
 {
-  if (g_initialized) return TOF_STATUS_OK;
+  slot->transport = probe->transport;
+  memset(&slot->dev, 0, sizeof(slot->dev));
+  apply_transport(&slot->dev, &slot->transport);
+  log_fmt("VL53L8 %s selected transport=%s\r\n",
+          sensor_name(sensor_id), transport_name(slot->transport.kind));
 
-  log_fmt("VL53L8 init phase=gpio tick=%lu\r\n",
-          (unsigned long)HAL_GetTick());
-  configure_gpio();
-  log_fmt("VL53L8 init phase=pulse_reset\r\n");
-  pulse_reset();
-  stamp_empty_frame();
+  log_fmt("VL53L8 %s init phase=fw_download tick=%lu\r\n",
+          sensor_name(sensor_id), (unsigned long)HAL_GetTick());
+  uint8_t s = vl53l8cx_init(&slot->dev);
+  if (s != VL53L8CX_STATUS_OK) {
+    log_fmt("VL53L8 %s init failed status=%u\r\n",
+            sensor_name(sensor_id), (unsigned)s);
+    slot->driver_dead = 1u;
+    return TOF_STATUS_BOOT_FAILED;
+  }
+  log_fmt("VL53L8 %s init phase=fw_done tick=%lu\r\n",
+          sensor_name(sensor_id), (unsigned long)HAL_GetTick());
+  slot->initialized = 1u;
+  stamp_empty_frame(slot);
+  return TOF_STATUS_OK;
+}
 
+static int init_rear_slot(void)
+{
+  TofL8SlotRuntime_t *slot = slot_for(TOF_L8_SENSOR_REAR);
   TofL8ProbeResult_t i2c_probe;
   TofL8ProbeResult_t spi_probe;
   TofL8TransportHandle_t candidate;
 
+  pulse_reset(TOF_L8_SENSOR_REAR);
+
   TofL8Transport_InitI2c(&candidate, TOF_L8_I2C_BUS_3,
                          TOF_L8_DEFAULT_I2C_ADDR_8BIT);
-  probe_transport(&candidate, &i2c_probe);
+  probe_transport(TOF_L8_SENSOR_REAR, slot, &candidate, &i2c_probe);
 
   TofL8Transport_InitSpi(&candidate, TOF_L8_SPI_BUS_1, TOF_L8_GPIO_PB2_D8);
-  probe_transport(&candidate, &spi_probe);
+  probe_transport(TOF_L8_SENSOR_REAR, slot, &candidate, &spi_probe);
 
-  int i2c_alive = (i2c_probe.alive_read == VL53L8CX_STATUS_OK &&
-                   i2c_probe.alive != 0u);
-  int spi_alive = (spi_probe.alive_read == VL53L8CX_STATUS_OK &&
-                   spi_probe.alive != 0u);
+  int i2c_alive = probe_alive(&i2c_probe);
+  int spi_alive = probe_alive(&spi_probe);
   TofL8TransportKind_t selected =
       TofL8Transport_ChooseProbe(i2c_alive, spi_alive);
   if (selected == TOF_L8_TRANSPORT_NONE) {
-    log_fmt("VL53L8 probe: no sensor i2c_rd=%u i2c_alive=%u "
+    log_fmt("VL53L8 rear probe: no sensor i2c_rd=%u i2c_alive=%u "
             "spi_rd=%u spi_alive=%u\r\n",
             (unsigned)i2c_probe.alive_read, (unsigned)i2c_probe.alive,
             (unsigned)spi_probe.alive_read, (unsigned)spi_probe.alive);
     return TOF_STATUS_NO_SENSOR;
   }
   if (selected == TOF_L8_TRANSPORT_AMBIGUOUS) {
-    log_fmt("VL53L8 probe: ambiguous transport i2c_alive=%u spi_alive=%u\r\n",
+    log_fmt("VL53L8 rear probe: ambiguous transport i2c_alive=%u "
+            "spi_alive=%u\r\n",
             (unsigned)i2c_probe.alive, (unsigned)spi_probe.alive);
     return TOF_STATUS_IO;
   }
 
-  g_transport = (selected == TOF_L8_TRANSPORT_I2C)
-                    ? i2c_probe.transport
-                    : spi_probe.transport;
-  memset(&g_dev, 0, sizeof(g_dev));
-  apply_transport(&g_transport);
-  log_fmt("VL53L8 selected transport=%s\r\n", transport_name(selected));
+  return init_slot_from_probe(TOF_L8_SENSOR_REAR, slot,
+                              (selected == TOF_L8_TRANSPORT_I2C)
+                                  ? &i2c_probe
+                                  : &spi_probe);
+}
 
-  log_fmt("VL53L8 init phase=fw_download tick=%lu\r\n",
-          (unsigned long)HAL_GetTick());
-  uint8_t s = vl53l8cx_init(&g_dev);
-  if (s != VL53L8CX_STATUS_OK) {
-    log_fmt("VL53L8 init failed status=%u\r\n", (unsigned)s);
-    return TOF_STATUS_BOOT_FAILED;
+static int init_front_slot(void)
+{
+  TofL8SlotRuntime_t *slot = slot_for(TOF_L8_SENSOR_FRONT);
+  TofL8ProbeResult_t spi_probe;
+  TofL8TransportHandle_t candidate;
+
+  pulse_reset(TOF_L8_SENSOR_FRONT);
+
+  TofL8Transport_InitSpi(&candidate, TOF_L8_SPI_BUS_1, TOF_L8_GPIO_PA2_D10);
+  probe_transport(TOF_L8_SENSOR_FRONT, slot, &candidate, &spi_probe);
+
+  if (!probe_alive(&spi_probe)) {
+    log_fmt("VL53L8 front probe: no sensor spi_rd=%u spi_alive=%u\r\n",
+            (unsigned)spi_probe.alive_read, (unsigned)spi_probe.alive);
+    return TOF_STATUS_NO_SENSOR;
   }
-  log_fmt("VL53L8 init phase=fw_done tick=%lu\r\n",
+
+  return init_slot_from_probe(TOF_L8_SENSOR_FRONT, slot, &spi_probe);
+}
+
+static uint8_t config_matches(const Tof_Config_t *a, const Tof_Config_t *b)
+{
+  return a->sensor_type    == b->sensor_type
+      && a->layout         == b->layout
+      && a->profile        == b->profile
+      && a->frequency_hz   == b->frequency_hz
+      && a->integration_ms == b->integration_ms;
+}
+
+static uint8_t all_streaming_match(const Tof_Config_t *cfg)
+{
+  uint8_t active = 0u;
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    TofL8SlotRuntime_t *slot = &g_slots[i];
+    if (!slot->initialized || slot->driver_dead) continue;
+    active = 1u;
+    if (!slot->streaming || !config_matches(cfg, &g_cfg)) return 0u;
+  }
+  return active;
+}
+
+static int configure_slot(TofL8SensorId_t sensor_id,
+                          TofL8SlotRuntime_t *slot,
+                          const Tof_Config_t *cfg)
+{
+  if (!slot || !slot->initialized || slot->driver_dead) {
+    return TOF_STATUS_NO_SENSOR;
+  }
+
+  uint8_t s = vl53l8cx_set_resolution(&slot->dev,
+                                      resolution_for_layout(cfg->layout));
+  s |= vl53l8cx_set_ranging_mode(&slot->dev, VL53L8CX_RANGING_MODE_AUTONOMOUS);
+  s |= vl53l8cx_set_ranging_frequency_hz(&slot->dev, cfg->frequency_hz);
+  s |= vl53l8cx_set_integration_time_ms(&slot->dev,
+                                        integration_for_config(cfg));
+  if (s != VL53L8CX_STATUS_OK) {
+    log_fmt("VL53L8 %s config failed status=%u\r\n",
+            sensor_name(sensor_id), (unsigned)s);
+    slot->driver_dead = 1u;
+    return TOF_STATUS_IO;
+  }
+
+  s = vl53l8cx_start_ranging(&slot->dev);
+  if (s != VL53L8CX_STATUS_OK) {
+    log_fmt("VL53L8 %s start failed status=%u\r\n",
+            sensor_name(sensor_id), (unsigned)s);
+    slot->driver_dead = 1u;
+    return TOF_STATUS_IO;
+  }
+
+  slot->streaming = 1u;
+  slot->seq = 0u;
+  slot->last_frame_log_tick = 0u;
+  slot->last_frame_log_seq = 0u;
+  stamp_empty_frame(slot);
+  log_fmt("VL53L8 %s stream start layout=%u zones=%u hz=%u it=%u "
+          "readBytes=%lu\r\n",
+          sensor_name(sensor_id), (unsigned)g_cfg.layout,
+          (unsigned)slot->frame_latest.zone_count,
+          (unsigned)g_cfg.frequency_hz, (unsigned)g_cfg.integration_ms,
+          (unsigned long)slot->dev.data_read_size);
+  return TOF_STATUS_OK;
+}
+
+int TofL8_Init(void)
+{
+  if (g_initialized) return TOF_STATUS_OK;
+
+  memset(g_slots, 0, sizeof(g_slots));
+  stamp_empty_frame(slot_for(TOF_L8_SENSOR_REAR));
+  stamp_empty_frame(slot_for(TOF_L8_SENSOR_FRONT));
+
+  log_fmt("VL53L8 init phase=gpio tick=%lu\r\n",
           (unsigned long)HAL_GetTick());
+  configure_gpio();
+
+  int rear_rc = init_rear_slot();
+  int front_rc = init_front_slot();
+
+  uint8_t found = 0u;
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    if (g_slots[i].initialized && !g_slots[i].driver_dead) found++;
+  }
+  if (found == 0u) {
+    log_fmt("VL53L8 init: no usable sensors rear_rc=%d front_rc=%d\r\n",
+            rear_rc, front_rc);
+    return (rear_rc != TOF_STATUS_NO_SENSOR) ? rear_rc : front_rc;
+  }
 
   g_initialized = 1u;
   int rc = TofL8_Configure(&g_cfg);
   if (rc == TOF_STATUS_OK) {
-    log_fmt("VL53L8 ready L=%u Hz=%u IT=%u\r\n",
-            (unsigned)g_cfg.layout, (unsigned)g_cfg.frequency_hz,
-            (unsigned)g_cfg.integration_ms);
+    log_fmt("VL53L8 ready sensors=0x%02X L=%u Hz=%u IT=%u\r\n",
+            (unsigned)TofL8_AvailableMask(), (unsigned)g_cfg.layout,
+            (unsigned)g_cfg.frequency_hz, (unsigned)g_cfg.integration_ms);
   }
-  /* Release the debounce sentinel so the first external Configure call
-   * (e.g. BLE_Tof_EnforceSafetyConfig raising the rate from 10 to 30 Hz on
-   * Drive entry) is not silently dropped within the 500 ms window we just
-   * stamped. See tof_l8_debounce.h for the contract. */
   g_last_configure_tick = 0u;
   return rc;
 }
@@ -329,169 +496,206 @@ int TofL8_EnsureInitialized(void)
   return g_initialized ? TOF_STATUS_OK : TofL8_Init();
 }
 
-static uint8_t config_matches(const Tof_Config_t *a, const Tof_Config_t *b)
-{
-  return a->sensor_type   == b->sensor_type
-      && a->layout        == b->layout
-      && a->profile       == b->profile
-      && a->frequency_hz  == b->frequency_hz
-      && a->integration_ms == b->integration_ms;
-}
-
 int TofL8_Configure(const Tof_Config_t *cfg)
 {
   int rc = TofL8_ValidateConfig(cfg);
   if (rc != TOF_STATUS_OK) return rc;
-  if (g_driver_dead) return TOF_STATUS_DRIVER_DEAD;
   if (!g_initialized) return TOF_STATUS_NO_SENSOR;
 
-  /* Skip if the requested config matches what is already active. */
-  if (g_streaming && config_matches(cfg, &g_cfg)) {
-    return TOF_STATUS_OK;
-  }
+  if (all_streaming_match(cfg)) return TOF_STATUS_OK;
 
-  /* Debounce: reject reconfigure if the last one was < 500ms ago.
-   * Rapid I2C stop/start cycles can corrupt VL53L8CX sensor state. */
   uint32_t now = HAL_GetTick();
   if (TofL8Debounce_ShouldSkip(now, g_last_configure_tick,
                                TOF_L8_RECONFIGURE_DEBOUNCE_MS)) {
-    return TOF_STATUS_OK; /* silently accepted, will apply next time */
+    return TOF_STATUS_OK;
   }
 
-  rc = stop_stream();
-  if (rc != TOF_STATUS_OK) {
-    return rc;
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    (void)stop_stream((TofL8SensorId_t)i, &g_slots[i]);
   }
 
-  /* Small delay after stop to let the sensor settle before reconfigure. */
   HAL_Delay(2);
 
-  uint8_t s = vl53l8cx_set_resolution(&g_dev, resolution_for_layout(cfg->layout));
-  s |= vl53l8cx_set_ranging_mode(&g_dev, VL53L8CX_RANGING_MODE_AUTONOMOUS);
-  s |= vl53l8cx_set_ranging_frequency_hz(&g_dev, cfg->frequency_hz);
-  s |= vl53l8cx_set_integration_time_ms(&g_dev, integration_for_config(cfg));
-  if (s != VL53L8CX_STATUS_OK) {
-    log_fmt("VL53L8 config failed status=%u\r\n", (unsigned)s);
-    return TOF_STATUS_IO;
-  }
-
-  s = vl53l8cx_start_ranging(&g_dev);
-  if (s != VL53L8CX_STATUS_OK) {
-    log_fmt("VL53L8 start failed status=%u\r\n", (unsigned)s);
-    return TOF_STATUS_IO;
-  }
-
-  g_streaming = 1u;
-  g_seq = 0;
   g_cfg = *cfg;
-  g_last_configure_tick = now;
   if (g_cfg.integration_ms < 2u) {
     g_cfg.integration_ms = integration_for_config(&g_cfg);
   }
-  stamp_empty_frame();
-  g_last_frame_log_tick = 0u;
-  g_last_frame_log_seq = 0u;
-  log_fmt("VL53L8 stream start layout=%u zones=%u hz=%u it=%u readBytes=%lu\r\n",
-          (unsigned)g_cfg.layout, (unsigned)g_frame_latest.zone_count,
-          (unsigned)g_cfg.frequency_hz, (unsigned)g_cfg.integration_ms,
-          (unsigned long)g_dev.data_read_size);
+
+  uint8_t ok_count = 0u;
+  int last_error = TOF_STATUS_NO_SENSOR;
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    rc = configure_slot((TofL8SensorId_t)i, &g_slots[i], &g_cfg);
+    if (rc == TOF_STATUS_OK) {
+      ok_count++;
+    } else if (rc != TOF_STATUS_NO_SENSOR) {
+      last_error = rc;
+    }
+  }
+
+  if (ok_count == 0u) return last_error;
+  g_last_configure_tick = now;
   return TOF_STATUS_OK;
 }
 
 void TofL8_Process(void)
 {
-  if (!g_initialized || !g_streaming) return;
+  if (!g_initialized) return;
 
-  uint8_t ready = 0;
-  uint8_t s = vl53l8cx_check_data_ready(&g_dev, &ready);
-  if (s != VL53L8CX_STATUS_OK || ready == 0u) return;
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    TofL8SlotRuntime_t *slot = &g_slots[i];
+    if (!slot->initialized || !slot->streaming || slot->driver_dead) continue;
 
-  memset(&g_results, 0, sizeof(g_results));
-  s = vl53l8cx_get_ranging_data(&g_dev, &g_results);
-  if (s != VL53L8CX_STATUS_OK) return;
+    uint8_t ready = 0;
+    uint8_t s = vl53l8cx_check_data_ready(&slot->dev, &ready);
+    if (s != VL53L8CX_STATUS_OK || ready == 0u) continue;
 
-  g_seq++;
-  g_frame_latest.sensor_type = TOF_SENSOR_VL53L8CX;
-  g_frame_latest.layout = g_cfg.layout;
-  g_frame_latest.zone_count = (uint8_t)(g_cfg.layout * g_cfg.layout);
-  g_frame_latest.profile = g_cfg.profile;
-  g_frame_latest.seq = g_seq;
-  g_frame_latest.tick_ms = HAL_GetTick();
+    memset(&slot->results, 0, sizeof(slot->results));
+    s = vl53l8cx_get_ranging_data(&slot->dev, &slot->results);
+    if (s != VL53L8CX_STATUS_OK) continue;
 
-  uint8_t zones = g_frame_latest.zone_count;
-  if (zones > TOF_MAX_ZONES) zones = TOF_MAX_ZONES;
-  for (uint8_t i = 0; i < zones; ++i) {
-    int16_t d = g_results.distance_mm[i];
-    uint8_t targets = g_results.nb_target_detected[i];
-    g_frame_latest.zones[i].range_mm =
-        (targets == 0u || d < 0) ? 0u : (uint16_t)d;
-    g_frame_latest.zones[i].status = g_results.target_status[i];
-    g_frame_latest.zones[i].flags = targets;
-  }
-  g_has_new_frame = 1;
+    slot->seq++;
+    slot->frame_latest.sensor_type = TOF_SENSOR_VL53L8CX;
+    slot->frame_latest.layout = g_cfg.layout;
+    slot->frame_latest.zone_count = (uint8_t)(g_cfg.layout * g_cfg.layout);
+    slot->frame_latest.profile = g_cfg.profile;
+    slot->frame_latest.seq = slot->seq;
+    slot->frame_latest.tick_ms = HAL_GetTick();
 
-  uint32_t now = g_frame_latest.tick_ms;
-  if (g_seq == 1u ||
-      (now - g_last_frame_log_tick) >= TOF_L8_FRAME_LOG_INTERVAL_MS) {
-    uint8_t layout = g_frame_latest.layout;
-    uint8_t last = (zones > 0u) ? (uint8_t)(zones - 1u) : 0u;
-    uint8_t c0 = (layout > 1u) ? (uint8_t)((layout / 2u) - 1u) : 0u;
-    uint8_t c1 = (layout > 1u) ? (uint8_t)(layout / 2u) : 0u;
-    uint8_t cc00 = (uint8_t)(c0 * layout + c0);
-    uint8_t cc01 = (uint8_t)(c0 * layout + c1);
-    uint8_t cc10 = (uint8_t)(c1 * layout + c0);
-    uint8_t cc11 = (uint8_t)(c1 * layout + c1);
-    uint8_t target_zones = 0u;
-    uint16_t min_mm = UINT16_MAX;
-    uint16_t max_mm = 0u;
-    for (uint8_t i = 0u; i < zones; ++i) {
-      uint16_t range_mm = g_frame_latest.zones[i].range_mm;
-      if (g_frame_latest.zones[i].flags > 0u && range_mm > 0u &&
-          TofL8_StatusIsRangeValid(g_frame_latest.zones[i].status)) {
-        target_zones++;
-        if (range_mm < min_mm) min_mm = range_mm;
-        if (range_mm > max_mm) max_mm = range_mm;
+    uint8_t zones = slot->frame_latest.zone_count;
+    if (zones > TOF_MAX_ZONES) zones = TOF_MAX_ZONES;
+    for (uint8_t z = 0; z < zones; ++z) {
+      int16_t d = slot->results.distance_mm[z];
+      uint8_t targets = slot->results.nb_target_detected[z];
+      slot->frame_latest.zones[z].range_mm =
+          (targets == 0u || d < 0) ? 0u : (uint16_t)d;
+      slot->frame_latest.zones[z].status = slot->results.target_status[z];
+      slot->frame_latest.zones[z].flags = targets;
+    }
+    slot->has_new_frame = 1;
+
+    uint32_t frame_tick = slot->frame_latest.tick_ms;
+    if (slot->seq == 1u ||
+        (frame_tick - slot->last_frame_log_tick) >=
+            TOF_L8_FRAME_LOG_INTERVAL_MS) {
+      uint8_t layout = slot->frame_latest.layout;
+      uint8_t last = (zones > 0u) ? (uint8_t)(zones - 1u) : 0u;
+      uint8_t c0 = (layout > 1u) ? (uint8_t)((layout / 2u) - 1u) : 0u;
+      uint8_t c1 = (layout > 1u) ? (uint8_t)(layout / 2u) : 0u;
+      uint8_t cc00 = (uint8_t)(c0 * layout + c0);
+      uint8_t cc01 = (uint8_t)(c0 * layout + c1);
+      uint8_t cc10 = (uint8_t)(c1 * layout + c0);
+      uint8_t cc11 = (uint8_t)(c1 * layout + c1);
+      uint8_t target_zones = 0u;
+      uint16_t min_mm = UINT16_MAX;
+      uint16_t max_mm = 0u;
+      for (uint8_t z = 0u; z < zones; ++z) {
+        uint16_t range_mm = slot->frame_latest.zones[z].range_mm;
+        if (slot->frame_latest.zones[z].flags > 0u && range_mm > 0u &&
+            TofL8_StatusIsRangeValid(slot->frame_latest.zones[z].status)) {
+          target_zones++;
+          if (range_mm < min_mm) min_mm = range_mm;
+          if (range_mm > max_mm) max_mm = range_mm;
+        }
       }
+      if (target_zones == 0u) min_mm = 0u;
+      uint32_t frame_delta = (slot->last_frame_log_seq == 0u)
+                                 ? slot->seq
+                                 : (slot->seq - slot->last_frame_log_seq);
+      slot->last_frame_log_tick = frame_tick;
+      slot->last_frame_log_seq = slot->seq;
+      log_fmt("VL53L8 %s frame layout=%u zones=%u seq=%lu fps=%lu "
+              "targetZones=%u min=%u max=%u z0=%u/%u/%u zLast=%u/%u/%u "
+              "center=%u,%u,%u,%u cst=%u,%u,%u,%u cn=%u,%u,%u,%u\r\n",
+              sensor_name((TofL8SensorId_t)i), (unsigned)layout,
+              (unsigned)zones, (unsigned long)slot->seq,
+              (unsigned long)frame_delta, (unsigned)target_zones,
+              (unsigned)min_mm, (unsigned)max_mm,
+              (unsigned)logged_range_at(slot, 0u),
+              (unsigned)logged_status_at(slot, 0u),
+              (unsigned)logged_flags_at(slot, 0u),
+              (unsigned)logged_range_at(slot, last),
+              (unsigned)logged_status_at(slot, last),
+              (unsigned)logged_flags_at(slot, last),
+              (unsigned)logged_range_at(slot, cc00),
+              (unsigned)logged_range_at(slot, cc01),
+              (unsigned)logged_range_at(slot, cc10),
+              (unsigned)logged_range_at(slot, cc11),
+              (unsigned)logged_status_at(slot, cc00),
+              (unsigned)logged_status_at(slot, cc01),
+              (unsigned)logged_status_at(slot, cc10),
+              (unsigned)logged_status_at(slot, cc11),
+              (unsigned)logged_flags_at(slot, cc00),
+              (unsigned)logged_flags_at(slot, cc01),
+              (unsigned)logged_flags_at(slot, cc10),
+              (unsigned)logged_flags_at(slot, cc11));
+      log_4x4_grid((TofL8SensorId_t)i, slot);
     }
-    if (target_zones == 0u) {
-      min_mm = 0u;
-    }
-    uint32_t frame_delta = (g_last_frame_log_seq == 0u)
-                               ? g_seq
-                               : (g_seq - g_last_frame_log_seq);
-    g_last_frame_log_tick = now;
-    g_last_frame_log_seq = g_seq;
-    log_fmt("VL53L8 frame layout=%u zones=%u seq=%lu fps=%lu targetZones=%u "
-            "min=%u max=%u z0=%u/%u/%u zLast=%u/%u/%u "
-            "center=%u,%u,%u,%u cst=%u,%u,%u,%u cn=%u,%u,%u,%u\r\n",
-            (unsigned)layout, (unsigned)zones, (unsigned long)g_seq,
-            (unsigned long)frame_delta, (unsigned)target_zones,
-            (unsigned)min_mm, (unsigned)max_mm,
-            (unsigned)logged_range_at(0u),
-            (unsigned)logged_status_at(0u),
-            (unsigned)logged_flags_at(0u),
-            (unsigned)logged_range_at(last),
-            (unsigned)logged_status_at(last),
-            (unsigned)logged_flags_at(last),
-            (unsigned)logged_range_at(cc00), (unsigned)logged_range_at(cc01),
-            (unsigned)logged_range_at(cc10), (unsigned)logged_range_at(cc11),
-            (unsigned)logged_status_at(cc00), (unsigned)logged_status_at(cc01),
-            (unsigned)logged_status_at(cc10), (unsigned)logged_status_at(cc11),
-            (unsigned)logged_flags_at(cc00), (unsigned)logged_flags_at(cc01),
-            (unsigned)logged_flags_at(cc10), (unsigned)logged_flags_at(cc11));
-    log_4x4_grid();
   }
 }
 
 const Tof_Frame_t *TofL8_GetLatestFrame(void)
 {
-  return &g_frame_latest;
+  TofL8SlotRuntime_t *slot = default_slot();
+  return slot ? &slot->frame_latest : 0;
 }
 
-int TofL8_HasNewFrame(void) { return g_has_new_frame; }
+int TofL8_HasNewFrame(void)
+{
+  TofL8SlotRuntime_t *slot = default_slot();
+  return slot ? slot->has_new_frame : 0;
+}
 
-void TofL8_ClearNewFrame(void) { g_has_new_frame = 0; }
+void TofL8_ClearNewFrame(void)
+{
+  TofL8SlotRuntime_t *slot = default_slot();
+  if (slot) slot->has_new_frame = 0;
+}
 
 int TofL8_IsInitialized(void) { return (int)g_initialized; }
 
-int TofL8_IsDriverDead(void) { return (int)g_driver_dead; }
+int TofL8_IsDriverDead(void)
+{
+  TofL8SlotRuntime_t *slot = default_slot();
+  return slot ? (int)slot->driver_dead : 0;
+}
+
+const Tof_Frame_t *TofL8_GetLatestFrameForSensor(TofL8SensorId_t sensor_id)
+{
+  TofL8SlotRuntime_t *slot = slot_for(sensor_id);
+  return slot ? &slot->frame_latest : 0;
+}
+
+int TofL8_HasNewFrameForSensor(TofL8SensorId_t sensor_id)
+{
+  TofL8SlotRuntime_t *slot = slot_for(sensor_id);
+  return slot ? slot->has_new_frame : 0;
+}
+
+void TofL8_ClearNewFrameForSensor(TofL8SensorId_t sensor_id)
+{
+  TofL8SlotRuntime_t *slot = slot_for(sensor_id);
+  if (slot) slot->has_new_frame = 0;
+}
+
+int TofL8_IsSensorAvailable(TofL8SensorId_t sensor_id)
+{
+  TofL8SlotRuntime_t *slot = slot_for(sensor_id);
+  return slot && slot->initialized && slot->streaming && !slot->driver_dead;
+}
+
+int TofL8_IsDriverDeadForSensor(TofL8SensorId_t sensor_id)
+{
+  TofL8SlotRuntime_t *slot = slot_for(sensor_id);
+  return slot ? (int)slot->driver_dead : 0;
+}
+
+uint8_t TofL8_AvailableMask(void)
+{
+  uint8_t mask = 0u;
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    if (TofL8_IsSensorAvailable((TofL8SensorId_t)i)) {
+      mask |= (uint8_t)(1u << i);
+    }
+  }
+  return mask;
+}

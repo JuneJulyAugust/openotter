@@ -65,6 +65,19 @@ static void test_uses_min_of_row3_center_zones(void) {
   expect_near("min depth", r.depth_m, 0.7f, 1e-6f);
 }
 
+static void test_front_reader_matches_rear_center_selection(void) {
+  Tof_Frame_t f = make_l8_4x4();
+  f.zones[9].range_mm = 900u;
+  f.zones[9].status = 5u;
+  f.zones[10].range_mm = 650u;
+  f.zones[10].status = 9u;
+
+  RevSafetyTofReading_t r = RevSafetyL8_SelectFrontReading(&f);
+
+  expect_class("front min class", r.tof_class, REV_SAFETY_TOF_VALID);
+  expect_near("front min depth", r.depth_m, 0.65f, 1e-6f);
+}
+
 static void test_status_validity_set_is_l8_specific(void) {
   for (uint8_t status = 0u; status < 16u; ++status) {
     int want = status == 5u || status == 6u ||
@@ -244,6 +257,7 @@ static void test_l8_far_status2_with_near_invalid_other_is_partial(void) {
 int main(void) {
   test_status_validity_set_is_l8_specific();
   test_uses_min_of_row3_center_zones();
+  test_front_reader_matches_rear_center_selection();
   test_uses_single_valid_selected_zone();
   test_rejects_invalid_selected_zones();
   test_rejects_non_4x4_l8_frame();

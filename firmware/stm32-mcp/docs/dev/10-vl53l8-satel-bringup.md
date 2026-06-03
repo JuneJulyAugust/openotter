@@ -1,8 +1,8 @@
 # 10 - SATEL-VL53L8 Firmware Bring-Up
 
 This deployment uses SATEL-VL53L8 on the B-L475E-IOT01A1. The firmware probes
-one rear sensor over I2C3 first, then SPI1, and keeps whichever transport
-answers at boot.
+the rear slot over I2C3 first, then rear SPI1/D8, then the optional front
+SPI1/D10 slot. It enables whichever sensor slots answer at boot.
 
 Power off before changing `EXT_SPI_I2C_N` or any signal wire. Hot-swap is not
 supported. VL53L0X, VL53L1CB, and VL53L5CX are deprecated for this deployment
@@ -271,36 +271,46 @@ The active firmware path is:
 ```text
 I2C3 on A5/A4 or SPI1 on D13/D12/D11
   -> boot-time transport probe
-  -> VL53L8CX Ultra Lite Driver
-  -> Tof_Frame_t 4x4/8x8 frame
-  -> reverse safety selector using 4x4 row-3 center zones
+  -> rear/front VL53L8CX Ultra Lite Driver slots
+  -> Tof_Frame_t 4x4/8x8 frame per available slot
+  -> direction-specific safety selector using 4x4 row-3 center zones
   -> BLE ToF diagnostic stream
 ```
 
 Expected I2C boot:
 
 ```text
-VL53L8 probe transport=i2c3 pre_stop=0 alive_rd=0 alive=1
-VL53L8 probe transport=spi1 ... alive=0
-VL53L8 selected transport=i2c3
-VL53L8 init phase=fw_done
-VL53L8 stream start layout=4 zones=16 hz=30
-VL53L8 frame layout=4 zones=16
+VL53L8 rear probe transport=i2c3 pre_stop=0 alive_rd=0 alive=1
+VL53L8 rear probe transport=spi1 ... alive=0
+VL53L8 rear selected transport=i2c3
+VL53L8 rear init phase=fw_done
+VL53L8 rear stream start layout=4 zones=16 hz=30
+VL53L8 rear frame layout=4 zones=16
 ```
 
 Expected SPI boot:
 
 ```text
-VL53L8 probe transport=i2c3 ... alive=0
-VL53L8 probe transport=spi1 pre_stop=0 alive_rd=0 alive=1
-VL53L8 selected transport=spi1
-VL53L8 init phase=fw_done
-VL53L8 stream start layout=4 zones=16 hz=30
-VL53L8 frame layout=4 zones=16
+VL53L8 rear probe transport=i2c3 ... alive=0
+VL53L8 rear probe transport=spi1 pre_stop=0 alive_rd=0 alive=1
+VL53L8 rear selected transport=spi1
+VL53L8 rear init phase=fw_done
+VL53L8 rear stream start layout=4 zones=16 hz=30
+VL53L8 rear frame layout=4 zones=16
 ```
 
 `fps` is the number of frames received since the previous one-second frame log.
 For the 4x4 safety configuration, expect roughly 29 to 31 fps.
+
+Safety adapts to the available slots:
+
+- Rear available only: reverse throttle can be clamped by rear ToF; forward
+  throttle is not ToF-clamped.
+- Front available only: forward throttle can be clamped by front ToF; reverse
+  throttle is not ToF-clamped.
+- Both available: reverse uses rear and forward uses front independently.
+- No available VL53L8 slot: Drive throttle stays gated by the ToF safety-config
+  readiness policy.
 
 ## Build, Flash, And Serial Logs
 
@@ -343,9 +353,10 @@ With only the IOT01A1 powered, the firmware should boot and retry the sensor
 path. You should see both transports probe as not alive:
 
 ```text
-VL53L8 probe transport=i2c3 pre_stop=... alive_rd=... alive=0
-VL53L8 probe transport=spi1 pre_stop=... alive_rd=... alive=0
-VL53L8 probe: no sensor i2c_rd=... i2c_alive=0 spi_rd=... spi_alive=0
+VL53L8 rear probe transport=i2c3 pre_stop=... alive_rd=... alive=0
+VL53L8 rear probe transport=spi1 pre_stop=... alive_rd=... alive=0
+VL53L8 front probe transport=spi1 pre_stop=... alive_rd=... alive=0
+VL53L8 init: no usable sensors ...
 ```
 
 That proves the firmware is alive, the lazy VL53L8 bring-up path is running,
@@ -376,10 +387,12 @@ If serial shows `layout=8 zones=64` but iOS does not render the grid, debug the
 BLE frame reassembly path next. If serial never reaches `layout=8 zones=64`,
 debug the firmware config write or sensor transport path first.
 
-## Two-Sensor Plan
+## Two-Sensor Runtime
 
-Two sensors are not active in runtime firmware yet. The topology and tests are
-ready for the preferred SPI design.
+The runtime supports either one or two available VL53L8 slots at boot. The
+current bench hardware verifies one rear I2C sensor. The front SPI slot is wired
+and probed in firmware, but it still needs physical bench verification after the
+second SATEL board is installed.
 
 The HAL-free topology contract lives in `Core/Src/tof_l8_topology.c` and is
 covered by `tests/host/test_tof_l8_topology.c`. The core invariants are:
@@ -443,6 +456,17 @@ select and reset line.
 Invariant: only one `NCS` may be low at a time. That prevents both sensors from
 driving MISO at once.
 
+Expected two-sensor SPI logs:
+
+```text
+VL53L8 rear selected transport=spi1
+VL53L8 front selected transport=spi1
+VL53L8 rear stream start layout=4 zones=16 hz=30
+VL53L8 front stream start layout=4 zones=16 hz=30
+VL53L8 rear frame layout=4 zones=16 ...
+VL53L8 front frame layout=4 zones=16 ...
+```
+
 ### Fallback Separate-I2C Wiring
 
 If SPI bring-up fails, the fallback is rear on I2C3 and front on I2C1:
@@ -475,7 +499,8 @@ Shared-I2C boot sequence:
 6. Initialize the second sensor at default `0x52`, or move it to another unique
    address such as `0x56`.
 
-This shared-I2C address sequencing is not implemented yet.
+This shared-I2C address sequencing is not implemented yet. The implemented
+two-sensor path is shared SPI1 with separate chip selects and separate `LPn`.
 
 ## Bench Evidence
 
@@ -489,6 +514,15 @@ VL53L8 init phase=fw_done
 VL53L8 stream start layout=4 zones=16 hz=30 it=20 readBytes=128
 VL53L8 frame layout=4 zones=16 seq=32 fps=31 targetZones=15
 center=399,387,407,388 cst=5,5,5,5
+```
+
+The adaptive rear/front-slot firmware was flashed and verified on 2026-06-03
+with the same one rear I2C sensor connected:
+
+```text
+VL53L8 rear frame layout=4 zones=16 seq=807 fps=31 targetZones=14
+center=362,326,382,377 cst=5,4,5,5
+VL53L8 rear grid r/s/f: 385/5/1 326/4/1 2298/5/1 ...
 ```
 
 Earlier 2026-06-02 evidence also proved live 4x4 safety frames and a temporary

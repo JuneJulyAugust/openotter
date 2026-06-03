@@ -31,6 +31,7 @@
 #include "rev_safety.h"
 #include "rev_safety_l8.h"
 #include "rev_safety_tof.h"
+#include "drive_safety.h"
 #include "tof_l8.h"
 #include "ble_tof.h"
 #include "ble_command.h"
@@ -118,10 +119,11 @@ static void BLE_AdvTask(void);
 /* Max-aligned backing storage for the opaque RevSafetyCtx. Size is set by
  * REV_SAFETY_CTX_STORAGE_BYTES in rev_safety.h and re-checked at compile
  * time inside rev_safety.c (_Static_assert against the true struct size). */
-static _Alignas(double) uint8_t s_rev_safety_storage[REV_SAFETY_CTX_STORAGE_BYTES];
-static RevSafetyCtx *s_rev_ctx = (RevSafetyCtx *)s_rev_safety_storage;
-static uint32_t s_last_tof_seq   = 0;
-static uint32_t s_last_event_seq = 0;
+static _Alignas(double) uint8_t
+    s_safety_storage[TOF_L8_SENSOR_COUNT][REV_SAFETY_CTX_STORAGE_BYTES];
+static uint32_t s_last_tof_seq[TOF_L8_SENSOR_COUNT];
+static uint32_t s_last_event_seq[TOF_L8_SENSOR_COUNT];
+static uint32_t s_safety_payload_seq = 0;
 /*============================================================================*/
 /*  PUBLIC API                                                                */
 /*============================================================================*/
@@ -139,7 +141,11 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
 
   RevSafetyConfig_t rscfg;
   RevSafety_GetDefaultConfig(&rscfg);
-  RevSafety_Init(s_rev_ctx, &rscfg);
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    RevSafety_Init((RevSafetyCtx *)s_safety_storage[i], &rscfg);
+    s_last_tof_seq[i] = 0u;
+    s_last_event_seq[i] = 0u;
+  }
 
   BLE_InitLPM();
   BLE_InitRTC();
@@ -157,9 +163,26 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   return 0;
 }
 
+static RevSafetyCtx *safety_ctx(TofL8SensorId_t sensor_id) {
+  if ((uint8_t)sensor_id >= (uint8_t)TOF_L8_SENSOR_COUNT) return 0;
+  return (RevSafetyCtx *)s_safety_storage[(uint8_t)sensor_id];
+}
+
+static DriveSafetyDirection_t safety_direction(TofL8SensorId_t sensor_id) {
+  return (sensor_id == TOF_L8_SENSOR_FRONT)
+             ? DRIVE_SAFETY_DIRECTION_FRONT
+             : DRIVE_SAFETY_DIRECTION_REAR;
+}
+
+static void disarm_all_safety(void) {
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    RevSafety_Disarm(safety_ctx((TofL8SensorId_t)i));
+  }
+}
+
 static void publish_safety_event(const RevSafetyEvent_t *ev) {
   BLE_SafetyEventPayload_t p = {0};
-  p.seq                   = ev->seq;
+  p.seq                   = ++s_safety_payload_seq;
   p.timestamp_ms          = ev->trigger_timestamp_ms;
   p.state                 = (uint8_t)ev->state;
   p.cause                 = (uint8_t)ev->cause;
@@ -173,9 +196,73 @@ static void publish_safety_event(const RevSafetyEvent_t *ev) {
 
 static void publish_safe_safety_snapshot(void) {
   BLE_SafetyEventPayload_t p = {0};
-  p.seq = s_last_event_seq;
+  p.seq = s_safety_payload_seq;
   aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
                              0, sizeof(p), (uint8_t *)&p);
+}
+
+static RevSafetyTofReading_t select_l8_reading(TofL8SensorId_t sensor_id,
+                                               const Tof_Frame_t *frame) {
+  return (sensor_id == TOF_L8_SENSOR_FRONT)
+             ? RevSafetyL8_SelectFrontReading(frame)
+             : RevSafetyL8_SelectReverseReading(frame);
+}
+
+static void tick_direction_safety(TofL8SensorId_t sensor_id,
+                                  bool drive_safety_ready,
+                                  uint32_t now,
+                                  RevSafetyEvent_t *physical_event) {
+  if (!physical_event) return;
+  memset(physical_event, 0, sizeof(*physical_event));
+
+  RevSafetyCtx *ctx = safety_ctx(sensor_id);
+  int driver_dead = TofL8_IsDriverDeadForSensor(sensor_id) ? 1 : 0;
+  if (!TofL8_IsSensorAvailable(sensor_id) && !driver_dead) {
+    RevSafety_Disarm(ctx);
+    return;
+  }
+
+  const Tof_Frame_t *f = TofL8_GetLatestFrameForSensor(sensor_id);
+  bool new_frame = (f && f->seq != s_last_tof_seq[(uint8_t)sensor_id]);
+  if (f) s_last_tof_seq[(uint8_t)sensor_id] = f->seq;
+
+  RevSafetyInput_t physical = {0};
+  physical.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
+  physical.throttle_us = drive_safety_ready
+      ? bleCtx.desiredThrottleUs
+      : (int16_t)PWM_NEUTRAL_US;
+  physical.frame_is_new = new_frame;
+  if (f) {
+    RevSafetyTofReading_t reading = select_l8_reading(sensor_id, f);
+    physical.zone_valid =
+        (reading.tof_class == REV_SAFETY_TOF_VALID ||
+         reading.tof_class == REV_SAFETY_TOF_CLEAR);
+    physical.frame_is_partial =
+        (reading.tof_class == REV_SAFETY_TOF_PARTIAL);
+    physical.raw_depth_m = reading.depth_m;
+  }
+  physical.driver_dead = driver_dead ? true : false;
+  physical.now_ms = now;
+
+  RevSafetyInput_t projected = {0};
+  RevSafetyEvent_t projected_event = {0};
+  DriveSafety_ProjectInput(safety_direction(sensor_id), PWM_NEUTRAL_US,
+                           &physical, &projected);
+  RevSafety_Tick(ctx, &projected, &projected_event);
+  DriveSafety_ProjectEvent(safety_direction(sensor_id), &projected_event,
+                           physical_event);
+}
+
+static void publish_direction_events(const RevSafetyEvent_t events[TOF_L8_SENSOR_COUNT]) {
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    const RevSafetyEvent_t *ev = &events[i];
+    if (ev->transition && ev->seq != s_last_event_seq[i]) {
+      publish_safety_event(ev);
+      s_last_event_seq[i] = ev->seq;
+    } else if (ev->notify_refresh) {
+      publish_safety_event(ev);
+    }
+  }
 }
 
 void BLE_App_Process(void) {
@@ -189,29 +276,14 @@ void BLE_App_Process(void) {
   /* 1. Run the reverse supervisor (Drive mode only). In Debug mode the
    *    supervisor is explicitly disarmed on the mode-edge in the event
    *    handler, not every tick. */
-  RevSafetyEvent_t ev = {0};
+  RevSafetyEvent_t events[TOF_L8_SENSOR_COUNT];
+  memset(events, 0, sizeof(events));
   bool drive_safety_ready = BLE_Tof_SafetyConfigReady() ? true : false;
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-    const Tof_Frame_t *f = TofL8_GetLatestFrame();
-    bool new_frame = (f && f->seq != s_last_tof_seq);
-    s_last_tof_seq = f ? f->seq : s_last_tof_seq;
-
-    RevSafetyInput_t in = {0};
-    in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
-    in.throttle_us  = drive_safety_ready
-        ? bleCtx.desiredThrottleUs
-        : (int16_t)PWM_NEUTRAL_US;
-    in.frame_is_new = new_frame;
-    if (f) {
-      RevSafetyTofReading_t reading = RevSafetyL8_SelectReverseReading(f);
-      in.zone_valid       = (reading.tof_class == REV_SAFETY_TOF_VALID ||
-                             reading.tof_class == REV_SAFETY_TOF_CLEAR);
-      in.frame_is_partial = (reading.tof_class == REV_SAFETY_TOF_PARTIAL);
-      in.raw_depth_m      = reading.depth_m;
-    }
-    in.driver_dead = TofL8_IsDriverDead() ? true : false;
-    in.now_ms      = now;
-    RevSafety_Tick(s_rev_ctx, &in, &ev);
+    tick_direction_safety(TOF_L8_SENSOR_REAR, drive_safety_ready, now,
+                          &events[TOF_L8_SENSOR_REAR]);
+    tick_direction_safety(TOF_L8_SENSOR_FRONT, drive_safety_ready, now,
+                          &events[TOF_L8_SENSOR_FRONT]);
   }
 
   /* 2. Compute final throttle (arbitration per spec §3.5). */
@@ -229,10 +301,15 @@ void BLE_App_Process(void) {
              !BLE_DrivePolicy_ThrottleAllowed((uint8_t)bleCtx.mode,
                                               drive_safety_ready)) {
     throttle_us = neutral;
-  } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE &&
-             RevSafety_IsBraking(s_rev_ctx)) {
-    /* Per-direction clamp: block reverse, let forward through. */
-    if (throttle_us < neutral) throttle_us = neutral;
+  } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
+    for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+      TofL8SensorId_t sensor_id = (TofL8SensorId_t)i;
+      if (RevSafety_IsBraking(safety_ctx(sensor_id)) &&
+          DriveSafety_ThrottleBlocked(safety_direction(sensor_id),
+                                      throttle_us, PWM_NEUTRAL_US)) {
+        throttle_us = neutral;
+      }
+    }
   }
 
   if (watchdog_trip) {
@@ -243,12 +320,7 @@ void BLE_App_Process(void) {
   BLE_ApplyPWM(steering_us, throttle_us);
 
   /* 3. Publish safety notifications. */
-  if (ev.transition && ev.seq != s_last_event_seq) {
-    publish_safety_event(&ev);
-    s_last_event_seq = ev.seq;
-  } else if (ev.notify_refresh) {
-    publish_safety_event(&ev);
-  }
+  publish_direction_events(events);
 }
 
 uint32_t BLE_App_GetLastCommandTime(void) { return bleCtx.lastCommandTick; }
@@ -467,13 +539,13 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
                  * latch from the prior Drive session before the supervisor
                  * starts ticking again. */
                 BLE_Tof_RequestSafetyConfig();
-                RevSafety_Disarm(s_rev_ctx);
+                disarm_all_safety();
                 publish_safe_safety_snapshot();
               } else {
                 /* Drive→(Debug|Park): supervisor is suppressed in both
                  * modes, so disarm once on the edge and broadcast a SAFE
                  * snapshot so the iOS overlay drops immediately. */
-                RevSafety_Disarm(s_rev_ctx);
+                disarm_all_safety();
                 publish_safe_safety_snapshot();
               }
             }
@@ -515,7 +587,7 @@ void SVCCTL_App_Notification(void *pckt) {
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
     BLE_Tof_RequestSafetyConfig();
-    RevSafety_Disarm(s_rev_ctx);
+    disarm_all_safety();
     publish_safe_safety_snapshot();
     uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
     aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,

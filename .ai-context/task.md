@@ -63,12 +63,13 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Migrate the active STM32 ToF firmware path to VL53L8CX.
 - [x] Verify one SATEL-VL53L8 streams valid 4x4 frames on IOT01A1 over I2C3.
 - [x] Add boot-time I2C3/SPI1 transport probing for the first SATEL-VL53L8.
+- [x] Add adaptive rear/front VL53L8 runtime slots and direction-specific firmware safety clamps.
 - [x] Deploy iOS diagnostics from the feature worktree and render live VL53L8 ToF data.
 - [x] Document and test the future two-sensor topology as shared SPI1 with dedicated `NCS`, `LPn`, and `GPIO1` lines.
 - [x] Add host-test coverage for VL53L8 config, transport, frame codec, BLE ToF policy, and two-sensor topology; HAL-free host line coverage reached 99.3%.
 - [ ] Run vehicle-level autonomous validation with rear VL53L8 health visible in Self Driving.
 - [ ] After validation, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
-- [ ] Future: add second SATEL-VL53L8 runtime support on shared SPI1 with front/rear safety selection.
+- [ ] Physically verify the second front SATEL-VL53L8 on shared SPI1 with D10 `NCS`, A0 `LPn`, and A3 `GPIO1`.
 
 ### 1.4 Legacy Raspberry Pi WiFi bridge
 

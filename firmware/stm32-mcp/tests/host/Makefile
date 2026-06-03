@@ -8,7 +8,7 @@ INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 COVERAGE_CFLAGS = -std=c11 -Wall -Wextra -Werror -O0 -g --coverage
 
-TESTS = test_rev_safety test_rev_safety_tof test_rev_safety_l8 test_tof_frame_codec test_tof_l8_config test_tof_l8_topology test_tof_l8_transport test_ble_tof_policy test_ble_drive_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l8_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
+TESTS = test_rev_safety test_rev_safety_tof test_rev_safety_l8 test_drive_safety test_tof_frame_codec test_tof_l8_config test_tof_l8_topology test_tof_l8_transport test_ble_tof_policy test_ble_drive_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l8_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test coverage clean dirs
@@ -29,6 +29,9 @@ $(BUILD_DIR)/test_rev_safety_tof: test_rev_safety_tof.c ../../Core/Src/rev_safet
 
 $(BUILD_DIR)/test_rev_safety_l8: test_rev_safety_l8.c ../../Core/Src/rev_safety_l8.c ../../Core/Src/rev_safety_tof.c ../../Core/Src/tof_l8_status.c ../../Core/Inc/rev_safety_l8.h ../../Core/Inc/rev_safety_tof.h ../../Core/Inc/tof_l8_status.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_rev_safety_l8.c ../../Core/Src/rev_safety_l8.c ../../Core/Src/rev_safety_tof.c ../../Core/Src/tof_l8_status.c -o $@
+
+$(BUILD_DIR)/test_drive_safety: test_drive_safety.c ../../Core/Src/drive_safety.c ../../Core/Inc/drive_safety.h ../../Core/Inc/rev_safety.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_drive_safety.c ../../Core/Src/drive_safety.c -o $@ -lm
 
 $(BUILD_DIR)/test_tof_frame_codec: test_tof_frame_codec.c ../../Core/Src/tof_frame_codec.c ../../Core/Inc/tof_frame_codec.h ../../Core/Inc/tof_types.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_tof_frame_codec.c ../../Core/Src/tof_frame_codec.c -o $@

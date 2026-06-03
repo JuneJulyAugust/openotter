@@ -14,6 +14,7 @@ extern "C" {
 #define REV_SAFETY_L8_ZONE_ROW3_COL3 10u
 
 RevSafetyTofReading_t RevSafetyL8_SelectReverseReading(const Tof_Frame_t *frame);
+RevSafetyTofReading_t RevSafetyL8_SelectFrontReading(const Tof_Frame_t *frame);
 
 #ifdef __cplusplus
 }

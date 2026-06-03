@@ -76,3 +76,7 @@ RevSafetyTofReading_t RevSafetyL8_SelectReverseReading(const Tof_Frame_t *frame)
   }
   return out;
 }
+
+RevSafetyTofReading_t RevSafetyL8_SelectFrontReading(const Tof_Frame_t *frame) {
+  return RevSafetyL8_SelectReverseReading(frame);
+}
