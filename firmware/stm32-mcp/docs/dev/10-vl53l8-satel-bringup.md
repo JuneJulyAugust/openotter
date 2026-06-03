@@ -21,6 +21,9 @@ The connected IOT01A1 and one SATEL board were verified in I2C mode on
 2026-06-03. The boot log showed `i2c3` alive, `spi1` not alive, and stable
 4x4 frames at about 31 fps.
 
+For cable harness, snap-off mini-PCB, enclosure, and car-mounting guidance, see
+`12-vl53l8-mechanical-integration.md`.
+
 ## Release Gate And Next Validation Order
 
 Do not merge or tag the v1.2.0 release candidate just because host tests and
