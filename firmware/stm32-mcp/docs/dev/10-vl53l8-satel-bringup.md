@@ -21,6 +21,30 @@ The connected IOT01A1 and one SATEL board were verified in I2C mode on
 2026-06-03. The boot log showed `i2c3` alive, `spi1` not alive, and stable
 4x4 frames at about 31 fps.
 
+## Release Gate And Next Validation Order
+
+Do not merge or tag the v1.2.0 release candidate just because host tests and
+firmware builds pass. The hardware release gate is:
+
+1. PR CI green for firmware host tests, firmware target build, and iOS tests.
+2. One rear SATEL-VL53L8 re-verified after power cycle and firmware flash.
+3. One-sensor safety supervisor bench-tested with the robot immobilized.
+4. Release scope decision:
+   - ship v1.2.0 as "one rear SATEL verified, two-sensor code ready"; or
+   - wait for physical two-sensor SPI verification before v1.2.0.
+5. Autonomous-mode work only after the firmware safety path is proven on
+   hardware.
+
+For the one-sensor safety bench test, the expected behavior is:
+
+- reverse throttle can be clamped or braked by the rear SATEL when an obstacle
+  violates the speed/distance rule;
+- forward throttle is not clamped by a rear-only SATEL setup;
+- selecting `Front` in iOS Debug while only rear is connected shows front as not
+  online and clears the stale rear depth map;
+- unplugged or unpowered SATEL produces visible UART probe failures and FE63
+  error status instead of silently allowing Drive safety readiness.
+
 ## Single-Sensor Wiring
 
 ### Shared Power And Control

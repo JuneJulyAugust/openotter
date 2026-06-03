@@ -86,6 +86,26 @@ Every filtered module except `firmware_panic.c` reached 100% line coverage. The
 remaining uncovered lines are the `HOST_TEST` `Firmware_Panic()` stub, which
 spins forever by design and is not called from host tests.
 
+## Release Gate
+
+The release candidate is not ready to merge or tag until these gates pass in
+order:
+
+1. PR CI is green for firmware host tests, firmware target build, and iOS
+   simulator tests.
+2. One rear SATEL-VL53L8 is re-verified on hardware after a board power cycle
+   and a flash of the current feature firmware.
+3. One-sensor firmware safety is bench-tested with the robot immobilized.
+4. The v1.2.0 release scope is explicitly chosen:
+   - one rear SATEL verified, two-sensor code ready; or
+   - wait for physical two-sensor SPI verification.
+5. Vehicle-level autonomous validation runs only after the firmware safety path
+   is proven on hardware.
+
+The second SATEL wiring is already documented and covered by host topology
+tests, but it remains code-ready rather than release-proven until physical SPI
+verification is complete.
+
 ## One-Sensor End-To-End Test
 
 The one-sensor release candidate must pass this bench flow before merging:
@@ -135,8 +155,12 @@ The one-sensor release candidate must pass this bench flow before merging:
    report running state with `last_error=0`, and the safety config should return
    to 4x4 30 Hz.
 11. With the robot safely immobilized, test reverse safety against a near
-    obstacle and then clear the obstacle. The firmware should brake only when
-    the speed/distance rule requires it.
+    obstacle and then clear the obstacle. Reverse throttle should clamp or brake
+    only when the speed/distance rule requires it.
+12. Command forward throttle while only the rear sensor is online. The rear-only
+    ToF setup should not clamp forward throttle.
+13. Unplug or depower the SATEL and confirm UART shows probe failures and FE63
+    reports an error state before Drive safety is considered ready.
 
 ## Failure Injection Checks
 
