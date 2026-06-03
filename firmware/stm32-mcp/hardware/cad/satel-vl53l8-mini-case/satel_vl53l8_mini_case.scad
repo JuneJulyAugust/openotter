@@ -44,6 +44,17 @@ cable_slot_z = 3.0;
 strain_bar_w = 14.0;
 strain_bar_h = 2.4;
 
+// Board retention and solder-pad protection. The tiny PCB is held by side
+// rails plus lid pads; the soldered 30 AWG pigtails get a separate tie path.
+edge_rail_w = 0.7;
+edge_rail_h = 1.0;
+edge_stop_h = 1.0;
+retainer_pad_w = 3.0;
+retainer_pad_l = 4.5;
+retainer_pad_h = 0.8;
+tie_slot_w = 1.8;
+tie_slot_l = 6.5;
+
 // Optional M2 screw ears.
 ear_w = 6.0;
 ear_h = 14.0;
@@ -115,6 +126,14 @@ module screw_head_relief() {
   }
 }
 
+module harness_tie_slots() {
+  for (x = [-strain_bar_w / 2 - 1.8, strain_bar_w / 2 + 1.8]) {
+    translate([x, outer_h / 2 - wall_t - 4.0, -0.2]) {
+      cube([tie_slot_w, tie_slot_l, floor_t + 0.6], center = true);
+    }
+  }
+}
+
 module base() {
   difference() {
     union() {
@@ -131,6 +150,7 @@ module base() {
     board_cavity();
     cable_cavity();
     cable_exit_slot();
+    harness_tie_slots();
     screw_holes(1);
     screw_head_relief();
   }
@@ -141,6 +161,28 @@ module base() {
     for (y = [board_center_y - inner_h / 2 + 2.0, board_center_y + inner_h / 2 - 2.0]) {
       translate([x, y, floor_t]) {
         cube([2.2, 2.2, 0.8], center = true);
+      }
+    }
+  }
+
+  // Side rails and sensor-end stop protect the 0.8 x 1.6 mm solder pads from
+  // becoming the mechanical retention point.
+  for (x = [-(board_w / 2 + board_clearance / 2), (board_w / 2 + board_clearance / 2)]) {
+    translate([x, board_center_y, floor_t + edge_rail_h / 2]) {
+      cube([edge_rail_w, board_h - 4.0, edge_rail_h], center = true);
+    }
+  }
+
+  translate([0, board_center_y - board_h / 2 - board_clearance / 2, floor_t + edge_stop_h / 2]) {
+    cube([board_w - 5.0, edge_rail_w, edge_stop_h], center = true);
+  }
+}
+
+module lid_retainer_pads() {
+  for (x = [-(board_w / 2 - 2.5), (board_w / 2 - 2.5)]) {
+    for (y = [board_center_y - board_h / 2 + 4.0, board_center_y + board_h / 2 - 4.0]) {
+      translate([x, y, -retainer_pad_h / 2]) {
+        cube([retainer_pad_w, retainer_pad_l, retainer_pad_h], center = true);
       }
     }
   }
@@ -159,6 +201,10 @@ module lid() {
           rounded_box(inner_w - 3.2, inner_h - 3.2, 0.8, 0.6);
         }
       }
+
+      // Edge pads lightly capture the mini-PCB when the case is screwed
+      // closed. Adjust or remove if real components conflict.
+      lid_retainer_pads();
     }
 
     translate([sensor_x, board_center_y + sensor_y, -0.2]) {
@@ -171,6 +217,43 @@ module lid() {
     }
 
     screw_holes(1);
+  }
+}
+
+module fov_preview() {
+  // Preview-only 65 degree diagonal field of view. Keep the car bumper, tape,
+  // screw heads, and cable loops outside this volume.
+  color([1.0, 0.62, 0.05, 0.24]) {
+    translate([sensor_x, board_center_y + sensor_y, body_z + lid_t + 1.0]) {
+      cylinder(h = 34.0, d1 = optic_opening, d2 = 45.0);
+    }
+  }
+}
+
+module harness_preview() {
+  colors = [
+    [0.90, 0.05, 0.05, 1.0],
+    [0.02, 0.02, 0.02, 1.0],
+    [0.15, 0.20, 0.90, 1.0],
+    [0.00, 0.55, 0.15, 1.0],
+    [0.95, 0.75, 0.05, 1.0]
+  ];
+  for (i = [0:4]) {
+    color(colors[i]) {
+      translate([-4.0 + i * 2.0, outer_h / 2 + 20.0, floor_t + 2.6]) {
+        rotate([90, 0, 0]) {
+          cylinder(h = 40.0, d = 0.8);
+        }
+      }
+    }
+  }
+}
+
+module car_mount_preview() {
+  color([0.35, 0.35, 0.35, 0.35]) {
+    translate([0, 0, -2.8]) {
+      rounded_box(outer_w + 16.0, outer_h + 12.0, 1.8, 2.5);
+    }
   }
 }
 
@@ -206,9 +289,12 @@ if (part == "base") {
 } else if (part == "mount_plate") {
   mount_plate();
 } else {
+  car_mount_preview();
   base();
   translate([0, 0, body_z + 1.0]) {
     lid();
   }
   board_preview();
+  harness_preview();
+  fov_preview();
 }

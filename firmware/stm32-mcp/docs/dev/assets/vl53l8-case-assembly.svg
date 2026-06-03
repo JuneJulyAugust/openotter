@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">VL53L8 Case Assembly</title>
+  <desc id="desc">Exploded assembly view showing lid, retainer pads, PCB, edge rails, pigtails, harness strain relief, case base, mount plate, and car surface.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L8,3 z" fill="#374151"/>
+    </marker>
+    <style>
+      .label { font: 19px sans-serif; fill: #111827; }
+      .small { font: 14px sans-serif; fill: #374151; }
+      .tiny { font: 12px sans-serif; fill: #374151; }
+      .case { fill: #e0f2fe; stroke: #075985; stroke-width: 3; }
+      .lid { fill: #bae6fd; stroke: #0369a1; stroke-width: 3; }
+      .board { fill: #1e40af; stroke: #172554; stroke-width: 2; }
+      .pad { fill: #fef3c7; stroke: #92400e; stroke-width: 2; }
+      .mount { fill: #d1d5db; stroke: #374151; stroke-width: 3; }
+      .vhb { fill: #111827; stroke: #111827; stroke-width: 2; }
+      .car { fill: #6b7280; stroke: #374151; stroke-width: 3; }
+      .wire { fill: none; stroke-width: 4; }
+      .callout { stroke: #374151; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <text x="600" y="42" text-anchor="middle" class="label">Assembly stack: lid retains PCB edges, base manages harness load, mount surface stays behind sensor</text>
+
+  <rect x="190" y="80" width="430" height="86" rx="12" class="lid"/>
+  <rect x="250" y="110" width="72" height="28" rx="5" fill="#ffffff" stroke="#0369a1" stroke-width="2"/>
+  <rect x="410" y="110" width="72" height="28" rx="5" fill="#ffffff" stroke="#0369a1" stroke-width="2"/>
+  <text x="405" y="155" text-anchor="middle" class="small">lid with optical aperture and underside retainer pads</text>
+
+  <rect x="270" y="225" width="270" height="132" rx="10" class="board"/>
+  <rect x="382" y="274" width="45" height="30" rx="5" fill="#111827"/>
+  <circle cx="405" cy="289" r="62" fill="none" stroke="#38bdf8" stroke-width="4" stroke-dasharray="7 5"/>
+  <text x="405" y="377" text-anchor="middle" class="small">SATEL PCB held by edges, not by wires</text>
+
+  <rect x="190" y="430" width="430" height="118" rx="14" class="case"/>
+  <rect x="230" y="458" width="24" height="64" rx="4" class="pad"/>
+  <rect x="556" y="458" width="24" height="64" rx="4" class="pad"/>
+  <rect x="330" y="520" width="150" height="18" rx="5" fill="#94a3b8"/>
+  <text x="405" y="568" text-anchor="middle" class="small">base with edge rails, stop, cable slot, and tie slots</text>
+
+  <path d="M535 285 C650 285 655 485 620 485" class="wire" stroke="#dc2626"/>
+  <path d="M535 300 C670 300 675 505 620 505" class="wire" stroke="#111827"/>
+  <path d="M535 315 C690 315 695 525 620 525" class="wire" stroke="#2563eb"/>
+  <rect x="635" y="462" width="150" height="72" rx="10" fill="#f8fafc" stroke="#263238" stroke-width="2"/>
+  <text x="710" y="492" text-anchor="middle" class="small">JST-GH</text>
+  <text x="710" y="516" text-anchor="middle" class="small">harness exit</text>
+
+  <rect x="190" y="610" width="430" height="32" rx="8" class="mount"/>
+  <rect x="220" y="650" width="370" height="18" rx="6" class="vhb"/>
+  <rect x="160" y="676" width="490" height="26" rx="8" class="car"/>
+  <text x="405" y="704" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13">vertical car bumper / chassis face</text>
+
+  <path d="M705 462 C785 405 825 330 840 240" class="callout"/>
+  <text x="855" y="226" class="small">Harness bends away from lens</text>
+  <text x="855" y="248" class="small">and is tied down before chassis route</text>
+
+  <path d="M445 275 C555 210 710 140 840 115" class="callout"/>
+  <text x="855" y="103" class="small">Aperture and bumper must clear</text>
+  <text x="855" y="125" class="small">the 65 degree diagonal FOV</text>
+
+  <path d="M250 463 C120 410 95 330 125 255" class="callout"/>
+  <text x="45" y="238" class="small">Rails stop side motion</text>
+  <text x="45" y="260" class="small">without board screws</text>
+</svg>

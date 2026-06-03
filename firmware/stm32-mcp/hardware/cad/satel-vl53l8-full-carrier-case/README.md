@@ -9,7 +9,19 @@ SATEL regulators, level translators, and 2.54 mm J1/J2 carrier pads in use.
 ## Files
 
 - `satel_vl53l8_full_carrier_case.scad` - OpenSCAD source for a two-piece
-  full-carrier tray and optical-window lid.
+  full-carrier tray, optical-window lid, and optional mount plate.
+
+## Mechanical Features
+
+- Printed PCB ledges, side rails, and an end stop keep the SATEL carrier steady
+  without drilling the board.
+- Underside lid retainer pads lightly capture PCB edge areas when the case is
+  screwed closed.
+- Harness tie slots and a printed rear strain bar keep cable load away from
+  the soldered pigtails.
+- Side ears accept M2 case/mount screws.
+- `part = "assembly"` shows preview-only harness wires, car mount surface, and
+  field-of-view cone. Do not export the assembly as a printable part.
 
 ## Status
 
@@ -40,7 +52,9 @@ openscad -D 'part="lid"'  -o satel_vl53l8_full_carrier_case_lid.stl  satel_vl53l
 openscad -D 'part="mount_plate"' -o satel_vl53l8_full_carrier_mount_plate.stl satel_vl53l8_full_carrier_case.scad
 ```
 
-Use `part = "assembly"` inside OpenSCAD for a visual fit preview.
+Use `part = "assembly"` inside OpenSCAD for a visual fit preview. The assembly
+preview includes the harness path, a gray car mounting plane, and a transparent
+field-of-view cone to catch obvious occlusion issues.
 
 ## Intended Harness
 
@@ -59,5 +73,8 @@ For car use, avoid tall loose Dupont jumpers. Preferred assembly:
 - PETG is preferred for car installation.
 - Do not let the lid touch solder joints, installed pin headers, or the optical
   package.
+- Confirm the lid retainer pads contact only PCB edge areas.
+- Keep screw heads, bumper lips, wires, and tape edges outside the FOV preview
+  cone.
 - Use M2 screws through the side ears, or use 3M VHB tape on the flat rear
   mounting plate.

@@ -52,6 +52,30 @@ IOT01A1
   -> optical aperture facing front or rear
 ```
 
+![Front and rear car installation](assets/vl53l8-car-installation.svg)
+
+![Case assembly stack](assets/vl53l8-case-assembly.svg)
+
+## Mechanical Rules
+
+These rules apply to both case designs:
+
+- mount the flat case back against a vertical front or rear car surface;
+- keep the lid and optical aperture facing outward;
+- route wires out the rear/cable-exit side and immediately back toward the
+  chassis;
+- add a tie-down within 30-50 mm of each sensor case;
+- do not let cable loops, screw heads, tape edges, bumper lips, or printed case
+  walls enter the VL53L8 field of view;
+- hold the PCB by edges or printed retainers, never by soldered wires;
+- use case screws through side ears or a separate mount plate; do not drill the
+  SATEL PCB unless the official board drawing confirms safe mounting holes.
+
+The case models include assembly-preview geometry for the car mount plane,
+harness path, and field-of-view cone. These preview objects are only shown by
+`part = "assembly"` and are not exported when `part = "base"`, `part = "lid"`,
+or `part = "mount_plate"` is selected.
+
 ## Source Image References
 
 These images are source references for selecting parts and understanding the
@@ -127,11 +151,16 @@ firmware/stm32-mcp/hardware/cad/satel-vl53l8-full-carrier-case/satel_vl53l8_full
 ### Full Carrier Case Requirements
 
 - Hold the full SATEL PCB by its edges, not by the wires.
+- Use printed side rails, an end stop, and lid retainer pads to stop board
+  motion.
 - Leave a large aperture around the VL53L8 optical module.
+- Keep the aperture and surrounding bumper clear of the 65 degree diagonal
+  field of view.
 - Keep the snap-off perforation unbroken.
 - Leave a service bay over the `J1`/`J2` solder/header area.
 - Provide a cable exit at the J1/J2 end.
-- Include strain relief for the pigtail bundle.
+- Include strain relief for the pigtail bundle: printed strain bar plus tie
+  slots in the base.
 - Include M2 side ears and a flat back for VHB tape.
 - Mark `FRONT` or `REAR` on the lid or with a label.
 
@@ -146,13 +175,16 @@ firmware/stm32-mcp/hardware/cad/satel-vl53l8-full-carrier-case/satel_vl53l8_full
 5. Solder one wire at a time and continuity-check it immediately.
 6. Bundle the pigtails with small heat-shrink, but do not shrink it directly
    against tall components.
-7. Place the board into the printed base. Confirm it rests on ledges and not on
-   solder joints.
-8. Route the bundle through the rear slot and under the strain bar.
-9. Attach the lid. Confirm it does not press on the sensor, headers, or pigtail
-   solder joints.
-10. Mount using either 3M VHB tape on the flat back or M2 screws through the
-    side ears.
+7. Place the board into the printed base. Confirm it rests on ledges/rails and
+   not on solder joints.
+8. Route the bundle through the rear slot, under the strain bar, and through a
+   tie-down or heat-shrink sleeve.
+9. Attach the lid. Confirm the lid retainer pads contact only PCB edge areas,
+   not components.
+10. Mount the case back to a vertical car surface using either 3M VHB tape or
+    M2 screws through the side ears.
+11. Check from the sensor side that no cable, screw head, bumper lip, or case
+    wall is visible through the optical aperture.
 
 ### Full Carrier Wiring Pin Order
 
@@ -191,7 +223,11 @@ firmware/stm32-mcp/hardware/cad/satel-vl53l8-mini-case/satel_vl53l8_mini_case.sc
 ### Mini-PCB Case Requirements
 
 - Hold only the snapped-off mini-PCB.
+- Use printed side rails, an end stop, and lid retainer pads to keep the board
+  steady.
 - Leave a large clear optical aperture.
+- Keep the aperture and surrounding bumper clear of the 65 degree diagonal
+  field of view.
 - Provide direct strain relief next to the pad edge.
 - Route 30 AWG wires into an interposer board or connector bay.
 - Avoid any cable pull on the 0.8 x 1.6 mm pads.
@@ -311,6 +347,32 @@ For I2C fallback:
 - keep cable shorter than SPI;
 - avoid adding extra pullups unless bus rise time is measured.
 
+## Occlusion And Field-Of-View Check
+
+The VL53L8 has a wide optical field of view. Treat the case aperture as a
+clearance window, not a narrow camera hole.
+
+Check these points before powering the car:
+
+1. Hold the case at the planned mounting location with the lid facing outward.
+2. Look through the optical aperture from the sensor side.
+3. Verify the bumper, tape, screw heads, wires, and printed edges are outside
+   the visible opening.
+4. Move the steering and suspension through expected travel and re-check.
+5. If anything can enter the opening or the preview cone, move the case outward,
+   enlarge the aperture, or rotate the cable exit.
+
+Common failure modes:
+
+- A bumper lip below the sensor appears as a near obstacle.
+- A cable loop crossing the aperture creates intermittent false ranges.
+- A screw head beside the aperture clips the FOV when the car vibrates.
+- A deeply recessed optical window creates a tunnel and shadows edge zones.
+
+For the printed models, use `part = "assembly"` to preview the FOV cone and
+harness path. If the cone intersects a mount plate or planned bumper surface,
+do not print the deployment part until the mount is adjusted.
+
 ## Connector Pin-1 Convention
 
 Use this convention everywhere:
@@ -354,8 +416,9 @@ the full-carrier behavior is proven.
 2. Update `satel_vl53l8_full_carrier_case.scad`.
 3. Print a PLA test part first.
 4. Dry-fit without wires.
-5. Confirm the sensor is centered in the aperture.
-6. Confirm the lid clears headers and components.
+5. Confirm the sensor is centered in the aperture and the FOV cone is clear.
+6. Confirm the lid clears headers and components, and the retainer pads touch
+   only PCB edge areas.
 7. Print PETG for car use.
 8. Install pigtails and repeat fit check.
 
@@ -365,7 +428,7 @@ the full-carrier behavior is proven.
 2. Measure snapped-off board width, height, thickness, and sensor center.
 3. Update `satel_vl53l8_mini_case.scad`.
 4. Print a PLA fit-check part.
-5. Verify pad access and strain-relief clearance.
+5. Verify pad access, board retention, and strain-relief clearance.
 6. Add interposer board only after electrical validation.
 7. Print PETG for car use.
 

@@ -11,6 +11,18 @@ use the sibling `../satel-vl53l8-full-carrier-case/` model instead.
 - `satel_vl53l8_mini_case.scad` - OpenSCAD source for a two-piece tray and
   optical-window lid.
 
+## Mechanical Features
+
+- Printed PCB ledges, side rails, and an end stop keep the mini-PCB steady
+  without loading the soldered 0.8 x 1.6 mm pads.
+- Underside lid retainer pads lightly capture PCB edge areas when the case is
+  screwed closed.
+- Harness tie slots and a printed rear strain bar keep cable load away from
+  the 30 AWG pigtails.
+- Side ears accept M2 case/mount screws.
+- `part = "assembly"` shows preview-only harness wires, car mount surface, and
+  field-of-view cone. Do not export the assembly as a printable part.
+
 ## Status
 
 This is a v0 mechanical artifact. The SATEL Gerber ZIP or STEP package is the
@@ -39,7 +51,9 @@ openscad -D 'part="base"' -o satel_vl53l8_mini_case_base.stl satel_vl53l8_mini_c
 openscad -D 'part="lid"'  -o satel_vl53l8_mini_case_lid.stl  satel_vl53l8_mini_case.scad
 ```
 
-Use `part = "assembly"` inside OpenSCAD for a visual fit preview.
+Use `part = "assembly"` inside OpenSCAD for a visual fit preview. The assembly
+preview includes the harness path, a gray car mounting plane, and a transparent
+field-of-view cone to catch obvious occlusion issues.
 
 ## Print
 
@@ -47,6 +61,9 @@ Use `part = "assembly"` inside OpenSCAD for a visual fit preview.
 - Print the lid with the outside face on the bed.
 - PETG is preferred for car installation.
 - Keep the optical opening clean and free of stringing.
+- Confirm the lid retainer pads contact only PCB edge areas.
+- Keep screw heads, bumper lips, wires, and tape edges outside the FOV preview
+  cone.
 - Use M2 screws through the side ears, or use 3M VHB tape on the flat underside.
 
 ## Electrical Warning
