@@ -66,8 +66,9 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add adaptive rear/front VL53L8 runtime slots and direction-specific firmware safety clamps.
 - [x] Deploy iOS diagnostics from the feature worktree and render live VL53L8 ToF data.
 - [x] Document and test the future two-sensor topology as shared SPI1 with dedicated `NCS`, `LPn`, and `GPIO1` lines.
-- [x] Add host-test coverage for VL53L8 config, transport, frame codec, BLE ToF policy, and two-sensor topology; HAL-free host line coverage reached 99.3%.
+- [x] Add host-test coverage for VL53L8 config, transport, frame codec, BLE ToF policy, and two-sensor topology; HAL-free host line coverage reached 99.4%.
 - [x] Add iOS STM32 Control front/rear ToF selector, FE61 debug role byte, and FE63 available-role mask decoding.
+- [x] Add regression tests for FE61 debug role compatibility/rejection, FE63 defensive decoding, and iOS stale-frame clearing when switching ToF roles.
 - [ ] Run vehicle-level autonomous validation with rear VL53L8 health visible in Self Driving.
 - [ ] After validation, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
 - [ ] Physically verify the second front SATEL-VL53L8 on shared SPI1 with D10 `NCS`, A0 `LPn`, and A3 `GPIO1`.

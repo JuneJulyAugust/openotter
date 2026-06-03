@@ -74,16 +74,16 @@ Read coverage as a branch-discovery tool, not as a release certificate. A line
 that handles a HAL failure, a missing ST-LINK probe, or a broken sensor cable
 still needs a hardware check even if a host test can exercise nearby policy.
 
-Current release-candidate evidence from 2026-06-02:
+Current release-candidate evidence from 2026-06-03:
 
 ```text
-lines:     99.3% (450 out of 453)
-functions: 98.0% (48 out of 49)
-branches:  90.7% (294 out of 324)
+lines:     99.4% (541 out of 544)
+functions: 98.4% (63 out of 64)
+branches:  89.5% (342 out of 382)
 ```
 
-Every filtered module except `firmware_panic.c` reached 100% line coverage.
-The remaining uncovered lines are the `HOST_TEST` `Firmware_Panic()` stub, which
+Every filtered module except `firmware_panic.c` reached 100% line coverage. The
+remaining uncovered lines are the `HOST_TEST` `Firmware_Panic()` stub, which
 spins forever by design and is not called from host tests.
 
 ## One-Sensor End-To-End Test

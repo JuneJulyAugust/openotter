@@ -455,10 +455,7 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
   }
 
   uint8_t requested_role = BLE_TOF_DEBUG_ROLE_REAR;
-  if (len >= sizeof(BLE_TofConfigPayload_t)) {
-    requested_role = data[sizeof(Tof_Config_t)];
-  }
-  if (!BLE_TofDebugRole_IsValid(requested_role)) {
+  if (BLE_TofDebugRoleFromConfigPayload(data, len, &requested_role) < 0) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
     s_tof.state      = BLE_TOF_STATE_RUNNING;
     publish_status();

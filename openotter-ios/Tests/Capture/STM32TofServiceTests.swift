@@ -54,6 +54,25 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertEqual(service.availableSensorRoles, [.rear, .front])
     }
 
+    func testStatusPayloadDecodesRearOnlyAvailability() {
+        let service = STM32TofService()
+
+        service.handleStatusNotification(Data([1, 0, 29, 0x10]))
+
+        XCTAssertEqual(service.selectedSensorRole, .rear)
+        XCTAssertEqual(service.availableSensorRoles, [.rear])
+        XCTAssertFalse(service.availableSensorRoles.contains(.front))
+    }
+
+    func testStatusPayloadDecodesFrontSelectedButUnavailable() {
+        let service = STM32TofService()
+
+        service.handleStatusNotification(Data([1, 0, 0, 0x01]))
+
+        XCTAssertEqual(service.selectedSensorRole, .front)
+        XCTAssertTrue(service.availableSensorRoles.isEmpty)
+    }
+
     func testConfigSentBeforeAttachIsRemembered() {
         let service = STM32TofService()
 
@@ -170,6 +189,34 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertEqual(service.droppedFrameChunks, 0)
     }
 
+    func testChangingRoleClearsStaleDepthFrame() {
+        let service = STM32TofService()
+        publishV2Frame(on: service, layout: 4, seqLow: 0x7A)
+        XCTAssertNotNil(service.latestFrame)
+        XCTAssertEqual(service.latestFrame?.role, .rear)
+
+        let update = expectation(description: "stale frame cleared")
+        service.$latestFrame
+            .dropFirst()
+            .sink { frame in
+                if frame == nil { update.fulfill() }
+            }
+            .store(in: &cancellables)
+
+        service.sendConfig(sensor: .vl53l8cx,
+                           layout: 4,
+                           profile: 1,
+                           frequencyHz: 10,
+                           integrationMs: 20,
+                           budgetMs: 0,
+                           role: .front)
+
+        wait(for: [update], timeout: 1.0)
+        XCTAssertNil(service.latestFrame)
+        XCTAssertEqual(service.scanHz, 0)
+        XCTAssertEqual(service.selectedSensorRole, .front)
+    }
+
     func testInOrderV2ChunksPublishSelectedFrontRole() {
         let service = STM32TofService()
         let payload = makeV2Payload(layout: 4)
@@ -192,6 +239,25 @@ final class STM32TofServiceTests: XCTestCase {
 
         wait(for: [update], timeout: 1.0)
         XCTAssertEqual(service.droppedFrameChunks, 0)
+    }
+
+    private func publishV2Frame(on service: STM32TofService,
+                                layout: UInt8,
+                                seqLow: UInt8) {
+        let payload = makeV2Payload(layout: layout)
+        let chunks = makeChunks(payload: payload, seqLow: seqLow)
+        let update = expectation(description: "frame update")
+
+        service.$latestFrame
+            .compactMap { $0 }
+            .sink { _ in update.fulfill() }
+            .store(in: &cancellables)
+
+        for chunk in chunks {
+            service.handleFrameNotification(Data(chunk))
+        }
+
+        wait(for: [update], timeout: 1.0)
     }
 
     private func makeV2Payload(layout: UInt8) -> [UInt8] {

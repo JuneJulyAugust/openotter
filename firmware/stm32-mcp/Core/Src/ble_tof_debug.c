@@ -6,6 +6,28 @@ int BLE_TofDebugRole_IsValid(uint8_t role)
          role == BLE_TOF_DEBUG_ROLE_FRONT;
 }
 
+int BLE_TofDebugRoleFromConfigPayload(const uint8_t *data,
+                                      uint16_t len,
+                                      uint8_t *role)
+{
+  if (data == 0 || role == 0 || len < BLE_TOF_DEBUG_CONFIG_PREFIX_SIZE) {
+    return -1;
+  }
+
+  if (len < BLE_TOF_DEBUG_CONFIG_PAYLOAD_SIZE) {
+    *role = BLE_TOF_DEBUG_ROLE_REAR;
+    return 0;
+  }
+
+  uint8_t requested_role = data[BLE_TOF_DEBUG_CONFIG_PREFIX_SIZE];
+  if (!BLE_TofDebugRole_IsValid(requested_role)) {
+    return -1;
+  }
+
+  *role = requested_role;
+  return 0;
+}
+
 uint8_t BLE_TofDebugStatusPad(uint8_t selected_role, uint8_t available_mask)
 {
   uint8_t role = BLE_TofDebugRole_IsValid(selected_role)
