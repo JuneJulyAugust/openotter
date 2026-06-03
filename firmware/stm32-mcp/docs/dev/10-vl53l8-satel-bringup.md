@@ -363,17 +363,45 @@ Recommended boot sequence:
 With separate buses, unique runtime addresses are optional because each bus has
 only one active SATEL at `0x29`.
 
-Shared-bus fallback is still possible but less preferred:
+### Shared SCL/SDA Fallback
 
-1. Put both sensors on I2C3 A5/A4.
-2. Hold both `LPn` lines low.
-3. Release one sensor, initialize it at `0x29`, assign a non-default address,
-   and confirm it answers at that new address.
-4. Release the other sensor and leave or assign its address.
-5. Never let both sensors be awake at `0x29` on the same bus.
+Two SATEL boards may share one SCL/SDA pair, but only after firmware gives the
+two awake sensors different runtime I2C addresses. The VL53L8CX default address
+is `0x29` 7-bit / `0x52` HAL 8-bit, so two awake sensors at their default address
+on one bus collide.
+
+For a shared-bus wiring fallback:
+
+| Signal | Shared-bus rule |
+| --- | --- |
+| `EXT_MCLK_SCL` / J2 pin 6 | Both boards connect to the same IOT01A1 SCL, for example A5 / PC0 / I2C3_SCL. |
+| `EXT_MOSI_SDA` / J2 pin 5 | Both boards connect to the same IOT01A1 SDA, for example A4 / PC1 / I2C3_SDA. |
+| `EXT_5V0` / J2 pin 11 | Both boards may share IOT01A1 5V. |
+| GND | Both boards must share IOT01A1 GND. |
+| `EXT_SPI_I2C_N` / J2 pin 1 | Both boards tie to GND for I2C mode. |
+| `EXT_PWR_EN` / J2 pin 7 | May be shared to 3V3, but separate GPIOs are better for recovery. Do not use J2 pin 9 `EXT_3V3` for this bring-up. |
+| `EXT_LPn` / J2 pin 2 | Must be separate GPIO outputs. This is what prevents address collision during boot. |
+| `EXT_GPIO1` / J1 top pad | Prefer separate inputs if using interrupts; firmware polling can work without them. |
+
+The shared-bus boot sequence is:
+
+1. Hold both `LPn` lines low.
+2. Release one sensor only.
+3. Initialize it at default `0x52`, call `vl53l8cx_set_i2c_address()` to assign
+   a unique 8-bit address such as `0x54`, and confirm it answers there.
+4. Release the second sensor.
+5. Initialize the second sensor at default `0x52`, or move it to another unique
+   address such as `0x56`.
+6. Keep one VL53L8 driver configuration object and one platform address per
+   sensor, then poll the slots sequentially.
+
+This is not the active runtime implementation yet. Today the firmware runs one
+rear SATEL on I2C3. The topology tests already enforce the invariant: two slots
+on the same bus must not have the same runtime address, and two online sensors
+must not share `LPn`.
 
 Do not wire two SATEL boards with shared `LPn` unless only one is populated or
-only one is powered.
+only one is powered. Do not let both sensors be awake at `0x52` on the same bus.
 
 ## Bring-Up Checklist
 

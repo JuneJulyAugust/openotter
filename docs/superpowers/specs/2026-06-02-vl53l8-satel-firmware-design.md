@@ -196,6 +196,55 @@ independent `LPn` is mandatory and the first sensor must be reassigned before
 the second sensor is released. Two awake sensors must never share address
 `0x29` on the same I2C bus.
 
+### Shared SCL/SDA Answer
+
+Yes, two SATEL-VL53L8 boards can share SCL and SDA on one I2C bus. I2C is a
+shared open-drain bus, so multiple devices can sit on the same SCL/SDA pair as
+long as every awake device has a unique bus address and the bus capacitance stays
+reasonable. For this robot, that means short wiring and the same 3.3 V logic
+domain through the SATEL carrier level shifters.
+
+The VL53L8CX complication is address collision at boot. Every VL53L8CX starts at
+default address `0x29` 7-bit (`0x52` HAL 8-bit). If two SATEL boards are awake on
+the same SCL/SDA pair at that address, the STM32 cannot talk to either device
+reliably. The ST ULD provides `vl53l8cx_set_i2c_address()`, and its own API
+comment says that when multiple sensors are connected to the same I2C line, all
+other `LPn` pins need to be held low while changing one sensor address.
+
+Shared-bus wiring is therefore allowed only with this invariant:
+
+| Signal | Can be shared by both SATEL boards? | Requirement |
+| --- | --- | --- |
+| `EXT_MCLK_SCL` | Yes | Both boards connect to the same MCU I2C SCL pin. |
+| `EXT_MOSI_SDA` | Yes | Both boards connect to the same MCU I2C SDA pin. |
+| `EXT_5V0` | Yes | Both boards may share the IOT01A1 5V rail. |
+| GND | Yes | Common ground is mandatory. |
+| `EXT_SPI_I2C_N` | Yes | Tie both boards to GND for I2C mode. |
+| `EXT_PWR_EN` | Yes, but less recoverable | Tie both to 3V3 or one shared GPIO. Dedicated GPIOs are better for hard recovery. |
+| `EXT_LPn` | No | Each board needs its own GPIO-controlled `LPn`. |
+| `EXT_GPIO1` / INT | Prefer no | Dedicated inputs make per-sensor data-ready debug possible. Polling can work without INT. |
+
+Shared-bus boot sequence:
+
+1. Hold both SATEL `LPn` lines low so neither sensor responds at `0x52`.
+2. Release only the rear sensor `LPn`.
+3. Probe/init rear at default `0x52`, then call `vl53l8cx_set_i2c_address()` to
+   move it to a non-default 8-bit address, for example `0x54`.
+4. Confirm the rear sensor responds at `0x54`.
+5. Release the front sensor `LPn`.
+6. Probe/init front at default `0x52`. It may stay at `0x52`, or firmware may
+   move it to another unique address such as `0x56`.
+7. Keep one `VL53L8CX_Configuration` and platform address per sensor slot, then
+   poll/read the two slots sequentially.
+
+Implementation status: the current firmware implements one active rear VL53L8CX
+on I2C3. The topology module and host tests already encode the shared-bus rule:
+same bus plus same runtime address is rejected; same bus plus unique runtime
+addresses is accepted; missing or shared `LPn` is rejected. Runtime shared-bus
+address sequencing is not implemented yet. The default future topology remains
+separate I2C buses because it avoids boot-time address reassignment and gives
+better fault isolation.
+
 ## Deprecation
 
 Deprecated for deployment:
