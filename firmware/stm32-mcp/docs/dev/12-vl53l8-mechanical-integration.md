@@ -57,6 +57,64 @@ IOT01A1
 
 ![Case assembly stack](assets/vl53l8-case-assembly.svg)
 
+## H12Y Installation Concept
+
+The H12Y integration target is a bottom-mounted sensor case on each end of the
+car. The case bottom attaches to the car, the optical aperture faces outward,
+and the cable exits back toward the chassis. This is more practical than
+mounting the case back to a vertical plate because it gives the VHB tape or
+side-ear screws a broad mounting face and keeps the harness from pulling the
+sensor out of alignment.
+
+The image below is a photo-based engineering concept generated from the local
+H12Y photo. It is intended to show mechanical intent, cable routing, and field
+of view keepouts. It is not a dimensional fit guarantee.
+
+![H12Y photo-based front/rear case concept](assets/vl53l8-h12y-photo-mount-concept.png)
+
+Recommended placement from the current H12Y body:
+
+- **Front**: mount the `FRONT` case on the front brush guard / bumper saddle,
+  with the aperture facing forward. Route the harness immediately behind the
+  bumper and tie it down before it can rise into the optical cone.
+- **Rear**: mount the `REAR` case on the rear upper tray, rear rail, or a small
+  printed saddle attached to that rail, with the aperture facing backward. Route
+  the harness along the frame rail toward the controller bay.
+- **Controller tray**: keep the IOT01A1 and the board-side ToF adapter inside
+  the chassis/top-tray region where the cable bundles can be tied down and kept
+  away from tire, suspension, and ESC movement.
+- **Harness**: replace the loose Dupont arc with one soft keyed harness per
+  sensor. The car-side adapter should expose two labeled ports: `FRONT` and
+  `REAR`.
+- **FOV keepout**: no bumper loop, screw head, tape edge, wire, or case wall
+  should cross the faint front/rear optical cone. Anything in that cone can look
+  like a near obstacle.
+
+![H12Y harness layout concept](assets/vl53l8-h12y-harness-layout.png)
+
+The current bench wiring is useful for driver bring-up, but it should stop at
+the bench. The deployment transition is:
+
+```text
+IOT01A1 Arduino headers
+  -> board-side ToF adapter with two keyed JST-GH ports
+  -> soft wrapped silicone harnesses
+  -> strain relief at each printed sensor case
+  -> short soldered full-SATEL pigtails inside each case
+```
+
+![Bench Dupont wiring to car harness concept](assets/vl53l8-bench-harness-upgrade.png)
+
+The renderer that produces these local design images is:
+
+```text
+firmware/stm32-mcp/hardware/cad/vl53l8_h12y_integration_render.py
+```
+
+It uses user-provided local photos as references and writes only derived design
+artifacts into the repo. Re-run it after taking a new side photo or changing the
+mounting proposal.
+
 ## Mechanical Rules
 
 These rules apply to both case designs:
@@ -300,6 +358,13 @@ IOT01A1. It can be an Arduino R3 proto shield for now or a custom PCB later.
 
 ![IOT01A1 board-side ToF adapter](assets/vl53l8-board-side-adapter.svg)
 
+The same adapter concept should also carry to the B-U585I-IOT02A if that board
+becomes the controller. ST documents that the B-U585I-IOT02A provides ARDUINO
+Uno V3 expansion connectors, plus STMod+ and Pmod expansion connectors. The
+mechanical and firmware pin map must still be redone before moving boards, but
+the preferred architecture stays the same: a board-side adapter with two keyed
+front/rear ToF ports instead of individual jumper wires.
+
 ### Adapter Layout
 
 Place two keyed connectors:
@@ -512,6 +577,30 @@ Use screws for repeatable long-term mounting:
 11. After car installation, repeat FE63 health and iOS depth-map checks for rear
     and front roles.
 
+## H12Y-Specific Fit Checks
+
+The H12Y reference dimensions used in the concept render are 390 x 205 x
+185 mm, wheelbase 232 mm, track width 165 mm, and tire diameter 90 mm. Use those
+only as vehicle-level context. The actual case fit still depends on local
+surface geometry, bumper curvature, screw clearance, steering throw, and cable
+path.
+
+Before printing the final car case:
+
+1. Tape a paper outline or draft PLA case to the proposed front brush-guard
+   saddle. Turn the steering lock-to-lock and compress the front suspension by
+   hand. Nothing should touch the case or harness.
+2. Repeat at the rear rail/tray. Check that the rear harness cannot fall into
+   the tire or suspension path.
+3. Place a straight edge or phone camera in front of the aperture and confirm
+   the bumper hoop does not cross the sensor view.
+4. Add temporary painter's tape labels `FRONT`, `REAR`, and `PIN 1` before any
+   power-on test.
+5. Use VHB for first slow tests, but add a secondary zip tie or printed tie tab
+   so a cable pull cannot peel the case off the body.
+6. After the first drive, inspect the tape, screw ears, harness tie-downs, and
+   sensor angle before trusting autonomous safety behavior.
+
 ## Sources
 
 - ST SATEL-VL53L8 product page:
@@ -522,6 +611,12 @@ Use screws for repeatable long-term mounting:
   <https://www.st.com/resource/en/schematic_pack/satel-vl53l8-schematic.pdf>
 - ST AN5945:
   <https://www.st.com/resource/en/application_note/an5945-how-to-connect-the-satelvl53l8-to-an-stm32-nucleo64-board-stmicroelectronics.pdf>
+- MJX HYPER GO H12Y product page:
+  <https://www.mjxrc.net/mobile/goodshow/hyper-go-h12y.html>
+- MJX H12Y specification reference:
+  <https://hypergorccar.com/product/mjx-hyper-go-h12y-rc-car/>
+- ST B-U585I-IOT02A product page:
+  <https://www.st.com/en/evaluation-tools/b-u585i-iot02a.html>
 - DigiKey SATEL-VL53L8 product page:
   <https://www.digikey.com/en/products/detail/stmicroelectronics/SATEL-VL53L8/18110499>
 - JST GH connector family:
