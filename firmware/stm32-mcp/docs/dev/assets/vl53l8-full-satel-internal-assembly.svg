@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="760" viewBox="0 0 1240 760" role="img" aria-labelledby="title desc">
+  <title id="title">Full SATEL Internal Case Assembly</title>
+  <desc id="desc">Cutaway assembly detail showing full SATEL PCB retention, J1/J2 pigtails, case-side connector, strain relief, service loop, lid pads, and bottom mounting.</desc>
+  <defs>
+    <style>
+      .title { font: 22px sans-serif; font-weight: 700; fill: #111827; }
+      .label { font: 17px sans-serif; font-weight: 700; fill: #111827; }
+      .small { font: 14px sans-serif; fill: #374151; }
+      .tiny { font: 12px sans-serif; fill: #475569; }
+      .case { fill: #e0f2fe; stroke: #075985; stroke-width: 3; }
+      .cut { fill: #f8fafc; stroke: #334155; stroke-width: 2; }
+      .pcb { fill: #1e40af; stroke: #172554; stroke-width: 2; }
+      .pad { fill: #fbbf24; stroke: #92400e; stroke-width: 1.5; }
+      .rail { fill: #bae6fd; stroke: #0369a1; stroke-width: 2; }
+      .lid { fill: #cbd5e1; stroke: #475569; stroke-width: 2; }
+      .connector { fill: #ffffff; stroke: #111827; stroke-width: 2; }
+      .wire-red { stroke: #dc2626; stroke-width: 4; fill: none; }
+      .wire-black { stroke: #111827; stroke-width: 4; fill: none; }
+      .wire-blue { stroke: #2563eb; stroke-width: 4; fill: none; }
+      .wire-green { stroke: #16a34a; stroke-width: 4; fill: none; }
+      .wire-yellow { stroke: #f59e0b; stroke-width: 4; fill: none; }
+      .wire-purple { stroke: #7c3aed; stroke-width: 4; fill: none; }
+      .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .callout { fill: #ffffff; stroke: #334155; stroke-width: 1.5; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <text x="620" y="40" text-anchor="middle" class="title">Full SATEL Internal Assembly</text>
+  <text x="620" y="68" text-anchor="middle" class="small">Recommended first car deployment: keep the carrier intact and hold the PCB mechanically.</text>
+  <text x="620" y="90" text-anchor="middle" class="small">All external cable load should end at the connector bay and printed strain relief.</text>
+
+  <rect x="86" y="118" width="720" height="420" rx="20" class="case"/>
+  <rect x="116" y="152" width="660" height="332" rx="12" class="cut"/>
+  <rect x="158" y="190" width="515" height="230" rx="10" class="pcb"/>
+  <text x="415" y="220" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="18" font-weight="700">intact SATEL-VL53L8 carrier PCB</text>
+  <line x1="158" y1="374" x2="673" y2="374" stroke="#93c5fd" stroke-width="4" stroke-dasharray="12 8"/>
+  <text x="415" y="397" text-anchor="middle" fill="#dbeafe" font-family="sans-serif" font-size="13">snap-off perforation remains unbroken for this deployment</text>
+
+  <rect x="327" y="266" width="72" height="46" rx="5" fill="#020617"/>
+  <circle cx="363" cy="289" r="84" fill="none" stroke="#38bdf8" stroke-width="5"/>
+  <text x="363" y="346" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13">aperture above sensor</text>
+
+  <rect x="170" y="238" width="128" height="76" rx="8" fill="#fef3c7" stroke="#92400e" stroke-width="2"/>
+  <text x="234" y="263" text-anchor="middle" class="small">J1/J2 pads</text>
+  <text x="234" y="285" text-anchor="middle" class="tiny">solder pigtails here</text>
+  <text x="234" y="305" text-anchor="middle" class="tiny">not on components</text>
+  <circle cx="184" cy="330" r="5" class="pad"/>
+  <circle cx="205" cy="330" r="5" class="pad"/>
+  <circle cx="226" cy="330" r="5" class="pad"/>
+  <circle cx="247" cy="330" r="5" class="pad"/>
+  <circle cx="268" cy="330" r="5" class="pad"/>
+  <circle cx="289" cy="330" r="5" class="pad"/>
+
+  <rect x="126" y="176" width="28" height="248" rx="8" class="rail"/>
+  <rect x="676" y="176" width="28" height="248" rx="8" class="rail"/>
+  <text x="141" y="456" text-anchor="middle" class="tiny">edge rail</text>
+  <text x="690" y="456" text-anchor="middle" class="tiny">edge rail</text>
+  <rect x="198" y="126" width="420" height="26" rx="8" class="lid"/>
+  <rect x="230" y="152" width="82" height="22" rx="6" fill="#94a3b8"/>
+  <rect x="510" y="152" width="82" height="22" rx="6" fill="#94a3b8"/>
+  <text x="408" y="145" text-anchor="middle" class="tiny">lid retainer pads touch PCB edge zones only</text>
+
+  <rect x="500" y="450" width="185" height="46" rx="10" fill="#94a3b8" stroke="#475569" stroke-width="2"/>
+  <text x="592" y="478" text-anchor="middle" class="small">strain bar + tie slot</text>
+  <rect x="702" y="438" width="112" height="80" rx="12" class="connector"/>
+  <text x="758" y="464" text-anchor="middle" class="small">case-side</text>
+  <text x="758" y="486" text-anchor="middle" class="small">JST-GH</text>
+  <text x="758" y="506" text-anchor="middle" class="tiny">pin 1 label</text>
+
+  <path d="M184 330 C310 470 445 470 500 458" class="wire-red"/>
+  <path d="M205 330 C310 490 452 490 500 468" class="wire-black"/>
+  <path d="M226 330 C318 512 455 507 500 478" class="wire-blue"/>
+  <path d="M247 330 C328 528 465 525 500 488" class="wire-green"/>
+  <path d="M268 330 C345 548 482 540 500 498" class="wire-yellow"/>
+  <path d="M289 330 C360 565 505 558 526 498" class="wire-purple"/>
+  <path d="M685 472 C715 472 728 472 742 472" class="wire-red"/>
+  <path d="M685 482 C715 482 728 482 742 482" class="wire-black"/>
+  <path d="M685 492 C715 492 728 492 742 492" class="wire-blue"/>
+  <path d="M814 478 C925 478 980 468 1065 438" stroke="#111827" stroke-width="8" fill="none"/>
+  <text x="985" y="418" text-anchor="middle" class="small">wrapped 10-wire silicone harness exits toward chassis</text>
+
+  <rect x="135" y="520" width="650" height="32" rx="8" fill="#111827"/>
+  <text x="460" y="542" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">flat bottom mounting face: VHB tape or M2 side ears attach to the car</text>
+
+  <rect x="870" y="142" width="300" height="90" rx="12" class="callout"/>
+  <text x="1020" y="170" text-anchor="middle" class="label">Electrical handoff</text>
+  <text x="1020" y="196" text-anchor="middle" class="small">SATEL pads -> short pigtails -></text>
+  <text x="1020" y="218" text-anchor="middle" class="small">case-side JST-GH -> car harness</text>
+  <path d="M870 196 C820 230 778 410 758 438" class="arrow"/>
+
+  <rect x="870" y="274" width="300" height="116" rx="12" class="callout"/>
+  <text x="1020" y="302" text-anchor="middle" class="label">Service loop</text>
+  <text x="1020" y="328" text-anchor="middle" class="small">Leave gentle wire slack inside the case.</text>
+  <text x="1020" y="350" text-anchor="middle" class="small">No taut wire should pull on J1/J2 pads</text>
+  <text x="1020" y="372" text-anchor="middle" class="small">when the lid is installed.</text>
+  <path d="M870 342 C770 412 625 430 560 452" class="arrow"/>
+
+  <rect x="870" y="520" width="300" height="105" rx="12" class="callout"/>
+  <text x="1020" y="548" text-anchor="middle" class="label">Do not do this</text>
+  <text x="1020" y="574" text-anchor="middle" class="small">Do not let the external harness pull</text>
+  <text x="1020" y="596" text-anchor="middle" class="small">directly on SATEL solder pads or on</text>
+  <text x="1020" y="618" text-anchor="middle" class="small">tall Dupont sockets.</text>
+
+  <text x="620" y="696" text-anchor="middle" class="small">Assembly rule: the case holds the PCB, the strain bar holds the pigtails,</text>
+  <text x="620" y="718" text-anchor="middle" class="small">and the case-side connector carries the removable harness.</text>
+</svg>

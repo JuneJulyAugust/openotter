@@ -29,7 +29,7 @@
   <path d="M296 248 C392 225 410 205 470 205" class="wire" stroke="#111827"/>
   <path d="M296 264 C392 250 410 230 470 230" class="wire" stroke="#2563eb"/>
   <text x="602" y="190" text-anchor="middle" class="small">solder to 0.8 x 1.6 mm DUT pads</text>
-  <text x="602" y="216" text-anchor="middle" class="small">UV resin or epoxy after continuity test</text>
+  <text x="602" y="216" text-anchor="middle" class="small">add strain relief after continuity test</text>
   <text x="602" y="242" text-anchor="middle" class="small">do not put cable load on pads</text>
 
   <rect x="470" y="325" width="265" height="155" rx="12" fill="#eef2ff" stroke="#4338ca" stroke-width="2"/>
@@ -45,7 +45,7 @@
 
   <rect x="835" y="350" width="230" height="130" rx="12" class="outline"/>
   <text x="950" y="385" text-anchor="middle" class="label">Mounting</text>
-  <text x="950" y="417" text-anchor="middle" class="small">VHB on flat back</text>
+  <text x="950" y="417" text-anchor="middle" class="small">VHB on flat bottom</text>
   <text x="950" y="439" text-anchor="middle" class="small">or M2 side ears</text>
   <text x="950" y="461" text-anchor="middle" class="small">front/rear label on case</text>
 

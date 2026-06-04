@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - **SATEL-VL53L8 mechanical integration plan**: Added harness recommendations, source image references, full-SATEL and snap-off mini-PCB deployment visuals, car installation/assembly diagrams, and bottom-mounted CadQuery enclosures with board retention, harness strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
 - **One-sensor SPI bench evidence**: Documented successful rear SATEL-VL53L8 SPI1 validation after a power-off I2C-to-SPI wiring change, cold boot, firmware auto-probe, and iOS depth-map rendering.
 - **H12Y mechanical integration visuals**: Added photo-based front/rear SATEL case placement, harness routing, and bench-to-car wiring transition renders for the MJX H12Y deployment.
+- **Case internal assembly diagrams**: Added full-SATEL and snap-off mini-PCB cutaway visuals showing PCB retention, pigtail routing, strain relief, case-side connector/interposer placement, and harness load paths.
 
 ### Changed
 - **VL53L8 runtime driver**: Refactored the single VL53L8 runtime into rear/front slots. Rear probes I2C3 first, then SPI1 with D8 `NCS`; front probes SPI1 with D10 `NCS`.

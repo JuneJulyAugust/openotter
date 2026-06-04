@@ -231,6 +231,10 @@ carrier electrical interface. This is the design to print first.
 
 ![Full SATEL carrier case design](assets/vl53l8-full-satel-case.svg)
 
+Detailed internal assembly:
+
+![Full SATEL internal case assembly](assets/vl53l8-full-satel-internal-assembly.svg)
+
 CAD artifact:
 
 ```text
@@ -279,6 +283,37 @@ Rendered CadQuery preview:
 11. Check from the sensor side that no cable, screw head, bumper lip, or case
     wall is visible through the optical aperture.
 
+### Full Carrier Internal Harness Detail
+
+The full-SATEL case should have a small cable bay at the `J1`/`J2` end. The
+preferred internal connection is:
+
+```text
+SATEL J1/J2 pads
+  -> short 28 AWG silicone pigtails
+  -> printed strain bar / tie slot
+  -> case-side JST-GH connector or tiny JST-GH breakout
+  -> removable car harness
+```
+
+This keeps the external harness removable without letting the car harness pull
+directly on the SATEL pads. The pigtails inside the case should have a gentle
+service loop so the lid can be opened and closed without tension. The printed
+lid pads should touch only PCB edge zones; they should not press on the VL53L8
+module, level shifters, regulators, or solder joints.
+
+Use these checks before closing the lid:
+
+- tug lightly on the external harness and verify the strain bar or connector
+  bay takes the load, not `J1`/`J2`;
+- confirm pigtails do not cross the optical aperture or touch the VL53L8 lens
+  area;
+- confirm the board is resting on printed rails, not on soldered wires;
+- confirm pin 1 is marked at the case-side connector and matches the adapter
+  pin-1 convention;
+- continuity-test from the board-side adapter connector all the way to the
+  SATEL pads before plugging into the IOT01A1.
+
 ### Full Carrier Wiring Pin Order
 
 Use one 10-wire harness per sensor. Keep the connector pin order identical for
@@ -306,6 +341,10 @@ The mini-PCB case is for the compact final sensor head after the full-carrier
 system is proven. It should not be the first car deployment.
 
 ![Mini-PCB case design](assets/vl53l8-mini-pcb-case.svg)
+
+Detailed internal assembly:
+
+![Mini-PCB internal case assembly](assets/vl53l8-mini-pcb-internal-assembly.svg)
 
 CAD artifact:
 
@@ -350,6 +389,38 @@ The interposer should include:
 - test pads for `DUT_AVDD`, `DUT_IOVDD`, `GND`, `SCK`, `MOSI`, `MISO`, `NCS`,
   `LPn`, and `GPIO1`;
 - a mechanical tie point so the mini-PCB solder pads never carry cable load.
+
+### Mini-PCB Internal Harness Detail
+
+The mini-PCB case should be treated as a two-zone enclosure:
+
+```text
+optical cavity
+  -> snapped-off mini PCB held by edge rails
+  -> short 30 AWG DUT-pad pigtails
+  -> printed clamp beside the pad edge
+
+electronics bay
+  -> interposer/regulator board
+  -> DUT_AVDD and DUT_IOVDD generation
+  -> level shifting if required
+  -> keyed JST-GH harness connector
+```
+
+Do not run the removable car harness directly to the tiny mini-PCB pads. The
+mini-PCB pads are too small to be structural. The 30 AWG wires should leave the
+pads, pass through a clamp or tie point almost immediately, and terminate on the
+interposer. Only the interposer should terminate the keyed external harness.
+
+The mini path needs extra validation before power:
+
+- identify each DUT pad from the schematic and mark it in the case drawing;
+- decide and measure `DUT_AVDD` and `DUT_IOVDD` before connecting STM32 GPIO;
+- add level shifting if the mini-PCB I/O domain is below STM32 3.3 V;
+- after continuity testing, add insulation/strain relief on the wire
+  insulation, not as a blob that hides an untested solder fault;
+- verify there is no 5 V route from the IOT01A1 harness into a mini-PCB DUT
+  pad.
 
 ## Board-Side IOT01A1 Adapter
 

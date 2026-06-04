@@ -57,11 +57,11 @@
   <rect x="575" y="340" width="335" height="170" rx="12" class="outline"/>
   <text x="742" y="375" text-anchor="middle" class="label">Mounting stack</text>
   <rect x="625" y="400" width="150" height="38" rx="6" fill="#cbd5e1"/>
-  <text x="700" y="424" text-anchor="middle" class="small">case back plate</text>
+  <text x="700" y="424" text-anchor="middle" class="small">case bottom plate</text>
   <rect x="625" y="446" width="150" height="26" rx="4" fill="#111827"/>
   <text x="700" y="465" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">3M VHB</text>
   <rect x="625" y="480" width="150" height="28" rx="4" fill="#6b7280"/>
-  <text x="700" y="499" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">car bumper</text>
+  <text x="700" y="499" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">car saddle/bumper</text>
   <text x="800" y="424" class="small">Alternative:</text>
   <text x="800" y="446" class="small">M2 screws through side ears</text>
   <text x="800" y="468" class="small">with washers or inserts</text>

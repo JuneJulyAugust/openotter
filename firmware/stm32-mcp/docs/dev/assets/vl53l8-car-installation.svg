@@ -17,7 +17,7 @@
     </style>
   </defs>
 
-  <text x="600" y="42" text-anchor="middle" class="label">Install the case on a vertical front/rear face, lid and optical aperture facing outward</text>
+  <text x="600" y="42" text-anchor="middle" class="label">Install the case with the flat bottom on a bumper/tray saddle, lid and optical aperture facing outward</text>
 
   <rect x="210" y="285" width="780" height="145" rx="20" class="chassis"/>
   <rect x="155" y="320" width="65" height="85" rx="10" class="bumper"/>
@@ -52,7 +52,7 @@
   <text x="600" y="592" text-anchor="middle" class="small">Any occlusion can look like a real obstacle or corrupt range quality</text>
 
   <line x1="142" y1="415" x2="142" y2="520" stroke="#64748b" stroke-width="2" stroke-dasharray="6 6"/>
-  <text x="142" y="542" text-anchor="middle" class="tiny">case back taped/screwed to bumper</text>
+  <text x="142" y="542" text-anchor="middle" class="tiny">case bottom taped/screwed to saddle</text>
   <line x1="1062" y1="415" x2="1062" y2="520" stroke="#64748b" stroke-width="2" stroke-dasharray="6 6"/>
-  <text x="1062" y="542" text-anchor="middle" class="tiny">lid faces outward</text>
+  <text x="1062" y="542" text-anchor="middle" class="tiny">lid and aperture face outward</text>
 </svg>
