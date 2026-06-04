@@ -69,17 +69,24 @@ auto_detect_device() {
     if [[ -n "$DEVICE_UDID" ]]; then return; fi
 
     local devices
-    local available_output
-    if ! available_output=$(xcrun devicectl list devices \
-        --filter "State == 'available' OR State == 'connected'" \
-        --timeout 15 2>/dev/null); then
+    local devices_output
+    if ! devices_output=$(xcrun devicectl list devices --timeout 30 2>&1); then
         echo "Unable to query connected iOS devices via CoreDevice."
+        echo "$devices_output"
         echo "Try reconnecting the iPhone, unlocking it, and running: xcrun devicectl list devices"
         exit 1
     fi
 
-    devices=$(printf '%s\n' "$available_output" \
-        | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' || true)
+    devices=$(printf '%s\n' "$devices_output" | awk '
+        /[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}/ &&
+        /available|connected/ {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
+                    print $i
+                }
+            }
+        }
+    ' || true)
     local count
     if [[ -n "$devices" ]]; then
         count=$(printf '%s\n' "$devices" | wc -l | tr -d '[:space:]')
@@ -92,13 +99,13 @@ auto_detect_device() {
         echo "Auto-detected device: $DEVICE_UDID"
     elif [[ "$count" -gt 1 ]]; then
         echo "Multiple devices found. Specify with --device <UDID>:"
-        echo "$available_output"
+        echo "$devices_output"
         exit 1
     else
-        echo "No connected iOS devices found."
+        echo "No available iOS devices found."
         echo
         echo "CoreDevice currently reports:"
-        xcrun devicectl list devices --timeout 15 2>/dev/null || true
+        echo "$devices_output"
         cat <<'EOF'
 
 If your iPhone is listed as unavailable, reconnect it, unlock it, confirm

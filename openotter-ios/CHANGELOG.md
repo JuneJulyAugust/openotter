@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **ToF debug config payload**: FE61 writes now include the selected role byte so the firmware can stream one chosen VL53L8 depth map at a time while keeping both sensors online for safety.
 
+### Fixed
+- **CoreDevice deploy auto-detection**: `build.sh deploy` now detects `available (paired)` iPhones from `xcrun devicectl list devices`, avoiding a false "No connected iOS devices found" result on newer Xcode/CoreDevice output.
+
 ## [1.2.0] - 2026-06-02
 
 ### Added
