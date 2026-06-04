@@ -18,7 +18,7 @@ Read them in order the first time; after that each is self-contained.
 | 07 | [Reverse Safety Bringup](07-reverse-safety-bringup.md)           | Step-by-step checklist: mode writes, Drive/Debug switching, obstacle test, blind test, BLE watchdog.        |
 | 08 | [VL53L5CX ToF Debug](08-vl53l5cx-tof-debug.md)                  | Historical/deprecated MSP01 wiring, PC3/PC4 pins, V2 BLE chunk protocol, 4x4/8x8 streaming.                |
 | 09 | [BLE GATT Slot Bug Postmortem](09-ble-gatt-slot-bug-postmortem.md) | Root cause: FE44 undiscoverable due to Max_Attribute_Records=10; fix; VL53L5CX status code bug.           |
-| 10 | [SATEL-VL53L8 Firmware Bring-Up](10-vl53l8-satel-bringup.md)    | Active SATEL-VL53L8 wiring, one-sensor bring-up, and two-sensor wiring plan.                              |
+| 10 | [SATEL-VL53L8 Firmware Bring-Up](10-vl53l8-satel-bringup.md)    | Active SATEL-VL53L8 I2C/SPI wiring, one-sensor bring-up evidence, and two-sensor wiring plan.             |
 | 11 | [Firmware Test Strategy](11-firmware-test-strategy.md)          | Host tests, coverage workflow, hardware-in-the-loop checks, and two-sensor verification plan.             |
 
 ---
@@ -38,7 +38,7 @@ Read them in order the first time; after that each is self-contained.
 03 (scheduler pattern) → 05 (sensor-specific recipes and GATT extension).
 
 **"How does the active deployment ToF wiring work?"**
-10 — SATEL-VL53L8 wiring, bring-up checks, and two-sensor plan.
+10 — SATEL-VL53L8 I2C/SPI wiring, bring-up checks, and two-sensor plan.
 
 **"How do I prove the firmware is ready?"**
 11 — host unit tests, coverage, and serial/BLE end-to-end checks.

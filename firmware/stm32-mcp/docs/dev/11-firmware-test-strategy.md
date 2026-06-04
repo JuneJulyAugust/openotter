@@ -106,13 +106,24 @@ The second SATEL wiring is already documented and covered by host topology
 tests, but it remains code-ready rather than release-proven until physical SPI
 verification is complete.
 
+Current hardware status as of 2026-06-04:
+
+- Gate 2 has passed for one rear SATEL-VL53L8 in both I2C3 mode and SPI1 mode.
+- The one-sensor SPI pass used a power-off wiring change, cold boot, firmware
+  auto-probe, and iOS STM32 Control depth-map rendering.
+- Gate 3 remains pending: immobilized robot safety behavior still needs a
+  deliberate reverse-clamp/brake bench test.
+- Two-sensor physical SPI validation remains pending until the front SATEL is
+  installed.
+
 ## One-Sensor End-To-End Test
 
 The one-sensor release candidate must pass this bench flow before merging:
 
 1. Power off the IOT01A1 before changing SATEL wiring.
 2. Wire one SATEL-VL53L8 exactly as described in
-   `10-vl53l8-satel-bringup.md`.
+   `10-vl53l8-satel-bringup.md`. Run the flow once for I2C3 wiring and once
+   for SPI1 wiring when validating transport fallback.
 3. Connect the IOT01A1 ST-LINK USB port to the Mac.
 4. Flash firmware:
 
@@ -171,14 +182,16 @@ observably instead of silently:
 | --- | --- |
 | SATEL unpowered or unplugged | UART logs rear I2C3, rear SPI1/D8, and front SPI1/D10 probe attempts, then `VL53L8 init: no usable sensors ...`; FE63 reports error state after retry |
 | `LPn` held low | Probe fails; retry cadence is visible in UART |
-| SCL/SDA swapped | Probe fails; no frame logs appear |
+| I2C SCL/SDA swapped | Probe fails; no frame logs appear |
+| SPI SCK/MOSI/MISO/NCS swapped | Rear SPI probe fails or never reaches frame logs; iOS depth map remains empty |
 | Debug config with invalid timing | FE63 keeps running state and reports `TOF_STATUS_BAD_CONFIG` |
 | Drive-mode FE61 write | FE63 keeps running state and reports `TOF_STATUS_LOCKED_IN_DRIVE` |
 
 ## Two-Sensor Test Plan
 
-Two-sensor runtime support is active for shared SPI1 slots, but only the
-one-rear-sensor I2C bench setup has been physically verified so far. The
+Two-sensor runtime support is active for shared SPI1 slots. One rear SATEL has
+now been physically verified alone on I2C3 and alone on SPI1. The front sensor
+and the full two-sensor shared-SPI setup still need physical verification. The
 topology contract is captured in `tof_l8_topology.c` and
 `test_tof_l8_topology.c`.
 
@@ -194,6 +207,8 @@ Verify the hardware in this order:
 5. Both sensors ranging continuously at conservative rates.
 6. Safety policy chooses the front sensor while moving forward and the rear
    sensor while reversing, while both frame streams remain alive.
+
+Steps 1 and 2 have passed on hardware. Steps 3-6 remain pending.
 
 Expected two-sensor logs:
 

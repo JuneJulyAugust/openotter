@@ -474,9 +474,9 @@ L8 dbg: seen=... snap=... push=... fail=... mode=1 role=rear avail=0x01 ...
 ## Two-Sensor Runtime
 
 The runtime supports either one or two available VL53L8 slots at boot. The
-current bench hardware verifies one rear I2C sensor. The front SPI slot is wired
-and probed in firmware, but it still needs physical bench verification after the
-second SATEL board is installed.
+current bench hardware verifies one rear sensor in both I2C3 mode and SPI1
+mode. The front SPI slot is wired and probed in firmware, but it still needs
+physical bench verification after the second SATEL board is installed.
 
 The HAL-free topology contract lives in `Core/Src/tof_l8_topology.c` and is
 covered by `tests/host/test_tof_l8_topology.c`. The core invariants are:
@@ -616,6 +616,21 @@ VL53L8 rear grid r/s/f: 385/5/1 326/4/1 2298/5/1 ...
 
 Earlier 2026-06-02 evidence also proved live 4x4 safety frames and a temporary
 8x8 diagnostic frame path over I2C.
+
+One-sensor SPI mode was verified on 2026-06-04 after powering off the IOT01A1,
+rewiring the same rear SATEL board from I2C to SPI, and cold booting the
+firmware. The firmware auto-probed the available transport after boot, and the
+iOS STM32 Control debug view rendered the live VL53L8 depth map. Exact UART
+lines were not captured in this note; the expected SPI selection pattern is:
+
+```text
+VL53L8 rear probe transport=i2c3 ... alive=0
+VL53L8 rear probe transport=spi1 pre_stop=0 alive_rd=0 alive=1
+VL53L8 rear selected transport=spi1
+VL53L8 rear init phase=fw_done
+VL53L8 rear stream start layout=4 zones=16 hz=30
+VL53L8 rear frame layout=4 zones=16
+```
 
 ## Troubleshooting
 

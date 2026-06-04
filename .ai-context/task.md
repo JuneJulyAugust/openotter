@@ -62,6 +62,7 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Correct SATEL-VL53L8 `J1`/`J2` wiring documentation for the IOT01A1.
 - [x] Migrate the active STM32 ToF firmware path to VL53L8CX.
 - [x] Verify one SATEL-VL53L8 streams valid 4x4 frames on IOT01A1 over I2C3.
+- [x] Verify one rear SATEL-VL53L8 streams a valid iOS depth map over SPI1 after power-off I2C-to-SPI rewiring and cold boot.
 - [x] Add boot-time I2C3/SPI1 transport probing for the first SATEL-VL53L8.
 - [x] Add adaptive rear/front VL53L8 runtime slots and direction-specific firmware safety clamps.
 - [x] Deploy iOS diagnostics from the feature worktree and render live VL53L8 ToF data.
@@ -71,7 +72,6 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add regression tests for FE61 debug role compatibility/rejection, FE63 defensive decoding, and iOS stale-frame clearing when switching ToF roles.
 - [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB CadQuery enclosure CAD with bottom-mount case orientation, board retention, strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
 - [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
-- [ ] Re-flash the current feature firmware and re-verify one rear SATEL-VL53L8 hardware bring-up after a board power cycle.
 - [ ] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
 - [ ] Decide the v1.2.0 scope: either ship as "one rear SATEL verified, two-sensor code ready" or wait for physical two-sensor SPI verification.
 - [ ] Measure intact SATEL carrier dimensions with calipers or ST STEP/Gerber files and update the full-carrier CadQuery defaults before printing the final car case.
