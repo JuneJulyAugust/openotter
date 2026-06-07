@@ -62,7 +62,8 @@ This file defines the stable system contract. `task.md` tracks unfinished work, 
 - The project was formally rebranded to OpenOtter on 2026-04-16.
 - Version 1.0.0 established the first complete iPhone + STM32 safety milestone: forward LiDAR safety, rear ToF firmware safety, Telegram Park/Drive control, Self Driving emergency UI parity, and repeatable simulator test workflow.
 - Version 1.2.0 is prepared as a release candidate, not yet merged or tagged. It migrates the active STM32 ToF deployment path to SATEL-VL53L8, fixes the SATEL wiring contract, verifies live 4x4 firmware frames from one rear sensor on IOT01A1, updates iOS diagnostics plus rear ToF health presentation, implements adaptive rear/front runtime slots for a future second sensor on shared SPI1, and lets STM32 Control select the rear or front FE62 debug depth stream.
-- Release gating order: first make PR CI green, then re-flash and re-verify the one rear SATEL-VL53L8 hardware path, then bench-test one-sensor firmware safety with the robot immobilized, then decide whether v1.2.0 ships as a one-rear-sensor release or waits for physical two-sensor SPI verification. Autonomous-mode work should start only after the firmware safety substrate is proven on hardware.
+- The v1.2.0 hardware validation scope is now explicitly one rear SATEL-VL53L8. Two-sensor front/rear support remains code-ready, documented, and host/iOS tested where hardware-free, but physical front/two-SATEL verification is deferred until another SATEL board is available.
+- Release gating order: first make PR CI green, then re-flash and re-verify the one rear SATEL-VL53L8 hardware path, then bench-test one-sensor firmware safety with the robot immobilized, then run app/firmware end-to-end validation for Park, forward LiDAR brake, rear ToF brake, and reverse escape behavior. Autonomous-mode work should start only after the one-rear-sensor safety substrate is proven on hardware.
 
 ## 3. Product Direction
 

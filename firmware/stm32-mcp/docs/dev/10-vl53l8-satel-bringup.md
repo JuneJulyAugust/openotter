@@ -32,11 +32,13 @@ firmware builds pass. The hardware release gate is:
 1. PR CI green for firmware host tests, firmware target build, and iOS tests.
 2. One rear SATEL-VL53L8 re-verified after power cycle and firmware flash.
 3. One-sensor safety supervisor bench-tested with the robot immobilized.
-4. Release scope decision:
-   - ship v1.2.0 as "one rear SATEL verified, two-sensor code ready"; or
-   - wait for physical two-sensor SPI verification before v1.2.0.
-5. Autonomous-mode work only after the firmware safety path is proven on
-   hardware.
+4. App/firmware end-to-end validation for Park, forward iPhone LiDAR BRAKE,
+   rear STM32 ToF BRAKE, and reverse escape behavior.
+5. v1.2.0 ships as "one rear SATEL verified, two-sensor code ready." Physical
+   front/two-SATEL SPI verification is deferred until a second SATEL board is
+   available; it is not a v1.2.0 tag blocker.
+6. Autonomous-mode work only after the one-rear-sensor firmware safety path is
+   proven on hardware.
 
 For the one-sensor safety bench test, the expected behavior is:
 

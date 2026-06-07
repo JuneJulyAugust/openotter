@@ -73,9 +73,11 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB CadQuery enclosure CAD with bottom-mount case orientation, board retention, strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
 - [x] Add H12Y photo-based front/rear ToF case placement, harness routing, bench-to-car wiring transition visuals, and renderer script for mechanical integration planning.
 - [x] Add detailed full-SATEL and snap-off mini-PCB internal case assembly diagrams showing PCB retention, case-side connector/interposer wiring, pigtails, service loop, and strain relief.
+- [x] Decide the v1.2.0 scope: ship as "one rear SATEL verified, two-sensor code ready"; defer physical front/two-SATEL verification until more hardware is available.
+- [x] Harden iOS safety mode transitions so reverse intent clears the forward LiDAR BRAKE latch before the planner ramp's initial zero tick, and stale rear FE43 events cannot revive after Park/Debug.
 - [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
 - [ ] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
-- [ ] Decide the v1.2.0 scope: either ship as "one rear SATEL verified, two-sensor code ready" or wait for physical two-sensor SPI verification.
+- [ ] End-to-end validate the one-rear-sensor v1.2.0 app/firmware path: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
 - [ ] Measure intact SATEL carrier dimensions with calipers or ST STEP/Gerber files and update the full-carrier CadQuery defaults before printing the final car case.
 - [ ] Measure snapped-off SATEL mini-PCB dimensions with calipers and update the mini-PCB CadQuery defaults before printing the final compact case.
 - [ ] Build a board-side IOT01A1 ToF harness adapter using locking connectors before car deployment.

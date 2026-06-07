@@ -92,7 +92,7 @@ Two states. One latch.
                     smoothedDepth > criticalDistance(latchedSpeed)
                             held for releaseHoldS
                                       OR
-                         plannerThrottle <= 0
+                         explicit reverse / idle reset
           ┌─────────────────────────────────────────────────────────┐
           │                                                         │
  ┌────────▼─────────┐                                     ┌─────────┴────────┐
@@ -136,7 +136,19 @@ Three independent release paths:
 
 **(a) Genuine clearance.** `smoothedDepth > criticalDistance(latchedSpeed)` must hold continuously for `releaseHoldS` (default 0.3 s). The debounce only guards against single-frame depth noise; it does **not** force a minimum brake duration. Physical interpretation: obstacle (or robot) must have actually moved away by the full safety margin computed at trigger speed.
 
-**(b) Operator intervention.** Planner issues `throttle ≤ 0` (stop, neutral, or reverse). Supervisor drops latch and passes the command through. This is the escape hatch: a human operator can always override by commanding reverse.
+**(b) Operator intervention.** Direct supervisor release only happens for
+explicit non-forward intent: `throttle < 0` (reverse) or an idle command
+(`source == .idle`). A transient planner output of `throttle == 0` does not
+release BRAKE, because the constant-speed planner intentionally emits one
+zero-throttle tick while its ramp limiter initializes. Without this guard, a
+fresh forward command could release the latch and then accelerate into the
+same obstacle on the next tick.
+
+At the orchestrator layer, a negative constant-throttle goal clears the
+forward BRAKE latch before the planner's first zero-ramp tick. This preserves
+the human escape hatch: a reverse Telegram/app command can back away from a
+forward LiDAR warning immediately, while a forward command during BRAKE still
+stays stopped.
 
 **(c) Operating mode → Park.** When the orchestrator transitions to `OperatingMode.park` it calls `supervisor.reset()`, dropping any latch and returning the supervisor to SAFE in a single step. From Park the supervisor cannot re-enter BRAKE because the planner emits neutral throttle and the trigger condition (§5.1) requires `command.throttle > 0`. See `Planner/DESIGN.md §3.1` for the mode contract.
 

@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **ToF debug config payload**: FE61 writes now include the selected role byte so the firmware can stream one chosen VL53L8 depth map at a time while keeping both sensors online for safety.
+- **v1.2.0 validation scope**: The release candidate is scoped to one physically verified rear SATEL-VL53L8; front/two-sensor support remains code-ready and documented, but physical second-sensor validation is deferred.
 
 ### Fixed
 - **CoreDevice deploy auto-detection**: `build.sh deploy` now detects `available (paired)` iPhones from `xcrun devicectl list devices`, avoiding a false "No connected iOS devices found" result on newer Xcode/CoreDevice output.
+- **Forward/rear safety mode transitions**: Reverse intent now clears the iPhone LiDAR forward BRAKE latch before the constant-throttle ramp emits its initial zero tick, while forward re-commands still stay latched. The STM32 rear safety event gate now preserves FE43 sequence fencing across Park/Debug so stale BRAKE notifications cannot revive the warning when Drive resumes.
 
 ## [1.2.0] - 2026-06-02
 

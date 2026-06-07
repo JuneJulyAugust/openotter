@@ -39,6 +39,36 @@ final class FirmwareSafetyEventGateTests: XCTestCase {
         XCTAssertEqual(gate.lastSafetyEvent?.state, .brake)
     }
 
+    func testDriveSuppressesBrakeSeqAlreadySeenWhileParked() {
+        var gate = FirmwareSafetyEventGate()
+        _ = gate.setOperatingMode(.park)
+
+        XCTAssertNil(gate.ingest(makeEvent(seq: 10, state: .brake)))
+        XCTAssertNil(gate.lastSafetyEvent)
+
+        _ = gate.setOperatingMode(.drive)
+
+        XCTAssertNil(gate.ingest(makeEvent(seq: 10, state: .brake)),
+                     "A brake event already observed during Park must not re-arm the UI when Drive resumes")
+        XCTAssertNil(gate.lastSafetyEvent)
+        XCTAssertEqual(gate.lastSafetySeq, 10)
+        XCTAssertEqual(gate.ingest(makeEvent(seq: 11, state: .brake))?.state, .brake)
+    }
+
+    func testDriveSuppressesOlderEventsAfterNewerAcceptedEvent() {
+        var gate = FirmwareSafetyEventGate()
+
+        XCTAssertEqual(gate.ingest(makeEvent(seq: 5, state: .brake))?.state, .brake)
+        XCTAssertEqual(gate.lastSafetySeq, 5)
+
+        let visible = gate.ingest(makeEvent(seq: 4, state: .safe))
+
+        XCTAssertEqual(visible?.state, .brake,
+                       "Older notifications should not replace the latest visible safety event")
+        XCTAssertEqual(gate.lastSafetySeq, 5)
+        XCTAssertEqual(gate.lastSafetyEvent?.state, .brake)
+    }
+
     func testDebugClearsCachedBrakeAndDropsBrakeEvents() {
         var gate = FirmwareSafetyEventGate()
         XCTAssertEqual(gate.ingest(makeEvent(state: .brake))?.state, .brake)

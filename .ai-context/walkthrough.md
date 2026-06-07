@@ -32,6 +32,16 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-06-07 - iOS Safety Latch Consolidation
+
+- **Context:** v1.2.0 end-to-end validation with one rear SATEL-VL53L8, iPhone forward LiDAR safety, Telegram Park/Reverse commands, and STM32 rear safety events.
+- **What we built/tested:** Added regression coverage for forward BRAKE -> reverse escape, Park -> reverse after a forward obstacle, stale FE43 rear events seen while parked, and out-of-order FE43 notifications.
+- **Issue observed:** A forward iPhone LiDAR collision warning could remain latched through Park/Reverse in a timing-sensitive path, and a rear STM32 BRAKE event observed while disarmed could be accepted again when Drive resumed.
+- **Root cause:** `ConstantSpeedPlanner` intentionally emits a zero-throttle first tick after every new goal, so reverse intent was not visible to the `SafetySupervisor` until the second tick. `FirmwareSafetyEventGate` also cleared its FE43 sequence fence on Park/Debug, letting a stale notification look new after Drive resumed.
+- **Resolution:** `PlannerOrchestrator` now clears the forward LiDAR latch for negative constant-throttle goals before the planner ramp tick, while forward goals during BRAKE remain latched. `FirmwareSafetyEventGate` now preserves a monotonic sequence fence across Park/Debug and suppresses older/same-seq events.
+- **Validation:** Red run failed in `PlannerPipelineIntegrationTests.testReverseGoalDuringBrakeClearsLatchBeforeFirstRampedTick` and `FirmwareSafetyEventGateTests`; green run passed `bash openotter-ios/build.sh test` with 210 tests and 0 failures.
+- **Follow-up:** Hardware validate the one-rear-sensor v1.2.0 flow: Park clears warnings, forward LiDAR BRAKE permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
+
 ### 2026-06-02 - SATEL-VL53L8 v1.2.0 Release Candidate
 
 - **Context:** Moving the STM32 deployment ToF path from VL53L1/VL53L5 prototypes to one SATEL-VL53L8 on B-L475E-IOT01A1, then making the iOS diagnostics view match the new firmware.

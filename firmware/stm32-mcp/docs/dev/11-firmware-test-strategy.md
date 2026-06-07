@@ -96,15 +96,18 @@ order:
 2. One rear SATEL-VL53L8 is re-verified on hardware after a board power cycle
    and a flash of the current feature firmware.
 3. One-sensor firmware safety is bench-tested with the robot immobilized.
-4. The v1.2.0 release scope is explicitly chosen:
-   - one rear SATEL verified, two-sensor code ready; or
-   - wait for physical two-sensor SPI verification.
-5. Vehicle-level autonomous validation runs only after the firmware safety path
-   is proven on hardware.
+4. App/firmware end-to-end validation passes for Park clearing, forward iPhone
+   LiDAR BRAKE, rear STM32 ToF BRAKE, and reverse escape behavior.
+5. The v1.2.0 release scope is one rear SATEL verified and two-sensor code
+   ready. Physical front/two-SATEL shared-SPI verification is deferred until a
+   second SATEL board is available.
+6. Vehicle-level autonomous validation runs only after the one-rear-sensor
+   firmware safety path is proven on hardware.
 
 The second SATEL wiring is already documented and covered by host topology
 tests, but it remains code-ready rather than release-proven until physical SPI
-verification is complete.
+verification is complete. This is intentional for v1.2.0 and is not a tag
+blocker.
 
 Current hardware status as of 2026-06-04:
 

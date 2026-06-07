@@ -8,7 +8,6 @@ struct FirmwareSafetyEventGate {
     mutating func setOperatingMode(_ mode: OperatingMode) -> FirmwareSafetyEvent? {
         operatingMode = mode
         if mode != .drive {
-            lastSafetySeq = nil
             lastSafetyEvent = nil
         }
         return lastSafetyEvent
@@ -16,12 +15,12 @@ struct FirmwareSafetyEventGate {
 
     mutating func ingest(_ event: FirmwareSafetyEvent) -> FirmwareSafetyEvent? {
         if operatingMode != .drive {
-            lastSafetySeq = event.seq
+            rememberSequenceFence(event.seq)
             lastSafetyEvent = nil
             return nil
         }
 
-        if lastSafetySeq == event.seq && lastSafetyEvent == event {
+        if let lastSeq = lastSafetySeq, event.seq <= lastSeq {
             return lastSafetyEvent
         }
 
@@ -33,5 +32,15 @@ struct FirmwareSafetyEventGate {
     mutating func resetConnection() {
         lastSafetySeq = nil
         lastSafetyEvent = nil
+    }
+
+    private mutating func rememberSequenceFence(_ seq: UInt32) {
+        guard let lastSeq = lastSafetySeq else {
+            lastSafetySeq = seq
+            return
+        }
+        if seq > lastSeq {
+            lastSafetySeq = seq
+        }
     }
 }

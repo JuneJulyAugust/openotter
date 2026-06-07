@@ -4,6 +4,28 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
+## 2026-06-07 - v1.2.0 One-Rear-SATEL Safety Consolidation
+
+### Summary
+The v1.2.0 release scope is now one physically verified rear SATEL-VL53L8. Front/two-SATEL support remains code-ready, documented, and covered by hardware-free tests where possible, but physical second-sensor validation is deferred until another SATEL board is available.
+
+### Achievements
+1. **Forward reverse-escape fix:** `PlannerOrchestrator` clears the iPhone LiDAR forward BRAKE latch for negative constant-throttle goals before the planner's first zero-ramp tick. Forward re-commands during BRAKE still stay latched.
+2. **Rear stale-event fence:** `FirmwareSafetyEventGate` preserves FE43 sequence fencing across Park/Debug and suppresses same/older events, so stale rear BRAKE notifications cannot reappear after Drive resumes.
+3. **Regression coverage:** Added iOS tests for forward BRAKE -> reverse escape, Park -> reverse with a forward obstacle still visible, stale rear events seen while parked, and out-of-order rear notifications.
+4. **Release docs:** Updated `.ai-context`, planner/safety design docs, iOS/STM32 changelogs, and firmware bring-up/test-strategy docs to reflect the one-rear-sensor v1.2.0 scope.
+5. **Validation:** `bash openotter-ios/build.sh test` passed with 210 tests and 0 failures after a red run proved the new tests caught the bug.
+
+### Current State
+- **iOS App:** Safety state machine is hardened for the reported Park/Reverse warning-latch path.
+- **STM32 Firmware:** No firmware logic change in this step; v1.2.0 physical validation remains one rear SATEL.
+- **Next Step:** Hardware E2E validation: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
+
+### Prompt Context for Next Session
+"OpenOtter v1.2.0 is scoped to one physically verified rear SATEL-VL53L8. The iOS safety stack now clears the forward LiDAR BRAKE latch on explicit reverse intent before the planner ramp's first zero tick, and the STM32 rear FE43 gate fences stale events across Park/Debug. Run hardware E2E validation before merge/tag."
+
+---
+
 ## 2026-06-02 - SATEL-VL53L8 v1.2.0 Release Candidate
 
 ### Summary
