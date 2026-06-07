@@ -16,6 +16,7 @@
 #include "stm32l4xx_ll_pwr.h"
 #include "stm32l4xx_ll_rcc.h"
 #include "stm32l4xx_ll_rtc.h"
+#include "firmware_watchdog.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -134,6 +135,10 @@ extern "C" {
 #define SPI_FIFO_RX_DEPTH 4
 #define BLUENRG_HOLD_TIME_IN_RESET 28
 #define CS_PULSE_625NS_NBR_CYCLES_REQ 52
+/* Bound HCI command waits below the IWDG window. If BlueNRG does not respond
+ * within this time, startup fails fast instead of leaving the board in a
+ * half-alive BLE state. */
+#define OPENOTTER_BLE_HCI_TIMEOUT_MS FW_WATCHDOG_BLE_HCI_TIMEOUT_MS
 
 /*----------------------------------------------------------------------------*
  * UART (for debug trace output via ST-LINK VCP)

@@ -20,7 +20,7 @@ The B-L475E-IOT01A is a single PCB with two USB-C micro-B connectors:
 │   [CN7  ST-LINK USB]  ◀── host Mac (power + SWD + ST-LINK VCP)     │
 │                                                                    │
 │      LED  LD1  (green, PA5)     ← SPI1 SCK in VL53L8 SPI mode      │
-│      LED  LD2  (green, PB14)    ← VL53L8 frame activity indicator  │
+│      LED  LD2  (green, PB14)    ← main-loop heartbeat              │
 │      LED  LD3  (orange, PC9)    ← WiFi/BLE combo status (unused)   │
 │      LED  LD4  (blue)           ← power indicator on ST-LINK       │
 │      LED  LD6  (red)            ← ST-LINK communication activity   │
@@ -138,23 +138,37 @@ Current firmware reserves PA5 / Arduino D13 for SPI1 SCK so SATEL-VL53L8 can
 run in SPI mode. Do not use LD1 as a firmware heartbeat in this branch.
 
 After `./build.sh flash` finishes with `[OK] Flash and verify complete.`, open
-the ST-LINK VCP serial log at 115200 baud and look for a 1 Hz `LOOP` line:
+the ST-LINK VCP serial log at 115200 baud and look for the boot phases and the
+1 Hz `LOOP` line:
 
 ```text
+=== OpenOtter STM32 boot ===
+BOOT reset_csr=0x... cause=...
+BOOT phase=peripherals_done tick=...
+BOOT phase=watchdog_ready tick=...
+BOOT phase=ble_app_init
+BOOT phase=ble_tof_init
+BOOT phase=services_ready tick=...
+BOOT phase=main_loop_enter tick=...
 LOOP iter=... tick=...
 ```
 
 - If `LOOP` appears once per second, the MCU reached the main loop.
+- LD2 / PB14 is a **main-loop heartbeat**. It toggles every 500 ms, so the
+  visible blink cycle is about 1 Hz while the loop is alive.
 - If no boot or `LOOP` lines appear, the MCU may not have reached the main loop.
-  Likely causes include a HardFault or early init error;
-  attach with `arm-none-eabi-gdb` to inspect.
-- If the serial log stops after a `BOOT phase=...` line and flash succeeded,
-  `Error_Handler()` was hit during one of the `MX_*_Init` calls. Run
-  under gdb and break at `Error_Handler`.
+  Likely causes include a power/brownout issue, HardFault, or early init error.
+- If the serial log stops after a `BOOT phase=...` line, use the last printed
+  phase as the boundary. For example, a stop after `ble_app_init` points at
+  BlueNRG/SPI3/GATT startup.
+- If the log prints `PANIC:I`, a fatal init path reset the MCU. If it prints
+  `PANIC:P`, the BlueNRG SPI transport stayed busy too long and the firmware
+  reset instead of deadlocking.
 - If `LOOP` continues but BLE never advertises, see 3.3.
 
-LED2 / PB14 toggles while VL53L8 frames are arriving. It is a sensor-frame
-indicator, not a general boot heartbeat.
+ToF frame health is reported through the STM32 diagnostic UI, FE63 status, and
+the UART ToF logs when debug output is enabled. LD2 intentionally answers the
+lower-level question first: whether the firmware loop is still executing.
 
 ### 3.2 UART trace over ST-LINK VCP
 
@@ -207,6 +221,36 @@ If the UART `LOOP` heartbeat continues but no advertisement is seen:
 - Connect gdb and break inside `BLE_InitStack` to verify
   `TL_BLE_HCI_Init` returned without asserting.
 
+### 3.4 VIN / RC battery startup triage
+
+When the board is powered from the RC car battery rail, noisy startup or a
+short brownout can leave external devices in a different state than the STM32
+core. The firmware now hardens this path by:
+
+- starting the independent watchdog before BlueNRG BLE bringup;
+- resetting the BlueNRG coprocessor with a bounded GPIO reset pulse that does
+  not depend on the BLE timer server;
+- limiting BlueNRG HCI command waits to 15 s, below the watchdog window;
+- panic-resetting instead of spinning forever on init errors or BlueNRG SPI
+  busy lockups;
+- clearing reset-cause flags after each boot log so `BOR`, `IWDG`, `PIN`, and
+  `SFT` reports describe the current reboot.
+
+If the car battery path reproduces a freeze, capture the first boot line:
+
+```text
+BOOT reset_csr=0x... cause=BOR IWDG PIN ...
+```
+
+- `BOR` means the MCU saw a brownout. Improve the 5 V rail before debugging
+  firmware; a buck regulator with enough surge margin and local bulk
+  capacitance near the IoT board is strongly recommended.
+- `IWDG` means the firmware watchdog recovered a stuck startup or loop path.
+  The next boot should continue to `main_loop_enter`; repeated `IWDG` points to
+  a persistent external-device or power issue.
+- `PANIC:I` before reset points at fatal peripheral/BLE service init.
+- `PANIC:P` before reset points at BlueNRG SPI bus busy lockup.
+
 ---
 
 ## 4. End-to-end sanity check
@@ -241,7 +285,12 @@ self-powers from the CN7 USB cable and the BLE module runs from the same
 |---------------------------------------------------|-------------------------------------------------------------------|
 | `--list` → `No STLink device detected`            | Charge-only cable, bad USB port, or probe FW too old — see 2.4.   |
 | `--list` OK, flash → `Error: Data mismatch`       | Flash wear or stale cache — try `--fullchip-erase` then reflash.  |
-| No `LOOP` line after flash                         | `Error_Handler()` or fault before the main loop; attach gdb.      |
-| `LOOP` continues but no BLE advert                 | SPI3 / SPBTLE-RF wiring fault, or BlueNRG reset hold time too low.|
+| No `LOOP` line after flash                         | Early init/fault/power issue before the main loop; check `BOOT phase` and panic tag. |
+| LD2 not blinking                                   | Main loop is not alive, or the board has not reached `main_loop_enter`. |
+| Repeated `BOOT cause=BOR` on RC battery VIN         | Brownout/noisy 5 V rail; improve regulation and capacitance before code debugging. |
+| Repeated `BOOT cause=IWDG`                          | Watchdog is recovering a persistent startup/loop stall. Capture the last boot phase. |
+| `PANIC:I`                                          | Fatal init/GATT setup failure; inspect prior boot phase and BLE logs. |
+| `PANIC:P`                                          | BlueNRG SPI stayed busy; inspect SPI3/BlueNRG power/reset behavior. |
+| `LOOP` continues but no BLE advert                 | SPI3 / SPBTLE-RF fault, or BlueNRG startup/GATT service failure.   |
 | Advert seen as "BlueNRG"                           | Old firmware on flash — reflash latest Debug build.               |
 | iOS app connects once, then refuses to reconnect   | GAP name mismatch with iOS cache — see BLE doc for cache notes.   |

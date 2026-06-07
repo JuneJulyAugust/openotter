@@ -198,6 +198,7 @@ int main(void) {
    * exactly why we just rebooted (NRST button, IWDG, software, BOR, etc). */
   boot_log_str("\r\n=== OpenOtter STM32 boot ===\r\n");
   boot_log_reset_cause(s_boot_reset_flags);
+  __HAL_RCC_CLEAR_RESET_FLAGS();
   boot_log_fmt("BOOT phase=peripherals_done tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
   /* Start TIM3 PWM on CH1 (throttle PB4) and CH4 (steering PB1) */
@@ -209,35 +210,33 @@ int main(void) {
    * before the main loop starts.
    */
 
+  /* Protect startup too: BLE/BlueNRG bringup is the highest-risk boot path
+   * when VIN is noisy. Start the watchdog after PWM is neutral and before
+   * BLE init so a stuck BLE reset/HCI wait reboots instead of freezing until
+   * the vehicle is power-cycled. */
+  FwStackGuard_Init();
+  FwMpu_Init();
+  FwWatchdog_Init();
+  boot_log_fmt("BOOT phase=watchdog_ready tick=%lu\r\n",
+               (unsigned long)HAL_GetTick());
+
   /* Initialize BLE stack and custom GATT service */
   boot_log_str("BOOT phase=ble_app_init\r\n");
-  BLE_App_Init(&htim3);
+  int ble_init_status = BLE_App_Init(&htim3);
+  if (ble_init_status != 0) {
+    boot_log_fmt("BOOT ble_app_init_failed status=%d\r\n", ble_init_status);
+    Firmware_Panic(FW_PANIC_INIT);
+  }
+  FwWatchdog_Refresh();
 
   /* Register the ToF GATT service (FE60). Must follow BLE_App_Init so the
    * BlueNRG stack and SVCCTL are already up. */
   boot_log_str("BOOT phase=ble_tof_init\r\n");
   BLE_Tof_Init();
+  FwWatchdog_Refresh();
   boot_log_fmt("BOOT phase=services_ready tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
 
-  /* Stamp the stack-bottom sentinel BEFORE the main loop starts pushing
-   * frames. If recursion or a deep call chain ever overwrites it, the
-   * check below catches the corruption before it manifests as something
-   * harder to triage. */
-  FwStackGuard_Init();
-
-  /* Configure the MPU's hardware no-access region immediately below the
-   * stack sentinel. Any push past the configured stack bottom traps as
-   * MemManage on the offending instruction; the sentinel remains readable
-   * for the cheap main-loop backup check below. */
-  FwMpu_Init();
-
-  /* Start the independent watchdog after fast startup init paths have run.
-   * The window is sized to tolerate lazy VL53L8CX boot from the main loop.
-   * From this point on, any main-loop iteration that exceeds the watchdog
-   * window reboots the chip — last-resort recovery from a hung BLE stack,
-   * blocked I²C transaction, or any other stuck-loop bug. */
-  FwWatchdog_Init();
   boot_log_fmt("BOOT phase=main_loop_enter tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
   /* USER CODE END 2 */
@@ -246,6 +245,7 @@ int main(void) {
   /* USER CODE BEGIN WHILE */
   uint32_t loop_iter = 0;
   uint32_t last_loop_log_tick = 0;
+  uint32_t last_loop_led_toggle_tick = 0;
   while (1) {
     /* Refresh the watchdog at the top of every iteration. If we never get
      * back here (e.g. BLE_App_Process or TofL8_Process spins forever), the
@@ -255,11 +255,15 @@ int main(void) {
 
     /* 1 Hz main-loop heartbeat. If the loop ever freezes after a successful
      * boot, the absence of this line in the UART log isolates the freeze to
-     * one of the four Process() calls below (or whatever was running between
+     * one of the Process() calls below (or whatever was running between
      * the last heartbeat and the freeze). Cheap: one HAL_GetTick + one
      * subtract per iteration. */
     {
       uint32_t now_hb = HAL_GetTick();
+      if ((now_hb - last_loop_led_toggle_tick) >= 500u) {
+        HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+        last_loop_led_toggle_tick = now_hb;
+      }
       if ((now_hb - last_loop_log_tick) >= 1000u) {
         boot_log_fmt("LOOP iter=%lu tick=%lu\r\n",
                      (unsigned long)loop_iter, (unsigned long)now_hb);
@@ -281,24 +285,6 @@ int main(void) {
      * notifications are suppressed; in Debug mode they stream normally. */
     BLE_Tof_Process();
 
-    /* Toggle LED2 (PB14) at 1 Hz while VL53L8CX frames are arriving. */
-    static uint32_t last_l8_seq = 0;
-    static uint32_t last_l8_frame_tick = 0;
-    static uint32_t last_l8_led_toggle = 0;
-    uint32_t now = HAL_GetTick();
-    const Tof_Frame_t *l8_frame = TofL8_GetLatestFrame();
-    if (l8_frame && l8_frame->seq != 0u && l8_frame->seq != last_l8_seq) {
-      last_l8_seq = l8_frame->seq;
-      last_l8_frame_tick = now;
-    }
-    if (last_l8_frame_tick != 0u && (now - last_l8_frame_tick) <= 1500u) {
-      if ((now - last_l8_led_toggle) >= 1000u) {
-        HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
-        last_l8_led_toggle = now;
-      }
-    } else {
-      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -894,10 +880,7 @@ static void MX_GPIO_Init(void) {
  */
 void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1) {
-  }
+  Firmware_Panic(FW_PANIC_INIT);
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

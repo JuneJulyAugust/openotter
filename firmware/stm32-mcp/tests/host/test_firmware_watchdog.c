@@ -94,6 +94,13 @@ static void test_default_timeout_covers_l8_boot_i2c_window(void) {
                   32760u);
 }
 
+static void test_default_timeout_covers_ble_hci_timeout(void) {
+  expect_in_range("BLE HCI timeout bounded",
+                  FW_WATCHDOG_BLE_HCI_TIMEOUT_MS,
+                  1000u,
+                  FW_WATCHDOG_DEFAULT_TIMEOUT_MS - 1u);
+}
+
 static void test_round_trip_actual_timeout_close_to_requested(void) {
   /* The round-trip computed timeout (using the picked reload + prescaler)
    * should match the configured default within ±50 ms. Catches off-by-one
@@ -119,6 +126,7 @@ int main(void) {
   test_pick_prescaler_returns_zero_when_unrepresentable();
   test_default_timeout_is_in_safe_range();
   test_default_timeout_covers_l8_boot_i2c_window();
+  test_default_timeout_covers_ble_hci_timeout();
   test_round_trip_actual_timeout_close_to_requested();
   if (g_fails == 0) {
     printf("firmware_watchdog tests: OK\n");

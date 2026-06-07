@@ -191,23 +191,24 @@ sending at whatever rate it considers smooth (20–50 Hz typically).
 ```
   ┌──────────────────────────────────────────────────────────────────────┐
   │  boot                                                                │
+  │    main.c starts TIM3 neutral PWM, stack guard, MPU, and IWDG        │
   │    BLE_App_Init                                                      │
   │      ├─ BLE_InitLPM (standby disabled)                               │
   │      ├─ BLE_InitRTC (LSI 32 kHz for the timer server)                │
   │      ├─ HW_TS_Init                                                   │
   │      ├─ SCH_RegTask x3 (HciAsynchEvt, TlEvt, StartAdv)               │
   │      ├─ BLE_InitStack → TL_BLE_HCI_Init → SVCCTL_Init                │
-  │      │   │ hardware reset of BlueNRG-MS (~1 ms pulse)                │
-  │      │   │ wait for HCI "hardware error" / "READY" event             │
+  │      │   │ bounded GPIO reset of BlueNRG-MS (~2 ms pulse)            │
+  │      │   │ wait for HCI response, bounded below IWDG window          │
   │      │   │ SVCCTL_Init sets GAP name = "OPENOTTER-MCP"               │
-  │      ├─ BLE_InitGATTService (adds 0xFE40 / 0xFE41 / 0xFE42)          │
+  │      ├─ BLE_InitGATTService (adds FE40 service + FE41-FE44 chars)    │
   │      ├─ BLE_ApplyPWM(neutral, neutral)                               │
   │      └─ BLE_StartAdvertising (ADV_IND, 80–100 ms interval)           │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
                                  ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  idle: SCH_Run + LD1 toggle + safety watchdog                        │
+  │  idle: SCH_Run + LD2 main-loop heartbeat + command watchdog          │
   │    (iOS central scans → sees "OPENOTTER-MCP")                        │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
@@ -266,10 +267,33 @@ undiscoverable after the first disconnect.
 
 ### 5.2 Why the backup-domain reset at boot
 
-`main.c:105` force-resets the RTC backup domain on pin reset. The BLE
+`main.c` force-resets the RTC backup domain on pin reset. The BLE
 timer server uses the RTC wakeup timer, and stale state from a previous
 run can make `HW_TS_Init` spin forever. This is copied behavior from
 the `P2P_LedButton` reference.
+
+### 5.3 Startup recovery hardening
+
+The car deployment can power the IoT board from a noisy VIN rail instead of the
+quiet ST-LINK USB rail. In that case the STM32 core, BlueNRG coprocessor, and
+RTC/timer-server state may not all recover identically from a brownout. The
+firmware now treats BLE startup as watchdog-protected work:
+
+- `main.c` starts TIM3 at neutral PWM, initializes the stack guard/MPU, then
+  starts the IWDG before `BLE_App_Init`.
+- `BLE/hw/hw_spi.c` resets BlueNRG with a bounded HAL delay instead of waiting
+  on a timer-server callback during reset.
+- `OPENOTTER_BLE_HCI_TIMEOUT_MS` is 15 s, below the 30 s IWDG window and below
+  the STM32L4 IWDG's practical maximum at nominal 32 kHz LSI.
+- FE40/FE41/FE42/FE43/FE44 registration is fail-closed: if a required GATT
+  service or characteristic cannot be added, startup logs the failed handle
+  path and `PANIC:I` resets.
+- If the BlueNRG SPI peripheral remains busy while releasing chip select,
+  `PANIC:P` resets rather than spinning forever.
+
+The goal is not to hide a bad power rail. It is to avoid the old half-alive
+state where LD2 stopped, BLE disappeared, actuator commands did nothing, and
+only a full vehicle power cycle recovered the system.
 
 ---
 

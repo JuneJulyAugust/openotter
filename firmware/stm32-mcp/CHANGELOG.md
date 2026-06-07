@@ -20,6 +20,10 @@ All notable changes to this project will be documented in this file.
 - **Drive throttle arbitration**: Drive mode now clamps reverse throttle only when the rear safety context is braking, and clamps forward throttle only when the front safety context is braking.
 - **ToF debug frame selection**: FE62 now streams the selected rear or front VL53L8 slot instead of always using the default available slot.
 - **v1.2.0 validation scope**: The release candidate is scoped to one physically verified rear SATEL-VL53L8. Shared-SPI front/rear support remains code-ready and host-tested, but physical second-sensor validation is deferred until another SATEL board is available.
+- **Startup heartbeat semantics**: LD2/PB14 is now a true main-loop heartbeat. ToF frame health remains available through FE63, the STM32 diagnostic UI, and UART ToF logs.
+
+### Fixed
+- **VIN startup recovery**: Hardened noisy RC-battery startup by starting the independent watchdog before BLE bringup, bounding the BlueNRG reset and HCI wait paths, fail-closing required GATT service registration, and panic-resetting on fatal init (`PANIC:I`) or BlueNRG SPI busy lockup (`PANIC:P`) instead of freezing until a full vehicle power cycle.
 
 ## [1.2.0] - 2026-06-02
 

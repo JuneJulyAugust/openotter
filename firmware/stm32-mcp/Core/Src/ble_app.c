@@ -38,6 +38,7 @@
 #include "ble_drive_policy.h"
 #include "ble_gatt_layout.h"
 #include "ble_attr_dispatch.h"
+#include "firmware_watchdog.h"
 #include "pwm_control.h"
 
 #include <stdio.h>
@@ -101,7 +102,7 @@ static uint8_t HciEvtPool[POOL_SIZE];
 
 /* Forward declarations ------------------------------------------------------*/
 static void BLE_InitStack(void);
-static void BLE_InitGATTService(void);
+static int BLE_InitGATTService(void);
 static void BLE_StartAdvertising(void);
 static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us);
 static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *event);
@@ -150,15 +151,21 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   BLE_InitLPM();
   BLE_InitRTC();
   HW_TS_Init(hw_ts_InitMode_Full, &hrtc_ble);
+  FwWatchdog_Refresh();
 
   SCH_RegTask(CFG_IdleTask_HciAsynchEvt, BLE_HciUserEvtTask);
   SCH_RegTask(CFG_IdleTask_TlEvt, BLE_TlEvtTask);
   SCH_RegTask(CFG_IdleTask_StartAdv, BLE_AdvTask);
 
   BLE_InitStack();
-  BLE_InitGATTService();
+  FwWatchdog_Refresh();
+  int gatt_status = BLE_InitGATTService();
+  if (gatt_status != 0) {
+    return gatt_status;
+  }
   BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
   BLE_StartAdvertising();
+  FwWatchdog_Refresh();
 
   return 0;
 }
@@ -342,7 +349,7 @@ static void BLE_InitStack(void) {
   SVCCTL_Init();
 }
 
-static void BLE_InitGATTService(void) {
+static int BLE_InitGATTService(void) {
   uint16_t uuid;
   tBleStatus ret;
 
@@ -370,8 +377,8 @@ static void BLE_InitGATTService(void) {
   ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
                           slots, &bleCtx.svcHandle);
   if (ret != BLE_STATUS_SUCCESS) {
-    /* Service creation failed — halt */
-    return;
+    app_log_fmt("BLE_App: add_serv FE40 fail 0x%02X\r\n", (unsigned)ret);
+    return -1;
   }
 
   /*
@@ -389,6 +396,7 @@ static void BLE_InitGATTService(void) {
                           &bleCtx.cmdCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE41 fail 0x%02X\r\n", (unsigned)ret);
+    return -2;
   }
 
   /*
@@ -403,6 +411,7 @@ static void BLE_InitGATTService(void) {
                           0, &bleCtx.statusCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE42 fail 0x%02X\r\n", (unsigned)ret);
+    return -3;
   }
 
   /*
@@ -421,6 +430,7 @@ static void BLE_InitGATTService(void) {
                           &bleCtx.safetyCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE43 fail 0x%02X\r\n", (unsigned)ret);
+    return -4;
   }
 
   /* Seed a SAFE payload so a post-connect read returns sane bytes. */
@@ -445,9 +455,11 @@ static void BLE_InitGATTService(void) {
                           &bleCtx.modeCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE44 fail 0x%02X\r\n", (unsigned)ret);
+    return -5;
   }
   aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
                              &drive);
+  return 0;
 }
 
 static void BLE_StartAdvertising(void) {
