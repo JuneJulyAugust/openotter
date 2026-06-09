@@ -40,9 +40,9 @@ firmware builds pass. The hardware release gate is:
 6. Autonomous-mode work only after the one-rear-sensor firmware safety path is
    proven on hardware.
 
-Status as of 2026-06-08: gates 2, 3, and 4 have passed by user hardware E2E
-validation after the VL53L8 range-trust fix. Before merge/tag, rerun PR CI and
-optionally do one final smoke test after documentation commits. The detailed
+Status as of 2026-06-09: gates 2, 3, and 4 have passed by user hardware E2E
+validation after the VL53L8 range-trust and reset/reconnect fixes. Before
+merge/tag, rerun PR CI after the final docs/test commits. The detailed
 validation and bug log is:
 
 ```text

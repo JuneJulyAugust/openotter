@@ -82,6 +82,7 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add reusable STM32 UART live-log tooling plus firmware deploy rules for remote/sandbox sessions.
 - [x] User-validated one-rear-SATEL end-to-end flow after the final safety fixes.
 - [x] Deploy updated iOS app and re-run the STM32 reset-with-debug-view-open smoke test; live recheck on 2026-06-09 showed STM32 Control connected and UART streaming FE62 frames with `fail=0`.
+- [x] Complete final one-rear-SATEL end-to-end validation after reset/reconnect hardening; user reported the app/firmware vehicle flow working well.
 - [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
 - [x] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
 - [x] End-to-end validate the one-rear-sensor v1.2.0 app/firmware path: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
@@ -89,8 +90,8 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [ ] Measure snapped-off SATEL mini-PCB dimensions with calipers and update the mini-PCB CadQuery defaults before printing the final compact case.
 - [ ] Build a board-side IOT01A1 ToF harness adapter using locking connectors before car deployment.
 - [ ] Physically verify the second front SATEL-VL53L8 on shared SPI1 with D10 `NCS`, A0 `LPn`, and A3 `GPIO1`.
-- [ ] Run vehicle-level autonomous validation with rear/front VL53L8 health visible in Self Driving.
-- [ ] After PR CI/final smoke checks, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
+- [x] Run vehicle-level validation for the v1.2.0 one-rear-SATEL scope with STM32/iOS safety flow working well.
+- [ ] After PR CI/final release hygiene, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
 
 ### 1.4 Legacy Raspberry Pi WiFi bridge
 

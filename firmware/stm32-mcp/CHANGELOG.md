@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - **Case internal assembly diagrams**: Added full-SATEL and snap-off mini-PCB cutaway visuals showing PCB retention, pigtail routing, strain relief, case-side connector/interposer placement, and harness load paths.
 - **v1.2.0 validation and bug log**: Documented the final one-rear-SATEL E2E validation state and the resolved SATEL wiring, startup, BLE, iOS safety, and VL53L8 far-range safety bugs.
 - **BLE app-handshake policy tests**: Added host coverage for stale BLE connections that never send app-control traffic after connecting.
+- **Final one-rear-SATEL E2E evidence**: Documented the successful 2026-06-09 end-to-end app/firmware validation after reset/reconnect hardening.
 
 ### Changed
 - **VL53L8 runtime driver**: Refactored the single VL53L8 runtime into rear/front slots. Rear probes I2C3 first, then SPI1 with D8 `NCS`; front probes SPI1 with D10 `NCS`.

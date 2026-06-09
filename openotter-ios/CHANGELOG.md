@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **VL53L8 debug role selector**: STM32 Control can select `Rear` or `Front` before requesting FE62 depth frames, shows firmware-reported online status for each role, and displays the front/rear wiring convention beside the grid.
 - **ToF debug-role regression tests**: XCTest coverage now checks rear-only availability, selected-but-unavailable front status, and stale FE62 frame clearing when the operator switches debug roles.
 - **v1.2.0 validation and bug log**: Documented the final one-rear-SATEL E2E validation state and the resolved app/firmware safety bugs before tag.
+- **Final one-rear-SATEL E2E evidence**: Documented the successful 2026-06-09 end-to-end app/firmware validation after STM32 reset/reconnect hardening.
 
 ### Changed
 - **ToF debug config payload**: FE61 writes now include the selected role byte so the firmware can stream one chosen VL53L8 depth map at a time while keeping both sensors online for safety.

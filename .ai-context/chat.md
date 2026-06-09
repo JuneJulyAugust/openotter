@@ -22,14 +22,16 @@ firmware policy/liveness, not proof that `OPENOTTER-MCP` is visible over BLE.
    deploy passed. A Mac BLE scan saw `OPENOTTER-MCP` with FE40/FE60. User
    confirmed the iOS STM32 Control view connected, and UART showed FE62 pushes
    with `fail=0`.
+4. **Final E2E:** User completed end-to-end testing after the fix and reported
+   the one-rear-SATEL app/firmware flow working well.
 
 ### Prompt Context For Next Session
 "For v1.2.0 reset/reconnect debugging, distinguish firmware liveness from RF
 visibility. `BLE adv_active` plus VL53L8 frames means firmware is alive;
 `BLE adv_refresh stop ok` / `BLE adv_reassert ok` plus an external scan seeing
 `OPENOTTER-MCP` FE40/FE60 proves advertising is visible. The iOS STM32 Control
-reset smoke test passed on 2026-06-09; remaining gate is PR CI/final smoke,
-then merge/tag."
+reset smoke test and final user E2E validation passed on 2026-06-09; remaining
+gate is PR CI/final release hygiene, then merge/tag."
 
 ---
 
@@ -47,12 +49,12 @@ SATEL-VL53L8; front/two-SATEL support stays code-ready but not release-proven.
 4. **Release state update:** Marked one-rear-sensor hardware E2E validation and immobilized safety bench validation complete in `.ai-context/task.md`; left PR CI and physical front/two-SATEL validation open.
 
 ### Current State
-- **iOS App:** One-rear-sensor safety transitions and VL53L8 debug classification are validated for v1.2.0 scope.
-- **STM32 Firmware:** One rear SATEL works for the release scope; startup and far-range safety fixes are documented and covered by host/target/iOS tests.
-- **Next Step:** Rerun PR CI/final smoke checks, then merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0` when the release is accepted.
+- **iOS App:** One-rear-sensor safety transitions, reset reconnect, and VL53L8 debug classification are validated for v1.2.0 scope.
+- **STM32 Firmware:** One rear SATEL works for the release scope; startup, reset/reconnect, and far-range safety fixes are documented and covered by host/target/iOS tests.
+- **Next Step:** Rerun PR CI/final release hygiene, then merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0` when the release is accepted.
 
 ### Prompt Context for Next Session
-"OpenOtter v1.2.0 has passed one-rear-SATEL E2E validation after the final range-trust fix. The central validation/bug log is `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`. Remaining release work: rerun PR CI/final smoke, then merge/tag iOS and STM32. Do not claim two-SATEL physical validation until a second SATEL is installed and tested."
+"OpenOtter v1.2.0 has passed one-rear-SATEL E2E validation after the final range-trust and reset/reconnect fixes. The central validation/bug log is `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`. Remaining release work: rerun PR CI/final release hygiene, then merge/tag iOS and STM32. Do not claim two-SATEL physical validation until a second SATEL is installed and tested."
 
 ---
 

@@ -12,10 +12,10 @@ autonomy plan is tracked separately in
 
 ## Release-Candidate Status
 
-As of 2026-06-08, the one-sensor SATEL-VL53L8 firmware path is implemented and
+As of 2026-06-09, the one-sensor SATEL-VL53L8 firmware path is implemented and
 prepared as `stm32-mcp` `1.2.0`. The branch is intentionally not merged or
 tagged yet pending final PR CI/release hygiene, but one-rear-sensor hardware
-end-to-end validation has passed.
+end-to-end validation has passed after the reset/reconnect hardening.
 
 Final validation and resolved-bug evidence is tracked in:
 

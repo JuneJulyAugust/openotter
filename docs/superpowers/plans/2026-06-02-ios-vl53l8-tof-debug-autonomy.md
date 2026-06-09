@@ -18,9 +18,9 @@
 - Debug status: STM32 Control was deployed from the feature worktree and the
   live VL53L8 ToF visualization worked against the connected IOT01A1.
 - Autonomous status: rear ToF health presentation is implemented; one rear
-  sensor app/firmware E2E validation passed after the final safety fixes. Full
-  front/two-SATEL validation remains pending until the second SATEL is
-  available.
+  sensor app/firmware E2E validation passed after the final safety,
+  range-trust, and reset/reconnect fixes. Full front/two-SATEL validation
+  remains pending until the second SATEL is available.
 - Validation log:
   `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`.
 

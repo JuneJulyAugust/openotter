@@ -9,15 +9,16 @@ must leave one clear extension point for a future second VL53L8 sensor.
 
 ## Release-Candidate Status
 
-As of 2026-06-08, the iOS app is prepared as `1.2.0` for final PR CI/release
+As of 2026-06-09, the iOS app is prepared as `1.2.0` for final PR CI/release
 hygiene before merge and tag. The STM32 Control diagnostics path was deployed
 to the iPhone from the feature worktree and verified against the connected
 IOT01A1 plus one rear SATEL-VL53L8. The debug view rendered live VL53L8 ToF
 data without requiring an iOS protocol change.
 
 One-rear-sensor app/firmware end-to-end validation passed after the final
-forward/rear safety fixes. Full front/two-SATEL validation remains intentionally
-pending until the second SATEL board is available.
+forward/rear safety, VL53L8 range-trust, and STM32 reset/reconnect fixes. Full
+front/two-SATEL validation remains intentionally pending until the second SATEL
+board is available.
 
 Final validation and resolved-bug evidence is tracked in:
 

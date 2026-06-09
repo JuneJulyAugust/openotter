@@ -39,8 +39,8 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 - **Issue observed:** `BLE adv_active` proved firmware liveness but not over-the-air visibility; before the refresh, iOS and a Mac scanner could both miss `OPENOTTER-MCP` even while firmware believed advertising was active.
 - **Root cause:** BlueNRG could enter a half-stale state after reset/reconnect where the host-side policy thought advertising was active, but the advertisement was not reliably visible to scanners.
 - **Resolution:** Firmware now logs `BLE adv_refresh stop ok` and `BLE adv_reassert ok` while disconnected, treating `ERR_COMMAND_DISALLOWED` from discoverable as already-active instead of fatal. iOS waits for a fresh advertisement and records the scanner path.
-- **Validation:** Firmware host tests, STM32 target build, iOS tests, iOS deploy, firmware flash, and Mac BLE scan passed. Mac scan saw `OPENOTTER-MCP` FE40/FE60; the user confirmed the iOS STM32 Control view connected; UART showed `BLE mode_write prev=0 new=1`, `VL53L8 rear stream start`, and `L8 dbg: ... push=... fail=0`.
-- **Follow-up:** Run PR CI/final smoke checks before merge/tag. If serial monitoring later prints `Device not configured`, treat that as the Mac ST-LINK VCP disappearing, not as proof the BLE link failed.
+- **Validation:** Firmware host tests, STM32 target build, iOS tests, iOS deploy, firmware flash, and Mac BLE scan passed. Mac scan saw `OPENOTTER-MCP` FE40/FE60; the user confirmed the iOS STM32 Control view connected; UART showed `BLE mode_write prev=0 new=1`, `VL53L8 rear stream start`, and `L8 dbg: ... push=... fail=0`. The user then completed end-to-end testing and reported the app/firmware flow working well.
+- **Follow-up:** Run PR CI/final release hygiene before merge/tag. If serial monitoring later prints `Device not configured`, treat that as the Mac ST-LINK VCP disappearing, not as proof the BLE link failed.
 
 ### 2026-06-08 - STM32 BLE Reset/Reconnect Boot Protection
 
@@ -59,7 +59,7 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 - **Root cause:** VL53L8 raw range fields are not reliable safety distances unless target status is valid. The selected-zone invalid frames were live sensor data, not sensor blindness. Separately, the iOS planner's first zero-ramp tick hid reverse intent, FE43 sequence fencing was reset across safe modes, and startup could block in BlueNRG/HCI paths.
 - **Resolution:** v1.2.0 safety now trusts only VL53L8 statuses `5`, `6`, `9`, and `10` through `3.8 m`; valid far readings become capped clearance; non-OK selected-zone readings become `PARTIAL` and do not feed the EMA or `TOF_BLIND`. iOS debug classification mirrors firmware. The iOS latch and firmware startup fixes remain part of the same release.
 - **Validation:** Firmware host tests passed, STM32 Debug and Release builds passed, iOS simulator tests passed with 211 tests and 0 failures, and user hardware E2E testing went well after the final range-trust fix.
-- **Follow-up:** Rerun PR CI/final smoke checks, then merge/tag `ios-v1.2.0` and `stm32-mcp-v1.2.0` if accepted. Physical front/two-SATEL validation remains pending.
+- **Follow-up:** Rerun PR CI/final release hygiene, then merge/tag `ios-v1.2.0` and `stm32-mcp-v1.2.0` if accepted. Physical front/two-SATEL validation remains pending.
 
 ### 2026-06-07 - iOS Safety Latch Consolidation
 
