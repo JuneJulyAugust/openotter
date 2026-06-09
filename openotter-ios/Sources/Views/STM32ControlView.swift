@@ -13,9 +13,9 @@ struct STM32ControlView: View {
                 ScrollView {
                     VStack(spacing: 24) {
 
-                    // --- VL53L5CX TOF DEBUG (FE60 multi-zone grid) ---
+                    // --- VL53L8CX TOF DEBUG (FE60 multi-zone grid) ---
                     GroupBox(label:
-                        Label("VL53L5CX DEPTH MAP", systemImage: "square.grid.3x3.fill")
+                        Label("VL53L8CX DEPTH MAP", systemImage: "square.grid.3x3.fill")
                             .font(.caption.bold())
                             .foregroundColor(.secondary)
                     ) {
@@ -185,11 +185,9 @@ struct STM32ControlView: View {
                             .foregroundColor(statusColor)
                     }
                 }
-                if viewModel.status != .connected {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: { viewModel.reconnect() }) {
-                            Image(systemName: "arrow.clockwise")
-                        }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { viewModel.reconnect() }) {
+                        Image(systemName: "arrow.clockwise")
                     }
                 }
             }
@@ -284,28 +282,81 @@ private struct TofDebugCard: View {
     }
 
     private var maxIntegrationMs: Double {
-        Double(TofConfig.maxL5IntegrationMs(frequencyHz: viewModel.tofConfig.frequencyHz))
+        Double(TofConfig.maxL8IntegrationMs(frequencyHz: viewModel.tofConfig.frequencyHz))
+    }
+
+    private var selectedRoleAvailable: Bool {
+        viewModel.tofAvailableSensorRoles.contains(viewModel.tofConfig.role)
+    }
+
+    private var availabilityLabel: String {
+        if viewModel.tofAvailableSensorRoles.isEmpty {
+            return "availability unknown"
+        }
+        return selectedRoleAvailable ? "online" : "not online"
+    }
+
+    private var availabilityColor: Color {
+        if viewModel.tofAvailableSensorRoles.isEmpty {
+            return .secondary
+        }
+        return selectedRoleAvailable ? .green : .orange
     }
 
     private var errorBanner: String {
         switch viewModel.tofLastError {
         case 0:  return ""
-        case 1:  return "VL53L5CX not detected"
-        case 2:  return "VL53L5CX boot failed"
-        case 3:  return "VL53L5CX I2C error"
-        case 4:  return "Firmware rejected VL53L5CX config"
-        case 5:  return "VL53L5CX driver missing"
-        case 6:  return "Firmware rejected layout"
-        case 7:  return "Firmware rejected distance mode"
-        case 8:  return "Budget below sensor minimum for this combo"
-        case 9:  return "Driver rejected combo — rolled back to previous"
-        case 10: return "ToF driver offline — reboot the board"
+        case 1:  return "VL53L8CX not detected"
+        case 2:  return "VL53L8CX boot failed"
+        case 3:  return "VL53L8CX I2C error"
+        case 4:  return "Firmware rejected VL53L8CX config"
+        case 5:  return "VL53L8CX driver missing"
+        case 6:  return "VL53L8CX driver offline"
+        case 11: return "Config locked outside Debug mode"
         default: return "ToF error \(viewModel.tofLastError)"
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Picker("Sensor", selection: roleBinding) {
+                ForEach(TofSensorRole.selectableCases, id: \.self) { role in
+                    Label(role.displayName, systemImage: role.iconName)
+                        .tag(role)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            HStack(spacing: 8) {
+                Image(systemName: viewModel.tofConfig.role.iconName)
+                    .foregroundColor(availabilityColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(viewModel.tofConfig.role.displayName) depth map")
+                        .font(.subheadline.bold())
+                    Text(availabilityLabel)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(availabilityColor)
+                }
+                Spacer()
+                Text("firmware: \(viewModel.tofSelectedSensorRole.displayName)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("WIRING")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Text(TofSensorRole.rear.wiringSummary)
+                Text(TofSensorRole.front.wiringSummary)
+            }
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.gray.opacity(0.08))
+            .cornerRadius(6)
+
             Picker("Layout", selection: layoutBinding) {
                 Text("4×4").tag(UInt8(4))
                 Text("8×8").tag(UInt8(8))
@@ -347,7 +398,9 @@ private struct TofDebugCard: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(viewModel.tofState == .running ? "running" : "\(viewModel.tofState)")
+                Text(verbatim: viewModel.tofState == .running
+                     ? "running"
+                     : String(describing: viewModel.tofState))
                     .font(.caption2.monospaced())
                     .foregroundColor(viewModel.tofState == .running ? .green : .orange)
             }
@@ -372,11 +425,16 @@ private struct TofDebugCard: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(Color.gray.opacity(0.15))
                     .frame(height: 120)
-                    .overlay(Text("Waiting for frame…").foregroundStyle(.secondary))
+                    .overlay(
+                        Text(viewModel.firmwareMode == .debug
+                             ? "Waiting for VL53L8 frame..."
+                             : "Switch to Debug for depth frames")
+                            .foregroundStyle(.secondary)
+                    )
             }
 
             HStack {
-                Text("seq \(viewModel.tofFrame?.seq ?? 0)")
+                Text("\(viewModel.tofConfig.role.displayName.lowercased()) seq \(viewModel.tofFrame?.seq ?? 0)")
                 Spacer()
                 Text("\(viewModel.tofScanHz) Hz")
             }
@@ -389,7 +447,17 @@ private struct TofDebugCard: View {
                     .foregroundStyle(.secondary)
                 Text(verbatim: "chunks rx \(viewModel.tofChunksReceived)  parsed \(viewModel.tofFramesParsed)  dropped \(viewModel.tofDroppedFrameChunks)")
                 Text(verbatim: "state \(String(describing: viewModel.tofState))  err \(viewModel.tofLastError)  mode \(String(describing: viewModel.firmwareMode))")
-                Text(verbatim: "sensor \(String(describing: viewModel.tofConfig.sensor))  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
+                Text(verbatim: "sensor \(viewModel.tofConfig.sensor.displayName)  role \(viewModel.tofConfig.role.displayName.lowercased())  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
+                Divider().padding(.vertical, 2)
+                Text("TOF STREAM")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Text(verbatim: viewModel.stm32TofDebugSummary)
+                Divider().padding(.vertical, 2)
+                Text("BLE SCAN")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Text(verbatim: viewModel.stm32BleDebugSummary)
             }
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)
@@ -416,6 +484,11 @@ private struct TofDebugCard: View {
     private var layoutBinding: Binding<UInt8> {
         Binding(get: { viewModel.tofConfig.layout },
                 set: { viewModel.setTofLayout($0) })
+    }
+
+    private var roleBinding: Binding<TofSensorRole> {
+        Binding(get: { viewModel.tofConfig.role },
+                set: { viewModel.setTofSensorRole($0) })
     }
 
 }

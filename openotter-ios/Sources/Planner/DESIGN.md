@@ -59,11 +59,18 @@ Transitions are driven exclusively by the orchestrator:
 
 - `setGoal(_:)` → `.drive`. Always re-pushes Drive through the receiver
   (idempotent), so a stale firmware Park left over from another client is
-  cleared on the first goal-set.
+  cleared on the first goal-set. A fresh forward goal does **not** clear an
+  active forward LiDAR BRAKE latch; it stays stopped until real clearance.
+  A negative constant-throttle goal is explicit operator reverse intent, so
+  the orchestrator clears the forward LiDAR latch before the planner's first
+  rate-limited zero-throttle tick. The firmware rear ToF supervisor remains
+  armed in Drive and can still clamp unsafe reverse motion.
 - `reset()` → `.park`. Drops the planner goal, drops any supervisor latch,
   pushes Park through the receiver, and clears the cached firmware safety
   event in the BLE bridge so the UI overlay/alarm collapse without waiting
-  for the firmware's SAFE snapshot to round-trip.
+  for the firmware's SAFE snapshot to round-trip. The bridge preserves the
+  last FE43 sequence number as a fence, so a late rear BRAKE notification
+  observed while parked cannot re-arm the UI when Drive resumes.
 
 Park is a stable terminal state by construction:
 

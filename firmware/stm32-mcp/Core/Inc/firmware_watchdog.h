@@ -8,12 +8,13 @@
  * stack hung, I²C blocked, ToF driver spinning), the IWDG fires within
  * the configured timeout and reboots into a clean state.
  *
- * Timeout sizing: ~20 seconds gives enough slack for the slowest documented
- * blocking operation (VL53L5CX firmware download — bounded to 15 s of
- * I²C work and may be triggered lazily from the main loop when Drive-mode
- * safety config is first applied). Normal steady-state loop iterations are
- * sub-millisecond, so this remains a last-resort recovery path rather than
- * a loop-health monitor.
+ * Timeout sizing: ~30 seconds gives enough slack for the slowest documented
+ * blocking operations while still fitting the STM32L4 IWDG's 12-bit reload
+ * limit at the nominal 32 kHz LSI. It covers the VL53L8CX firmware-download
+ * transfer cap (15 s) and the bounded BlueNRG HCI command timeout (3 s),
+ * both of which can happen during bringup or lazy safety configuration.
+ * Normal steady-state loop iterations are sub-millisecond, so this remains a
+ * last-resort recovery path rather than a loop-health monitor.
  *
  * Refresh policy: refresh once per main-loop iteration. If the loop stops
  * iterating, the IWDG resets.
@@ -35,9 +36,14 @@ extern "C" {
 /* LSI nominal frequency on STM32L4 = 32 kHz. */
 #define FW_WATCHDOG_LSI_HZ          32000u
 
-/* Default timeout. Must exceed the VL53L5CX driver's largest blocking I2C
- * transaction timeout (15 s) so legal sensor boot does not reset-loop. */
-#define FW_WATCHDOG_DEFAULT_TIMEOUT_MS  20000u
+/* Bound BlueNRG HCI waits below the IWDG window so BLE startup can fail
+ * closed instead of exceeding the watchdog's representable timeout. */
+#define FW_WATCHDOG_BLE_HCI_TIMEOUT_MS 3000u
+
+/* Default timeout. Must exceed the VL53L8CX driver's largest blocking I2C/SPI
+ * transaction timeout (15 s) and the BlueNRG HCI command timeout (3 s), while
+ * staying under the IWDG max representable timeout (~32.76 s at LSI 32 kHz). */
+#define FW_WATCHDOG_DEFAULT_TIMEOUT_MS  30000u
 
 /*
  * Pure helper: compute the IWDG reload value for a given timeout in

@@ -4,6 +4,111 @@ This file stores the historical context, milestones, and prompts to resume devel
 
 ---
 
+## 2026-06-09 - STM32 Reset Advertisement Visibility Fix
+
+### Summary
+After reset, STM32 Control could stay in `Scanning` even though LD2 blinked and
+UART showed live VL53L8 frames. The important lesson: `BLE adv_active` is only
+firmware policy/liveness, not proof that `OPENOTTER-MCP` is visible over BLE.
+
+### Achievements
+1. **Firmware advertising refresh:** While disconnected, firmware now refreshes
+   BlueNRG discoverable state from the main loop every 15 s and logs
+   `BLE adv_refresh stop ok` then `BLE adv_reassert ok`.
+2. **iOS scanner hardening:** STM32 Control avoids blind stale remembered
+   peripheral reconnects after reset and waits for a fresh OpenOtter
+   advertisement, while keeping the rolling BLE trace and host console logs.
+3. **Engineering invariant tests:** `STM32TofServiceTests` now reject remembered
+   CoreBluetooth UUID matches without fresh OpenOtter name or FE40/FE60 service
+   evidence, and verify scan timeouts do not trigger blind remembered reconnects.
+4. **Validation:** Firmware host tests, target build, flash, iOS tests, and iOS
+   deploy passed. A Mac BLE scan saw `OPENOTTER-MCP` with FE40/FE60. User
+   confirmed the iOS STM32 Control view connected, and UART showed FE62 pushes
+   with `fail=0`.
+5. **Final E2E:** User completed end-to-end testing after the fix and reported
+   the one-rear-SATEL app/firmware flow working well.
+
+### Prompt Context For Next Session
+"For v1.2.0 reset/reconnect debugging, distinguish firmware liveness from RF
+visibility. `BLE adv_active` plus VL53L8 frames means firmware is alive;
+`BLE adv_refresh stop ok` / `BLE adv_reassert ok` plus an external scan seeing
+`OPENOTTER-MCP` FE40/FE60 proves advertising is visible. The iOS STM32 Control
+reset smoke test and final user E2E validation passed on 2026-06-09. Do not
+match a remembered CoreBluetooth UUID unless the latest advertisement also has
+OpenOtter name or FE40/FE60 service evidence; remaining gate is PR CI/final
+release hygiene, then merge/tag."
+
+---
+
+## 2026-06-08 - v1.2.0 VL53L8 E2E Validation And Bug Log
+
+### Summary
+User end-to-end validation went well after the final VL53L8 range-trust fix.
+The v1.2.0 release remains scoped to one physically verified rear
+SATEL-VL53L8; front/two-SATEL support stays code-ready but not release-proven.
+
+### Achievements
+1. **Final validation log:** Added `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md` as the central record for the release scope, software verification, hardware E2E status, and resolved bugs.
+2. **Resolved-bug documentation:** Captured the SATEL `J1`/`J2` pinout risk, iOS worktree deploy mismatch, forward LiDAR Park/Reverse latch bug, STM32 VIN/BLE startup stall, and VL53L8 far-range non-OK false reverse-stop bug.
+3. **Range-trust invariant:** Documented that v1.2.0 trusts only VL53L8 selected-zone statuses `5`, `6`, `9`, and `10` through `3.8 m`; valid farther readings are capped clear, and non-OK statuses become degraded live data.
+4. **Release state update:** Marked one-rear-sensor hardware E2E validation and immobilized safety bench validation complete in `.ai-context/task.md`; left PR CI and physical front/two-SATEL validation open.
+
+### Current State
+- **iOS App:** One-rear-sensor safety transitions, reset reconnect, and VL53L8 debug classification are validated for v1.2.0 scope.
+- **STM32 Firmware:** One rear SATEL works for the release scope; startup, reset/reconnect, and far-range safety fixes are documented and covered by host/target/iOS tests.
+- **Next Step:** Rerun PR CI/final release hygiene, then merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0` when the release is accepted.
+
+### Prompt Context for Next Session
+"OpenOtter v1.2.0 has passed one-rear-SATEL E2E validation after the final range-trust and reset/reconnect fixes. The central validation/bug log is `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`. Remaining release work: rerun PR CI/final release hygiene, then merge/tag iOS and STM32. Do not claim two-SATEL physical validation until a second SATEL is installed and tested."
+
+---
+
+## 2026-06-07 - v1.2.0 One-Rear-SATEL Safety Consolidation
+
+### Summary
+The v1.2.0 release scope is now one physically verified rear SATEL-VL53L8. Front/two-SATEL support remains code-ready, documented, and covered by hardware-free tests where possible, but physical second-sensor validation is deferred until another SATEL board is available.
+
+### Achievements
+1. **Forward reverse-escape fix:** `PlannerOrchestrator` clears the iPhone LiDAR forward BRAKE latch for negative constant-throttle goals before the planner's first zero-ramp tick. Forward re-commands during BRAKE still stay latched.
+2. **Rear stale-event fence:** `FirmwareSafetyEventGate` preserves FE43 sequence fencing across Park/Debug and suppresses same/older events, so stale rear BRAKE notifications cannot reappear after Drive resumes.
+3. **Regression coverage:** Added iOS tests for forward BRAKE -> reverse escape, Park -> reverse with a forward obstacle still visible, stale rear events seen while parked, and out-of-order rear notifications.
+4. **Release docs:** Updated `.ai-context`, planner/safety design docs, iOS/STM32 changelogs, and firmware bring-up/test-strategy docs to reflect the one-rear-sensor v1.2.0 scope.
+5. **Validation:** `bash openotter-ios/build.sh test` passed with 210 tests and 0 failures after a red run proved the new tests caught the bug.
+
+### Current State
+- **iOS App:** Safety state machine is hardened for the reported Park/Reverse warning-latch path.
+- **STM32 Firmware:** No firmware logic change in this step; v1.2.0 physical validation remains one rear SATEL.
+- **Next Step:** Hardware E2E validation: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
+
+### Prompt Context for Next Session
+"OpenOtter v1.2.0 is scoped to one physically verified rear SATEL-VL53L8. The iOS safety stack now clears the forward LiDAR BRAKE latch on explicit reverse intent before the planner ramp's first zero tick, and the STM32 rear FE43 gate fences stale events across Park/Debug. Run hardware E2E validation before merge/tag."
+
+---
+
+## 2026-06-02 - SATEL-VL53L8 v1.2.0 Release Candidate
+
+### Summary
+Prepared the STM32 firmware and iOS app for a synchronized `1.2.0` release candidate. The active ToF deployment path now targets one SATEL-VL53L8 on B-L475E-IOT01A1, with iOS diagnostics rendering live VL53L8 data from the board and able to select one rear/front debug stream at a time.
+
+### Achievements
+1. **SATEL wiring contract fixed:** Documented `J2 pin 1 EXT_SPI_I2C_N` to GND for I2C mode, `J2 pin 11 EXT_5V0` to 5V, `J2 pin 7 EXT_PWR_EN` to 3V3, SCL on `J2 pin 6`, and SDA on `J2 pin 5`.
+2. **Firmware migration:** Active STM32 ToF logic, reverse safety selection, BLE ToF config/status path, and host tests now use VL53L8-facing names and status semantics.
+3. **Hardware proof:** ST-LINK serial showed stable 4x4 depth frames at about 30 Hz after the sensor was mounted away from the table.
+4. **iOS diagnostics:** `STM32ControlView` deployed from the feature worktree and rendered live VL53L8 ToF data in one pass.
+5. **Debug stream selection:** STM32 Control can select `Rear` or `Front`; FE61 byte 8 carries the selected role and FE63 byte 3 reports selected role plus available-role mask. Rear is the current backward-facing bench sensor; front is the future forward-facing SATEL.
+6. **Release metadata:** iOS and STM32 metadata are prepared at `1.2.0`; merge and tags are intentionally deferred for more testing.
+7. **Verification note:** Firmware host/build checks and the iOS device build pass. The iOS simulator suite passed before the final frame-role regression test was added, but the current rerun is blocked by CoreSimulatorService launch/preflight failures rather than test assertions.
+
+### Current State
+- **iOS App:** `v1.2.0` release-candidate metadata is current.
+- **STM32 Firmware:** `v1.2.0` release-candidate metadata is current.
+- **Next Step:** Run more physical autonomous validation before merge/tag; then tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
+
+### Prompt Context for Next Session
+"OpenOtter is on a SATEL-VL53L8 `1.2.0` release candidate branch. Firmware build/host tests passed, IOT01A1 serial showed valid 4x4 VL53L8 rear frames, and the iOS STM32 Control diagnostics view can select Rear or Front FE62 debug depth streams. Rear is the current backward-facing bench sensor; Front is the future forward-facing SATEL. Do more vehicle-level autonomous validation before merging or tagging."
+
+---
+
 ## 2026-04-24 - OpenOtter v1.0 Safety Milestone
 
 ### Summary

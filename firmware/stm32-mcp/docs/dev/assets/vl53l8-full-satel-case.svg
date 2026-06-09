@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-labelledby="title desc">
+  <title id="title">Full SATEL-VL53L8 Case Design</title>
+  <desc id="desc">Full SATEL carrier case with optical aperture, header service bay, pigtail strain relief, JST-GH harness, VHB plate, and M2 screw ears.</desc>
+  <defs>
+    <style>
+      .label { font: 18px sans-serif; fill: #111827; }
+      .small { font: 14px sans-serif; fill: #374151; }
+      .outline { fill: #f8fafc; stroke: #263238; stroke-width: 2; }
+      .blue { fill: #dbeafe; stroke: #1d4ed8; stroke-width: 2; }
+      .case { fill: #e0f2fe; stroke: #075985; stroke-width: 3; }
+      .plate { fill: #e5e7eb; stroke: #4b5563; stroke-width: 2; }
+      .wire5 { stroke: #dc2626; stroke-width: 4; fill: none; }
+      .wireg { stroke: #111827; stroke-width: 4; fill: none; }
+      .wireb { stroke: #2563eb; stroke-width: 4; fill: none; }
+      .wirep { stroke: #7c3aed; stroke-width: 4; fill: none; }
+    </style>
+  </defs>
+
+  <text x="560" y="40" text-anchor="middle" class="label">Full SATEL Carrier: recommended first deployment</text>
+
+  <rect x="70" y="95" width="390" height="440" rx="16" class="case"/>
+  <rect x="125" y="130" width="280" height="355" rx="8" fill="#1e40af" opacity="0.85"/>
+  <text x="265" y="158" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="18">SATEL carrier board</text>
+  <line x1="125" y1="390" x2="405" y2="390" stroke="#93c5fd" stroke-width="4" stroke-dasharray="10 8"/>
+  <text x="265" y="413" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="13">perforation remains unbroken</text>
+
+  <rect x="235" y="285" width="52" height="34" rx="4" fill="#111827"/>
+  <circle cx="261" cy="302" r="64" fill="none" stroke="#38bdf8" stroke-width="4"/>
+  <text x="261" y="380" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">18 mm lid aperture</text>
+
+  <rect x="165" y="175" width="230" height="58" rx="6" fill="#fde68a" stroke="#92400e" stroke-width="2"/>
+  <text x="280" y="199" text-anchor="middle" class="small">J1/J2 service bay</text>
+  <text x="280" y="219" text-anchor="middle" class="small">short 28 AWG solder pigtails</text>
+
+  <rect x="172" y="493" width="218" height="24" rx="6" fill="#94a3b8"/>
+  <text x="281" y="512" text-anchor="middle" class="small">printed strain bar / zip tie</text>
+
+  <rect x="38" y="275" width="48" height="95" rx="10" class="plate"/>
+  <circle cx="62" cy="322" r="12" fill="#ffffff" stroke="#4b5563" stroke-width="2"/>
+  <text x="62" y="390" text-anchor="middle" class="small">M2 ear</text>
+  <rect x="444" y="275" width="48" height="95" rx="10" class="plate"/>
+  <circle cx="468" cy="322" r="12" fill="#ffffff" stroke="#4b5563" stroke-width="2"/>
+  <text x="468" y="390" text-anchor="middle" class="small">M2 ear</text>
+
+  <rect x="575" y="120" width="335" height="170" rx="12" class="outline"/>
+  <text x="742" y="155" text-anchor="middle" class="label">Harness exit</text>
+  <path d="M390 210 C505 220 520 182 575 180" class="wire5"/>
+  <path d="M390 225 C510 245 520 205 575 205" class="wireg"/>
+  <path d="M390 240 C510 270 525 232 575 232" class="wireb"/>
+  <path d="M390 255 C505 295 525 258 575 258" class="wirep"/>
+  <rect x="625" y="180" width="150" height="60" rx="8" fill="#ffffff" stroke="#263238" stroke-width="2"/>
+  <text x="700" y="205" text-anchor="middle" class="small">JST-GH 10-pin</text>
+  <text x="700" y="225" text-anchor="middle" class="small">locking connector</text>
+  <text x="820" y="205" class="small">Pin 1 marked</text>
+  <text x="820" y="225" class="small">continuity checked</text>
+
+  <rect x="575" y="340" width="335" height="170" rx="12" class="outline"/>
+  <text x="742" y="375" text-anchor="middle" class="label">Mounting stack</text>
+  <rect x="625" y="400" width="150" height="38" rx="6" fill="#cbd5e1"/>
+  <text x="700" y="424" text-anchor="middle" class="small">case bottom plate</text>
+  <rect x="625" y="446" width="150" height="26" rx="4" fill="#111827"/>
+  <text x="700" y="465" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">3M VHB</text>
+  <rect x="625" y="480" width="150" height="28" rx="4" fill="#6b7280"/>
+  <text x="700" y="499" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">car saddle/bumper</text>
+  <text x="800" y="424" class="small">Alternative:</text>
+  <text x="800" y="446" class="small">M2 screws through side ears</text>
+  <text x="800" y="468" class="small">with washers or inserts</text>
+
+  <text x="560" y="585" text-anchor="middle" class="small">Do not use tall loose Dupont sockets on a moving car; solder short pigtails or use captured low-profile headers inside the case.</text>
+</svg>

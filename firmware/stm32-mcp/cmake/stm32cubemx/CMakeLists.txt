@@ -6,6 +6,14 @@ set(MX_Defines_Syms
 	USE_HAL_DRIVER
 	STM32L475xx
 	BLUENRG_MS=1
+    # VL53L8CX safety frames need only target count, distance, and status.
+    VL53L8CX_NB_TARGET_PER_ZONE=1
+    VL53L8CX_DISABLE_AMBIENT_PER_SPAD
+    VL53L8CX_DISABLE_NB_SPADS_ENABLED
+    VL53L8CX_DISABLE_SIGNAL_PER_SPAD
+    VL53L8CX_DISABLE_RANGE_SIGMA_MM
+    VL53L8CX_DISABLE_REFLECTANCE_PERCENT
+    VL53L8CX_DISABLE_MOTION_INDICATOR
     $<$<CONFIG:Debug>:DEBUG>
 )
 
@@ -24,12 +32,9 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/utilities
     ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE/debug
     ${CMAKE_CURRENT_SOURCE_DIR}/../../BLE
-    # VL53L1CB bare driver includes
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/core/inc
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/platform/inc
-    # VL53L5CX Ultra Lite Driver includes
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/modules
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/platform
+    # VL53L8CX Ultra Lite Driver includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L8CX/modules
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L8CX/platform
 )
 
 # STM32CubeMX generated application sources
@@ -37,21 +42,26 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_app.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_l5.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_l8.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/rev_safety_tof.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l1_roi.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/drive_safety.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_transport.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_status.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_config.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_topology.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_frame_codec.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_policy.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_debug.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_connection_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_drive_policy.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_adv_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/pwm_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_command.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_gatt_layout.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_attr_dispatch.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l5_debounce.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/tof_l8_debounce.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_panic.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_watchdog.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/firmware_stack_guard.c
@@ -129,15 +139,9 @@ set(BLE_Middleware_Src
 )
 
 
-# VL53L1CB bare driver sources (globbed so new files stay picked up automatically)
-file(GLOB VL53L1CB_Src CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/core/src/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L1CB/platform/src/*.c
-)
-
-file(GLOB VL53L5CX_Src CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/modules/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L5CX/platform/*.c
+file(GLOB VL53L8CX_Src CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L8CX/modules/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/VL53L8CX/platform/*.c
 )
 
 # Link directories setup
@@ -148,8 +152,7 @@ set(MX_LINK_DIRS
 set(MX_LINK_LIBS
     STM32_Drivers
     BLE_Middleware
-    VL53L1CB_Driver
-    VL53L5CX_Driver
+    VL53L8CX_Driver
     ${TOOLCHAIN_LINK_LIBRARIES}
 
 )
@@ -168,14 +171,9 @@ add_library(BLE_Middleware OBJECT)
 target_sources(BLE_Middleware PRIVATE ${BLE_Middleware_Src})
 target_link_libraries(BLE_Middleware PUBLIC stm32cubemx)
 
-# Create VL53L1CB_Driver static library (linker --gc-sections strips unused modes)
-add_library(VL53L1CB_Driver OBJECT)
-target_sources(VL53L1CB_Driver PRIVATE ${VL53L1CB_Src})
-target_link_libraries(VL53L1CB_Driver PUBLIC stm32cubemx)
-
-add_library(VL53L5CX_Driver OBJECT)
-target_sources(VL53L5CX_Driver PRIVATE ${VL53L5CX_Src})
-target_link_libraries(VL53L5CX_Driver PUBLIC stm32cubemx)
+add_library(VL53L8CX_Driver OBJECT)
+target_sources(VL53L8CX_Driver PRIVATE ${VL53L8CX_Src})
+target_link_libraries(VL53L8CX_Driver PUBLIC stm32cubemx)
 
 # Add STM32CubeMX generated application sources to the project
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${MX_Application_Src})

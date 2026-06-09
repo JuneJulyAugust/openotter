@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-labelledby="title desc">
+  <title id="title">IOT01A1 Board-Side Adapter</title>
+  <desc id="desc">Arduino R3 proto shield or custom adapter PCB with two JST-GH sensor connectors, shared SPI bus, shared power, and separate control lines.</desc>
+  <defs>
+    <style>
+      .label { font: 18px sans-serif; fill: #111827; }
+      .small { font: 14px sans-serif; fill: #374151; }
+      .shield { fill: #e5e7eb; stroke: #263238; stroke-width: 2; }
+      .rear { fill: #dbeafe; stroke: #1d4ed8; stroke-width: 2; }
+      .front { fill: #dcfce7; stroke: #15803d; stroke-width: 2; }
+      .rail5 { stroke: #dc2626; stroke-width: 5; fill: none; }
+      .railg { stroke: #111827; stroke-width: 5; fill: none; }
+      .bus { stroke: #2563eb; stroke-width: 4; fill: none; }
+      .ctrl { stroke: #7c3aed; stroke-width: 4; fill: none; }
+    </style>
+  </defs>
+
+  <text x="560" y="38" text-anchor="middle" class="label">Board-Side Adapter: replace loose Dupont jumpers</text>
+
+  <rect x="80" y="90" width="790" height="430" rx="16" class="shield"/>
+  <text x="475" y="125" text-anchor="middle" class="label">Arduino R3 proto shield on B-L475E-IOT01A1</text>
+
+  <rect x="125" y="170" width="185" height="170" rx="10" class="rear"/>
+  <text x="217" y="205" text-anchor="middle" class="label">REAR ToF</text>
+  <text x="217" y="235" text-anchor="middle" class="small">JST-GH 10-pin</text>
+  <text x="217" y="260" text-anchor="middle" class="small">blue label</text>
+  <text x="217" y="285" text-anchor="middle" class="small">D8 NCS</text>
+  <text x="217" y="310" text-anchor="middle" class="small">A1 LPn / A2 GPIO1</text>
+
+  <rect x="620" y="170" width="185" height="170" rx="10" class="front"/>
+  <text x="712" y="205" text-anchor="middle" class="label">FRONT ToF</text>
+  <text x="712" y="235" text-anchor="middle" class="small">JST-GH 10-pin</text>
+  <text x="712" y="260" text-anchor="middle" class="small">green label</text>
+  <text x="712" y="285" text-anchor="middle" class="small">D10 NCS</text>
+  <text x="712" y="310" text-anchor="middle" class="small">A0 LPn / A3 GPIO1</text>
+
+  <path d="M310 200 H620" class="rail5"/>
+  <text x="465" y="192" text-anchor="middle" class="small">shared 5V</text>
+  <path d="M310 230 H620" class="railg"/>
+  <text x="465" y="222" text-anchor="middle" class="small">shared GND</text>
+  <path d="M310 260 H620" class="bus"/>
+  <text x="465" y="252" text-anchor="middle" class="small">SPI SCK/MOSI/MISO</text>
+  <path d="M310 290 H620" class="ctrl"/>
+  <text x="465" y="282" text-anchor="middle" class="small">mode/PWR_EN policy</text>
+
+  <rect x="185" y="390" width="500" height="78" rx="10" fill="#ffffff" stroke="#263238" stroke-width="2"/>
+  <text x="435" y="420" text-anchor="middle" class="small">Route motor PWM away from ToF harnesses. Put power/GND near the connectors.</text>
+  <text x="435" y="446" text-anchor="middle" class="small">Add test pads: 5V, 3V3, GND, SCK, MOSI, MISO, rear NCS, front NCS.</text>
+
+  <rect x="925" y="165" width="65" height="220" rx="8" fill="#f8fafc" stroke="#263238" stroke-width="2"/>
+  <text x="958" y="194" text-anchor="middle" class="small">ToF</text>
+  <text x="958" y="216" text-anchor="middle" class="small">cables</text>
+  <line x1="958" y1="235" x2="958" y2="350" stroke="#64748b" stroke-width="8"/>
+  <line x1="958" y1="235" x2="958" y2="350" stroke="#ffffff" stroke-width="2" stroke-dasharray="8 8"/>
+  <text x="958" y="418" text-anchor="middle" class="small">strain</text>
+  <text x="958" y="438" text-anchor="middle" class="small">relief</text>
+</svg>

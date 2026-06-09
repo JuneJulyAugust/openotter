@@ -4,6 +4,11 @@
 <p align="center">
   <img src="assets/design/logos/light_title.png" alt="OpenOtter logo" width="400" />
 </p>
+<p align="center">
+  <a href="https://github.com/JuneJulyAugust/openotter/actions/workflows/firmware-host.yml"><img alt="Firmware Host Tests" src="https://github.com/JuneJulyAugust/openotter/actions/workflows/firmware-host.yml/badge.svg" /></a>
+  <a href="https://github.com/JuneJulyAugust/openotter/actions/workflows/firmware-build.yml"><img alt="Firmware Target Build" src="https://github.com/JuneJulyAugust/openotter/actions/workflows/firmware-build.yml/badge.svg" /></a>
+  <a href="https://github.com/JuneJulyAugust/openotter/actions/workflows/ios.yml"><img alt="iOS Tests" src="https://github.com/JuneJulyAugust/openotter/actions/workflows/ios.yml/badge.svg" /></a>
+</p>
 <!-- markdownlint-enable MD033 -->
 
 > Open-source physical AI platform for self-driving RC cars — accessible, fun, and educational for kids, makers, and RC fans of all skill levels
@@ -75,6 +80,30 @@ The project started as **MetalBot**, an iPhone-first autonomous RC car using App
 - STM32 firmware: `cd firmware/stm32-mcp && ./build.sh flash`
 
 For deeper setup details, start with the component READMEs above.
+
+## Continuous Integration
+
+GitHub Actions runs the checks that can be proven in cloud CI:
+
+Workflows run on pull requests and on pushes to `main`. Feature branch pushes
+do not run a second copy of the same PR checks.
+
+| Workflow | Runs | Coverage |
+| --- | --- | --- |
+| Firmware Host Tests | HAL-free STM32 C unit tests on Ubuntu | `gcovr` text, XML, and HTML artifacts |
+| Firmware Target Build | STM32 Debug cross-compile on Ubuntu | Build artifact upload when enabled |
+| iOS Tests | XCTest simulator suite on macOS | `.xcresult`, `xccov` text, and JSON artifacts |
+
+The STM32 target build depends on STSW-IMG040, which must be downloaded from ST
+under its license. To enable that cloud build, configure repository secrets:
+
+- `VL53L8CX_ULD_URL`: private URL to a zipped STSW-IMG040 / VL53L8CX ULD
+  package.
+- `VL53L8CX_ULD_SHA256`: optional checksum for the zip.
+
+Firmware host coverage can also be uploaded to Codecov when `CODECOV_TOKEN` is
+configured. Without those secrets, the always-available host tests and iOS
+simulator tests still run and publish their coverage artifacts.
 
 ## Contributing
 

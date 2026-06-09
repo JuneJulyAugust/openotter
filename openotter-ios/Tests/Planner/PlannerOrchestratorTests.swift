@@ -401,6 +401,111 @@ final class PlannerPipelineIntegrationTests: XCTestCase {
                       "isOverridden must remain true after setGoal during BRAKE")
     }
 
+    /// BRAKE active -> user commands reverse -> the latch clears on the first
+    /// ramped tick, even though ConstantSpeedPlanner initially emits zero.
+    /// This is the operator escape hatch for backing away from a forward
+    /// LiDAR collision warning.
+    func testReverseGoalDuringBrakeClearsLatchBeforeFirstRampedTick() {
+        let planner = ConstantSpeedPlanner(config: .init(maxRampRatePerSecond: 10.0))
+        let orchestrator = PlannerOrchestrator(planner: planner)
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+
+        let dt = 1.0 / 60.0
+
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0.5, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+
+        for i in 1...15 {
+            let t = 0.5 + Double(i) * dt
+            _ = orchestrator.tick(context: PlannerTestFactory.context(
+                timestamp: t, forwardDepth: 0.1, arkitSpeedMps: 1.0
+            ))
+        }
+        XCTAssertTrue(orchestrator.isOverridden, "Should be in BRAKE before reverse")
+
+        orchestrator.setGoal(.constantThrottle(targetThrottle: -0.4))
+
+        let firstReverseTick = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.0,
+            forwardDepth: 0.1,
+            arkitSpeedMps: 0.0
+        ))
+
+        XCTAssertEqual(firstReverseTick.throttle, 0, accuracy: 1e-5,
+                       "The first planner tick may still be zero due to ramp initialization")
+        XCTAssertEqual(firstReverseTick.source, .planner("ConstantThrottlePlanner"),
+                       "Reverse intent should clear the forward BRAKE latch before the zero ramp tick")
+        XCTAssertFalse(orchestrator.isOverridden)
+        XCTAssertEqual(orchestrator.supervisorState, .safe)
+        XCTAssertNil(orchestrator.brakeRecord)
+
+        let secondReverseTick = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.1,
+            forwardDepth: 0.1,
+            arkitSpeedMps: 0.0
+        ))
+
+        XCTAssertLessThan(secondReverseTick.throttle, 0)
+        XCTAssertEqual(secondReverseTick.source, .planner("ConstantThrottlePlanner"))
+        XCTAssertFalse(orchestrator.isOverridden)
+    }
+
+    /// Park is the hard stop: it clears the forward latch immediately, and a
+    /// later reverse command can back away even while the forward depth still
+    /// reports the obstacle.
+    func testParkThenReverseStartsFromClearForwardSafetyState() {
+        let planner = ConstantSpeedPlanner(config: .init(maxRampRatePerSecond: 10.0))
+        let orchestrator = PlannerOrchestrator(planner: planner)
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.5))
+
+        let dt = 1.0 / 60.0
+
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+        _ = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 0.5, forwardDepth: 10.0, arkitSpeedMps: 1.0
+        ))
+
+        for i in 1...15 {
+            let t = 0.5 + Double(i) * dt
+            _ = orchestrator.tick(context: PlannerTestFactory.context(
+                timestamp: t, forwardDepth: 0.1, arkitSpeedMps: 1.0
+            ))
+        }
+        XCTAssertTrue(orchestrator.isOverridden, "Should be in BRAKE before Park")
+
+        orchestrator.reset()
+        XCTAssertEqual(orchestrator.operatingMode, .park)
+        XCTAssertFalse(orchestrator.isOverridden)
+        XCTAssertEqual(orchestrator.supervisorState, .safe)
+
+        orchestrator.setGoal(.constantThrottle(targetThrottle: -0.4))
+
+        let firstReverseTick = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.0,
+            forwardDepth: 0.1,
+            arkitSpeedMps: 0.0
+        ))
+
+        XCTAssertEqual(firstReverseTick.source, .planner("ConstantThrottlePlanner"))
+        XCTAssertEqual(firstReverseTick.throttle, 0, accuracy: 1e-5)
+        XCTAssertFalse(orchestrator.isOverridden)
+
+        let secondReverseTick = orchestrator.tick(context: PlannerTestFactory.context(
+            timestamp: 1.1,
+            forwardDepth: 0.1,
+            arkitSpeedMps: 0.0
+        ))
+
+        XCTAssertLessThan(secondReverseTick.throttle, 0)
+        XCTAssertEqual(secondReverseTick.source, .planner("ConstantThrottlePlanner"))
+    }
+
     /// BRAKE active → depth drops out → system stays safe (does not pass through).
     func testBrakeHoldsThroughDepthDropoutInOrchestrator() {
         let planner = ConstantSpeedPlanner(config: .init(maxRampRatePerSecond: 10.0))

@@ -89,8 +89,14 @@ final class PlannerOrchestrator: ObservableObject {
     /// Transition to Drive and pursue `goal`. Always pushes Drive through
     /// the receiver (idempotent), since the caller's intent is "I want
     /// motion" — even if we believed we were already driving, the firmware
-    /// may have been forced into Park by another client.
+    /// may have been forced into Park by another client. A reverse constant
+    /// throttle goal is also an explicit operator escape from a forward LiDAR
+    /// brake latch; clear that latch before the planner's ramp limiter emits
+    /// its first zero-throttle tick.
     func setGoal(_ goal: PlannerGoal) {
+        if goal.requestsReverseEscape {
+            clearForwardSafetyState()
+        }
         transition(to: .drive)
         activePlanner.setGoal(goal)
     }
@@ -110,10 +116,28 @@ final class PlannerOrchestrator: ObservableObject {
         transition(to: .park)
     }
 
+    private func clearForwardSafetyState() {
+        supervisor.reset()
+        lastCommand = .neutral
+        lastSupervisorEvent = nil
+        isOverridden = false
+        supervisorState = .safe
+        brakeRecord = nil
+    }
+
     private func transition(to mode: OperatingMode) {
         if operatingMode != mode {
             operatingMode = mode
         }
         modeReceiver?.setOperatingMode(mode)
+    }
+}
+
+private extension PlannerGoal {
+    var requestsReverseEscape: Bool {
+        if case .constantThrottle(let targetThrottle) = self {
+            return targetThrottle < 0
+        }
+        return false
     }
 }

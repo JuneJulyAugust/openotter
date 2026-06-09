@@ -32,7 +32,7 @@ private struct TofCell: View {
             /* Always render the heat color. Previously we greyed out cells
              * with non-OK status, but the VL53L1 routinely flips to
              * SIG/PHA/? between scans and the resulting flash made the
-             * grid unreadable. VL53L5CX also reports status 2 for far
+             * grid unreadable. VL53L8CX also reports status 2 for far
              * no-target cells, which should look clear, not like a near
              * obstacle. Status is carried by the border style and the small
              * status label below the range number instead. */
@@ -67,15 +67,15 @@ private struct TofCell: View {
     }
 
     private var isUsable: Bool {
-        if sensor == .vl53l5cx {
-            return reading.vl53l5cxClass != .invalid
+        if sensor == .vl53l8cx {
+            return reading.vl53l8cxClass != .invalid
         }
         return reading.status.isUsable
     }
 
     private var statusLabel: String {
-        if sensor == .vl53l5cx {
-            switch reading.vl53l5cxClass {
+        if sensor == .vl53l8cx {
+            switch reading.vl53l8cxClass {
             case .valid: return "OK"
             case .clear: return "CLR"
             case .invalid: return "\(reading.status.rawValue)"
@@ -87,7 +87,7 @@ private struct TofCell: View {
     /// Tint for the small status pill — muted white for OK, accent for others
     /// so the label stands out without repainting the entire cell.
     private var statusLabelColor: Color {
-        if sensor == .vl53l5cx {
+        if sensor == .vl53l8cx {
             return isUsable ? .white : .orange
         }
         switch reading.status {
@@ -106,14 +106,14 @@ private struct TofCell: View {
     }
 
     private var displayRangeMm: UInt16 {
-        if sensor == .vl53l5cx && reading.vl53l5cxClass == .clear {
+        if sensor == .vl53l8cx && reading.vl53l8cxClass == .clear {
             return maxRangeMm
         }
         return reading.rangeMm
     }
 
     private var borderColor: Color {
-        if sensor == .vl53l5cx {
+        if sensor == .vl53l8cx {
             return isUsable ? .green : .red
         }
         switch reading.status {

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # fetch-deps.sh — Fetch vendor dependencies not tracked in git.
 #
-# Usage: ./scripts/fetch-deps.sh [--vl53l5cx-path /path/to/stsw-img023]
+# Usage: ./scripts/fetch-deps.sh [--vl53l8cx-path /path/to/stsw-img040]
 #
-# Clones STM32CubeL4 and VL53L1 from GitHub (no login required).
-# VL53L5CX requires a manual download from st.com — see --vl53l5cx-path.
+# Clones STM32CubeL4 from GitHub (no login required).
+# VL53L8CX requires a manual download from st.com; see --vl53l8cx-path.
 
 set -euo pipefail
 
@@ -15,10 +15,10 @@ die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "--- $*"; }
 
 # ── Parse args ────────────────────────────────────────────────────────────────
-VL53L5CX_PATH=""
+VL53L8CX_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --vl53l5cx-path) VL53L5CX_PATH="$2"; shift 2 ;;
+    --vl53l8cx-path) VL53L8CX_PATH="$2"; shift 2 ;;
     *) die "Unknown argument: $1" ;;
   esac
 done
@@ -81,44 +81,37 @@ cp "$EXAMPLE"/Core/Src/main.c         "$ROOT/BLE/_reference/" 2>/dev/null || tru
 cp "$EXAMPLE"/Core/Src/stm32l4xx_it.c "$ROOT/BLE/_reference/" 2>/dev/null || true
 cp "$EXAMPLE"/Core/Inc/*.h            "$ROOT/BLE/_reference/" 2>/dev/null || true
 
-# ── 2. VL53L1 API ─────────────────────────────────────────────────────────────
-info "Cloning VL53L1 API (v6.6.19, shallow) ..."
-VL53L1_DIR="$TMPDIR_BASE/VL53L1"
-git clone --depth 1 \
-  https://github.com/STMicroelectronics/VL53L1 \
-  "$VL53L1_DIR"
+# ── 2. VL53L8CX ULD ───────────────────────────────────────────────────────────
+if [[ -n "$VL53L8CX_PATH" ]]; then
+  info "Installing VL53L8CX from $VL53L8CX_PATH ..."
+  rm -rf "$ROOT/Drivers/VL53L8CX/modules"
+  mkdir -p "$ROOT/Drivers/VL53L8CX"/{modules,platform}
 
-rm -rf "$ROOT/Drivers/VL53L1CB"
-mkdir -p "$ROOT/Drivers/VL53L1CB"
-cp -r "$VL53L1_DIR/core"     "$ROOT/Drivers/VL53L1CB/"
-cp -r "$VL53L1_DIR/platform" "$ROOT/Drivers/VL53L1CB/"
-
-# ── 3. VL53L5CX ULD ───────────────────────────────────────────────────────────
-if [[ -n "$VL53L5CX_PATH" ]]; then
-  info "Installing VL53L5CX from $VL53L5CX_PATH ..."
-  rm -rf "$ROOT/Drivers/VL53L5CX/modules" "$ROOT/Drivers/VL53L5CX/platform"
-  mkdir -p "$ROOT/Drivers/VL53L5CX"/{modules,platform}
-
-  # Try both common package layouts from STSW-IMG023
-  ULD="$VL53L5CX_PATH"
-  if [[ -d "$ULD/Middlewares/ST/VL53L5CX_ULD" ]]; then
-    ULD="$ULD/Middlewares/ST/VL53L5CX_ULD"
+  # Try common package layouts from STSW-IMG040.
+  ULD="$VL53L8CX_PATH"
+  if [[ -d "$ULD/Middlewares/ST/VL53L8CX_ULD" ]]; then
+    ULD="$ULD/Middlewares/ST/VL53L8CX_ULD"
+  elif [[ -d "$ULD/VL53L8CX_ULD" ]]; then
+    ULD="$ULD/VL53L8CX_ULD"
   fi
 
-  cp "$ULD"/modules/*.c  "$ROOT/Drivers/VL53L5CX/modules/" 2>/dev/null || true
-  cp "$ULD"/modules/*.h  "$ROOT/Drivers/VL53L5CX/modules/" 2>/dev/null || true
+  [[ -d "$ULD/modules" ]] || die "Cannot find VL53L8CX_ULD/modules under $VL53L8CX_PATH"
+  [[ -d "$ULD/platform" ]] || die "Cannot find VL53L8CX_ULD/platform under $VL53L8CX_PATH"
 
-  # Keep our project's platform wrapper, not the ST stub
-  echo "NOTE: Preserving existing platform/platform.{c,h} (our STM32 HAL wrapper)."
-  if [[ ! -f "$ROOT/Drivers/VL53L5CX/platform/platform.h" ]]; then
-    cp "$ULD"/platform/*.c "$ROOT/Drivers/VL53L5CX/platform/" 2>/dev/null || true
-    cp "$ULD"/platform/*.h "$ROOT/Drivers/VL53L5CX/platform/" 2>/dev/null || true
+  cp "$ULD"/modules/*.c  "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
+  cp "$ULD"/modules/*.h  "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
+
+  if [[ -f "$ROOT/Drivers/VL53L8CX/platform/platform.h" ]]; then
+    echo "NOTE: Preserving existing VL53L8CX platform wrapper."
+  else
+    cp "$ULD"/platform/*.c "$ROOT/Drivers/VL53L8CX/platform/" 2>/dev/null || true
+    cp "$ULD"/platform/*.h "$ROOT/Drivers/VL53L8CX/platform/" 2>/dev/null || true
   fi
 else
   echo ""
-  echo "VL53L5CX: SKIPPED — download STSW-IMG023 from:"
-  echo "  https://www.st.com/en/embedded-software/stsw-img023.html"
-  echo "Then re-run: $0 --vl53l5cx-path /path/to/extracted/stsw-img023"
+  echo "VL53L8CX: SKIPPED - download STSW-IMG040 from:"
+  echo "  https://www.st.com/en/embedded-software/stsw-img040.html"
+  echo "Then re-run: $0 --vl53l8cx-path /path/to/extracted/stsw-img040"
   echo ""
 fi
 
@@ -134,8 +127,7 @@ check() {
 check "$ROOT/Drivers/CMSIS/Include/core_cm4.h"
 check "$ROOT/Drivers/CMSIS/Device/ST/STM32L4xx/Include/stm32l475xx.h"
 check "$ROOT/Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal.c"
-check "$ROOT/Drivers/VL53L1CB/core/inc/vl53l1_api.h"
-[[ -n "$VL53L5CX_PATH" ]] && check "$ROOT/Drivers/VL53L5CX/modules/vl53l5cx_api.h"
+[[ -n "$VL53L8CX_PATH" ]] && check "$ROOT/Drivers/VL53L8CX/modules/vl53l8cx_api.h"
 
 if [[ $errors -eq 0 ]]; then
   echo ""

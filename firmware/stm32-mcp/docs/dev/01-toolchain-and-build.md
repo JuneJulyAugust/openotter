@@ -17,7 +17,7 @@ stated. Absolute paths referenced below:
 If you are working in a git worktree, replace `firmware/stm32-mcp/` above
 with the worktree path. For this feature branch that is:
 
-`/Users/fang/projects/openotter/.worktrees/vl53l5cx-tof-debug/firmware/stm32-mcp/`
+`/Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp/`
 
 The commands below are the same after that path change.
 

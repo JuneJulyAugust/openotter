@@ -57,6 +57,42 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Establish CMake presets and correct `.gitignore` & Git LFS for STM32 drivers.
 - [x] Fix the STM32/iOS BLE reconnect loop by aligning GAP device naming with iOS cache behavior.
 
+#### 1.3.4 SATEL-VL53L8 deployment path
+
+- [x] Correct SATEL-VL53L8 `J1`/`J2` wiring documentation for the IOT01A1.
+- [x] Migrate the active STM32 ToF firmware path to VL53L8CX.
+- [x] Verify one SATEL-VL53L8 streams valid 4x4 frames on IOT01A1 over I2C3.
+- [x] Verify one rear SATEL-VL53L8 streams a valid iOS depth map over SPI1 after power-off I2C-to-SPI rewiring and cold boot.
+- [x] Add boot-time I2C3/SPI1 transport probing for the first SATEL-VL53L8.
+- [x] Add adaptive rear/front VL53L8 runtime slots and direction-specific firmware safety clamps.
+- [x] Deploy iOS diagnostics from the feature worktree and render live VL53L8 ToF data.
+- [x] Document and test the future two-sensor topology as shared SPI1 with dedicated `NCS`, `LPn`, and `GPIO1` lines.
+- [x] Add host-test coverage for VL53L8 config, transport, frame codec, BLE ToF policy, and two-sensor topology; HAL-free host line coverage reached 99.4%.
+- [x] Add iOS STM32 Control front/rear ToF selector, FE61 debug role byte, and FE63 available-role mask decoding.
+- [x] Add regression tests for FE61 debug role compatibility/rejection, FE63 defensive decoding, and iOS stale-frame clearing when switching ToF roles.
+- [x] Add SATEL-VL53L8 mechanical integration design, harness recommendations, sourced part references, local visual diagrams, and parametric full-SATEL plus mini-PCB CadQuery enclosure CAD with bottom-mount case orientation, board retention, strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
+- [x] Add H12Y photo-based front/rear ToF case placement, harness routing, bench-to-car wiring transition visuals, and renderer script for mechanical integration planning.
+- [x] Add detailed full-SATEL and snap-off mini-PCB internal case assembly diagrams showing PCB retention, case-side connector/interposer wiring, pigtails, service loop, and strain relief.
+- [x] Decide the v1.2.0 scope: ship as "one rear SATEL verified, two-sensor code ready"; defer physical front/two-SATEL verification until more hardware is available.
+- [x] Harden iOS safety mode transitions so reverse intent clears the forward LiDAR BRAKE latch before the planner ramp's initial zero tick, and stale rear FE43 events cannot revive after Park/Debug.
+- [x] Harden VL53L8 reverse safety against far-range non-OK status noise by trusting only statuses `5`, `6`, `9`, and `10` through `3.8 m`, capping valid far clearance, and treating non-valid selected-zone frames as degraded live data instead of close obstacles or `TOF_BLIND`.
+- [x] Harden STM32 BLE boot/reconnect behavior so iOS FE61 replay after reset is queued and applied only from the main loop, not inside the BlueNRG event callback.
+- [x] Harden STM32 reset-with-iOS-open timing by deferring safety ToF init while a fresh BLE connection is still awaiting FE41/FE44 app handshake.
+- [x] Harden iOS STM32 Control refresh/scan diagnostics so reset recovery waits for a fresh OpenOtter advertisement instead of blindly using stale remembered peripherals, with a rolling BLE trace.
+- [x] Add reusable STM32 UART live-log tooling plus firmware deploy rules for remote/sandbox sessions.
+- [x] User-validated one-rear-SATEL end-to-end flow after the final safety fixes.
+- [x] Deploy updated iOS app and re-run the STM32 reset-with-debug-view-open smoke test; live recheck on 2026-06-09 showed STM32 Control connected and UART streaming FE62 frames with `fail=0`.
+- [x] Complete final one-rear-SATEL end-to-end validation after reset/reconnect hardening; user reported the app/firmware vehicle flow working well.
+- [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
+- [x] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
+- [x] End-to-end validate the one-rear-sensor v1.2.0 app/firmware path: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
+- [ ] Measure intact SATEL carrier dimensions with calipers or ST STEP/Gerber files and update the full-carrier CadQuery defaults before printing the final car case.
+- [ ] Measure snapped-off SATEL mini-PCB dimensions with calipers and update the mini-PCB CadQuery defaults before printing the final compact case.
+- [ ] Build a board-side IOT01A1 ToF harness adapter using locking connectors before car deployment.
+- [ ] Physically verify the second front SATEL-VL53L8 on shared SPI1 with D10 `NCS`, A0 `LPn`, and A3 `GPIO1`.
+- [x] Run vehicle-level validation for the v1.2.0 one-rear-SATEL scope with STM32/iOS safety flow working well.
+- [ ] After PR CI/final release hygiene, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
+
 ### 1.4 Legacy Raspberry Pi WiFi bridge
 
 #### 1.4.1 Protocol and transport implementation

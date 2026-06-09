@@ -12,12 +12,12 @@ extern "C" {
 
 typedef enum {
   TOF_SENSOR_NONE     = 0,
-  TOF_SENSOR_VL53L1CB = 1,
-  TOF_SENSOR_VL53L5CX = 2,
+  TOF_SENSOR_VL53L1CB = 1, /* deprecated compatibility value */
+  TOF_SENSOR_VL53L8CX = 2,
 } Tof_SensorType_t;
 
 typedef enum {
-  TOF_PROFILE_L5_CONTINUOUS = 1,
+  TOF_PROFILE_L8_CONTINUOUS = 1,
 } Tof_Profile_t;
 
 typedef struct __attribute__((packed)) {

@@ -9,6 +9,8 @@ class STM32ControlViewModel: ObservableObject {
     @Published var deviceName: String = "Unknown"
     @Published var rssi: Int = 0
     @Published var commandsSent: Int = 0
+    @Published var stm32BleDebugSummary: String = ""
+    @Published var stm32TofDebugSummary: String = ""
 
     /// Steering: -1.0 (full left) to +1.0 (full right), 0 = center
     @Published var steering: Float = 0.0
@@ -25,19 +27,22 @@ class STM32ControlViewModel: ObservableObject {
     @Published var tofState: TofState = .unknown
     @Published var tofScanHz: UInt8 = 0
     @Published var tofLastError: UInt8 = 0
+    @Published var tofSelectedSensorRole: TofSensorRole = .rear
+    @Published var tofAvailableSensorRoles: Set<TofSensorRole> = []
     @Published var tofDroppedFrameChunks: UInt32 = 0
     @Published var tofFramesParsed: UInt32 = 0
     @Published var tofChunksReceived: UInt32 = 0
     @Published var firmwareMode: OperatingMode = .debug
     @Published var rearSafetyEvent: FirmwareSafetyEvent?
     @Published private var rearSafetyReceivedAt: Date?
-    /// Defaults match firmware VL53L5CX debug stream: 4x4, profile 1, 10 Hz, 20 ms.
-    @Published var tofConfig = TofConfig(sensor: .vl53l5cx,
+    /// Defaults match firmware VL53L8CX debug stream: 4x4, profile 1, 10 Hz, 20 ms.
+    @Published var tofConfig = TofConfig(sensor: .vl53l8cx,
                                          layout: 4,
                                          distMode: 1,
                                          budgetUs: 0,
                                          frequencyHz: 10,
-                                         integrationMs: 20)
+                                         integrationMs: 20,
+                                         role: .rear)
 
     // MARK: - Private
 
@@ -54,6 +59,7 @@ class STM32ControlViewModel: ObservableObject {
     /// Single debounce window for any ToF picker/slider change — collapses
     /// rapid touches into one FE61 write.
     private var tofConfigTimer: Timer?
+    private var didReassertDebugForCurrentConnection = false
 
     // MARK: - Timing Constants
 
@@ -73,7 +79,7 @@ class STM32ControlViewModel: ObservableObject {
         setupSubscriptions()
         bleManager.start()   // idempotent — no-op if already connected
         escManager.start()   // idempotent — no-op if already connected
-        // Bench bring-up: keep firmware in Debug so VL53L5CX FE62 frames
+        // Bench bring-up: keep firmware in Debug so VL53L8CX FE62 frames
         // stream regardless of mode. Reverse safety supervisor stays disarmed.
         setFirmwareMode(.debug)
     }
@@ -108,8 +114,7 @@ class STM32ControlViewModel: ObservableObject {
     }
 
     func reconnect() {
-        bleManager.stop()
-        bleManager.start()
+        bleManager.reconnect()
     }
 
     func setFirmwareMode(_ mode: OperatingMode) {
@@ -124,19 +129,27 @@ class STM32ControlViewModel: ObservableObject {
         mode == .debug
     }
 
+    static func shouldReassertDebugOnConnection(status: STM32BleStatus,
+                                                firmwareMode: OperatingMode,
+                                                alreadyReasserted: Bool) -> Bool {
+        status == .connected && firmwareMode == .debug && !alreadyReasserted
+    }
+
     // MARK: - ToF API
 
     func setTofLayout(_ layout: UInt8) {
         tofConfig.layout = layout
-        if tofConfig.sensor == .vl53l5cx {
-            let cap = TofConfig.bleCapFrequencyHz(layout: layout)
-            tofConfig.frequencyHz = min(tofConfig.frequencyHz, cap)
-            tofConfig.integrationMs = TofConfig.defaultL5IntegrationMs(layout: layout)
-        } else {
-            tofConfig.budgetUs = TofConfig.clampBudget(tofConfig.budgetUs,
-                                                       layout: layout,
-                                                       distMode: tofConfig.distMode)
-        }
+        let cap = TofConfig.bleCapFrequencyHz(layout: layout)
+        tofConfig.frequencyHz = min(tofConfig.frequencyHz, cap)
+        tofConfig.integrationMs = TofConfig.defaultL8IntegrationMs(layout: layout)
+        scheduleTofSend()
+    }
+
+    func setTofSensorRole(_ role: TofSensorRole) {
+        guard role == .rear || role == .front else { return }
+        tofConfig.role = role
+        tofFrame = nil
+        tofScanHz = 0
         scheduleTofSend()
     }
 
@@ -156,14 +169,14 @@ class STM32ControlViewModel: ObservableObject {
     }
 
     func setTofFrequencyHz(_ hz: UInt8) {
-        tofConfig.frequencyHz = min(max(hz, 1), TofConfig.maxL5FrequencyHz(layout: tofConfig.layout))
-        tofConfig.integrationMs = TofConfig.clampL5IntegrationMs(tofConfig.integrationMs,
+        tofConfig.frequencyHz = min(max(hz, 1), TofConfig.maxL8FrequencyHz(layout: tofConfig.layout))
+        tofConfig.integrationMs = TofConfig.clampL8IntegrationMs(tofConfig.integrationMs,
                                                                  frequencyHz: tofConfig.frequencyHz)
         scheduleTofSend()
     }
 
     func setTofIntegrationMs(_ ms: UInt16) {
-        tofConfig.integrationMs = TofConfig.clampL5IntegrationMs(ms,
+        tofConfig.integrationMs = TofConfig.clampL8IntegrationMs(ms,
                                                                  frequencyHz: tofConfig.frequencyHz)
         scheduleTofSend()
     }
@@ -179,18 +192,13 @@ class STM32ControlViewModel: ObservableObject {
     }
 
     private func sendTofConfig() {
-        if tofConfig.sensor == .vl53l5cx {
-            tofService.sendConfig(sensor: tofConfig.sensor,
-                                  layout: tofConfig.layout,
-                                  profile: tofConfig.distMode,
-                                  frequencyHz: tofConfig.frequencyHz,
-                                  integrationMs: tofConfig.integrationMs,
-                                  budgetMs: UInt16(min(UInt32(UInt16.max), tofConfig.budgetUs / 1000)))
-        } else {
-            tofService.sendConfig(layout: tofConfig.layout,
-                                  distMode: tofConfig.distMode,
-                                  budgetUs: tofConfig.budgetUs)
-        }
+        tofService.sendConfig(sensor: tofConfig.sensor,
+                              layout: tofConfig.layout,
+                              profile: tofConfig.distMode,
+                              frequencyHz: tofConfig.frequencyHz,
+                              integrationMs: tofConfig.integrationMs,
+                              budgetMs: UInt16(min(UInt32(UInt16.max), tofConfig.budgetUs / 1000)),
+                              role: tofConfig.role)
     }
 
     // MARK: - Send Logic
@@ -258,7 +266,21 @@ class STM32ControlViewModel: ObservableObject {
     private func setupSubscriptions() {
         bleManager.$status
             .receive(on: DispatchQueue.main)
-            .assign(to: &$status)
+            .sink { [weak self] status in
+                guard let self else { return }
+                self.status = status
+                if Self.shouldReassertDebugOnConnection(
+                    status: status,
+                    firmwareMode: self.firmwareMode,
+                    alreadyReasserted: self.didReassertDebugForCurrentConnection
+                ) {
+                    self.didReassertDebugForCurrentConnection = true
+                    self.setFirmwareMode(.debug)
+                } else if status != .connected {
+                    self.didReassertDebugForCurrentConnection = false
+                }
+            }
+            .store(in: &cancellables)
 
         bleManager.$deviceName
             .receive(on: DispatchQueue.main)
@@ -271,6 +293,10 @@ class STM32ControlViewModel: ObservableObject {
         bleManager.$commandsSent
             .receive(on: DispatchQueue.main)
             .assign(to: &$commandsSent)
+
+        bleManager.$debugSummary
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$stm32BleDebugSummary)
 
         bleManager.$lastSafetyEvent
             .receive(on: DispatchQueue.main)
@@ -308,6 +334,14 @@ class STM32ControlViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofLastError)
 
+        tofService.$selectedSensorRole
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofSelectedSensorRole)
+
+        tofService.$availableSensorRoles
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$tofAvailableSensorRoles)
+
         tofService.$droppedFrameChunks
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofDroppedFrameChunks)
@@ -319,6 +353,10 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$chunksReceived
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofChunksReceived)
+
+        tofService.$debugSummary
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$stm32TofDebugSummary)
     }
 
     // PWM mapping moved to `PwmMapping.toPulseWidth(_:)` (Sources/Util/).

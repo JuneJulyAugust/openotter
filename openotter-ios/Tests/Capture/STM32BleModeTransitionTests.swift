@@ -18,6 +18,12 @@ final class STM32BleModeTransitionTests: XCTestCase {
                         .writeMode(.park)])
     }
 
+    func testAutonomousDriveDoesNotEnableDebugFrameStreaming() {
+        XCTAssertEqual(STM32ModeTransitionPolicy.startActions(for: .drive),
+                       [.setDebugStreamingEnabled(false),
+                        .writeMode(.drive)])
+    }
+
     func testOnlySuccessfulDebugModeAckEnablesDebugStreaming() {
         XCTAssertTrue(STM32ModeTransitionPolicy.shouldEnableDebugStreamingAfterModeAck(
             pendingEnable: true,

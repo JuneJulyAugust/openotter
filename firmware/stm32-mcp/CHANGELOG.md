@@ -3,6 +3,58 @@
 All notable changes to this project will be documented in this file.
 <!-- markdownlint-disable MD024 -->
 
+## [Unreleased]
+
+### Added
+- **Adaptive VL53L8 safety slots**: Firmware now supports rear and front VL53L8 runtime slots. A single rear sensor still enables reverse ToF safety, a single front sensor can enable forward ToF safety, and two sensors can run independently when both are available.
+- **Directional safety projection tests**: Added host coverage for mapping front-sensor forward motion into the existing reverse-safety model without changing the core stopping-distance invariant.
+- **VL53L8 debug role metadata**: FE61 now accepts a front/rear debug role byte, FE63 reports selected role plus available-slot mask, and host tests cover the packed status metadata.
+- **VL53L8 debug-role regression tests**: Host tests now cover legacy 8-byte FE61 compatibility, invalid 9-byte role rejection, null/short-payload guards, defensive FE63 role-bit decoding, and drive-safety null projection paths.
+- **SATEL-VL53L8 mechanical integration plan**: Added harness recommendations, source image references, full-SATEL and snap-off mini-PCB deployment visuals, car installation/assembly diagrams, and bottom-mounted CadQuery enclosures with board retention, harness strain relief, FOV keepout previews, STEP/STL exports, and rendered preview PNGs.
+- **One-sensor SPI bench evidence**: Documented successful rear SATEL-VL53L8 SPI1 validation after a power-off I2C-to-SPI wiring change, cold boot, firmware auto-probe, and iOS depth-map rendering.
+- **H12Y mechanical integration visuals**: Added photo-based front/rear SATEL case placement, harness routing, and bench-to-car wiring transition renders for the MJX H12Y deployment.
+- **Case internal assembly diagrams**: Added full-SATEL and snap-off mini-PCB cutaway visuals showing PCB retention, pigtail routing, strain relief, case-side connector/interposer placement, and harness load paths.
+- **v1.2.0 validation and bug log**: Documented the final one-rear-SATEL E2E validation state and the resolved SATEL wiring, startup, BLE, iOS safety, and VL53L8 far-range safety bugs.
+- **BLE app-handshake policy tests**: Added host coverage for stale BLE connections that never send app-control traffic after connecting.
+- **Final one-rear-SATEL E2E evidence**: Documented the successful 2026-06-09 end-to-end app/firmware validation after reset/reconnect hardening.
+
+### Changed
+- **VL53L8 runtime driver**: Refactored the single VL53L8 runtime into rear/front slots. Rear probes I2C3 first, then SPI1 with D8 `NCS`; front probes SPI1 with D10 `NCS`.
+- **Drive throttle arbitration**: Drive mode now clamps reverse throttle only when the rear safety context is braking, and clamps forward throttle only when the front safety context is braking.
+- **ToF debug frame selection**: FE62 now streams the selected rear or front VL53L8 slot instead of always using the default available slot.
+- **VL53L8 safety range policy**: Drive-mode safety now trusts only valid-status VL53L8 center-zone depths up to `3.8 m`; valid farther readings become capped clearance, while non-valid statuses such as `2`, `4`, or `255` are treated as degraded live data that holds the previous filter value instead of feeding the EMA or `TOF_BLIND`.
+- **v1.2.0 validation scope**: The release candidate is scoped to one physically verified rear SATEL-VL53L8. Shared-SPI front/rear support remains code-ready and host-tested, but physical second-sensor validation is deferred until another SATEL board is available.
+- **Startup heartbeat semantics**: LD2/PB14 is now a true main-loop heartbeat. ToF frame health remains available through FE63, the STM32 diagnostic UI, and UART ToF logs.
+
+### Fixed
+- **VIN startup recovery**: Hardened noisy RC-battery startup by starting the independent watchdog before BLE bringup, bounding the BlueNRG reset and HCI wait paths, fail-closing required GATT service registration, and panic-resetting on fatal init (`PANIC:I`) or BlueNRG SPI busy lockup (`PANIC:P`) instead of freezing until a full vehicle power cycle.
+- **BLE advertising startup/reconnect**: Moved advertising start out of blocking boot init and into a main-loop retry policy with 100 ms initial delay, 1-5 s backoff, `BLE adv_start` UART logs, and a shorter 3 s HCI command timeout so a failed advertising command no longer makes LD2 and app reconnects appear dead for 10-15 s.
+- **BLE reset discovery diagnostics**: Advertising now includes both FE40 control and FE60 ToF service UUIDs, emits a passive `BLE adv_active` UART heartbeat while disconnected, and treats a BlueNRG HCI timeout during advertising start as `PANIC:C` instead of silently leaving the iOS app in `Scanning`.
+- **BLE advertising visibility after reset**: A disconnected STM32 now refreshes BlueNRG discoverable state from the main loop every 15 s, logging `BLE adv_refresh stop ok` / `BLE adv_reassert ok`, so the board can recover when firmware believes advertising is active but phones no longer see `OPENOTTER-MCP`.
+- **BLE debug reconnect during STM32 reset**: FE61 VL53L8 debug-config writes are now queued in the BLE event callback and applied only from `BLE_Tof_Process()`, after the boot grace and current mode checks. This prevents an already-open iOS STM32 debug view or Self Driving session from forcing multi-second VL53L8 init/config work inside the BlueNRG event path immediately after reset.
+- **BLE handshake window during STM32 reset**: Safety ToF init/config now defers while a fresh BLE connection has not yet completed the FE41/FE44 app-control handshake. This prevents the multi-second VL53L8 probe/firmware-download path from starving iOS GATT discovery when the STM32 is reset while STM32 Control is open.
+- **Stale BLE connection recovery**: A connected central must send app-control traffic (`FE44` mode or `FE41` command) within the boot/reconnect handshake window. If not, firmware requests a local disconnect so advertising can resume; if the BlueNRG HCI command path itself times out, firmware panic-resets with tag `PANIC:C` instead of staying in the misleading state where FE63 says rear ToF is running but FE62 debug frames never arrive.
+- **VL53L8 far-range false rear stop**: Fixed the field case where objects beyond about 4 m produced non-OK selected-zone statuses with plausible 500-700 mm raw ranges, causing reverse motion to stay stopped. The safety selector now treats those frames as degraded live data instead of close obstacles or blind-frame evidence.
+
+## [1.2.0] - 2026-06-02
+
+### Added
+- **SATEL-VL53L8 deployment path**: Added firmware design, implementation plan, and bring-up documentation for one SATEL-VL53L8 on B-L475E-IOT01A1 I2C3.
+- **Two-sensor wiring plan**: Documented the future front/rear SATEL-VL53L8 topology with rear I2C3, front I2C1, shared power/mode wiring, and dedicated `LPn` lines for deterministic reset and recovery.
+- **VL53L8 bring-up diagnostics**: Added UART frame summaries with measured frame cadence and compact 4x4 zone grids for hardware bring-up.
+- **Firmware version file**: Added `VERSION` so STM32 release metadata has an explicit local source alongside the changelog.
+- **Firmware test strategy**: Added a host-test and coverage workflow, an end-to-end VL53L8 verification checklist, and a pure two-sensor topology test; current HAL-free host coverage is 99.3% line coverage.
+
+### Changed
+- **Active ToF firmware path**: Migrated the active multizone driver, reverse-safety selector, BLE ToF config path, and host tests from VL53L5-facing names to VL53L8-facing names.
+- **VL53L8 result payload**: Limited the ST driver output list to target count, distance, and target status so the 4x4 safety stream sustains about 30 Hz on I2C.
+- **Vendor dependency import**: `fetch-deps.sh` now expects STSW-IMG040 via `--vl53l8cx-path` and no longer installs the deprecated VL53L1 driver.
+- **Deployment deprecation**: VL53L0X, VL53L1CB, and VL53L5CX are now historical/deprecated for the deployment path; active target firmware uses SATEL-VL53L8.
+
+### Fixed
+- **SATEL Connector Pinout**: Corrected the bring-up documentation so `J2 pin 1 EXT_SPI_I2C_N` is tied to GND for I2C mode, `J2 pin 11 EXT_5V0` receives 5V, `J2 pin 7 EXT_PWR_EN` receives 3V3, and SDA uses `J2 pin 5 EXT_MOSI_SDA`.
+- **BLE ToF health status**: `TOF_STATUS_IO` and `TOF_STATUS_DRIVER_MISSING` now map consistently to FE63 error state during VL53L8 config and safety-config enforcement.
+
 ## [1.1.0] - 2026-04-25
 
 ### Added

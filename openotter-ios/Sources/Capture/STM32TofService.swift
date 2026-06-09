@@ -2,11 +2,51 @@ import Foundation
 import CoreBluetooth
 import Combine
 
+struct STM32TofStreamStartupPolicy {
+    static let notifyAckGraceSeconds: TimeInterval = 5.0
+    static let streamTrafficGraceSeconds: TimeInterval = 12.0
+
+    static func canWriteConfig(debugStreamingEnabled: Bool,
+                               hasPeripheral: Bool,
+                               hasConfigCharacteristic: Bool,
+                               frameNotificationsEnabled: Bool,
+                               statusNotificationsEnabled: Bool) -> Bool {
+        debugStreamingEnabled &&
+        hasPeripheral &&
+        hasConfigCharacteristic &&
+        frameNotificationsEnabled &&
+        statusNotificationsEnabled
+    }
+
+    static func shouldForceReconnect(debugStreamingEnabled: Bool,
+                                     attached: Bool,
+                                     frameNotificationsEnabled: Bool,
+                                     statusNotificationsEnabled: Bool,
+                                     chunksAtActivation: UInt32,
+                                     chunksNow: UInt32,
+                                     statusAtActivation: UInt32,
+                                     statusNow: UInt32,
+                                     elapsedSeconds: TimeInterval) -> Bool {
+        guard debugStreamingEnabled, attached else { return false }
+        if elapsedSeconds >= notifyAckGraceSeconds &&
+            (!frameNotificationsEnabled || !statusNotificationsEnabled) {
+            return true
+        }
+        if elapsedSeconds >= streamTrafficGraceSeconds &&
+            chunksNow == chunksAtActivation &&
+            statusNow == statusAtActivation {
+            return true
+        }
+        return false
+    }
+}
+
 /// Decodes the FE62 frame stream from OPENOTTER-MCP and exposes the latest
 /// frame plus a derived scan rate to SwiftUI.
 ///
 /// Frame wire format authority:
-///   firmware/stm32-mcp/Core/Inc/tof_l1.h (TofL1_Frame_t, 76 B fixed, LE)
+///   firmware/stm32-mcp/Core/Inc/tof_frame_codec.h
+///   firmware/stm32-mcp/Core/Inc/tof_types.h
 ///
 /// Status payload authority:
 ///   firmware/stm32-mcp/Core/Inc/ble_tof.h (BLE_TofStatusPayload_t, 4 B)
@@ -18,23 +58,37 @@ public final class STM32TofService: NSObject, ObservableObject {
     @Published public private(set) var state: TofState = .unknown
     @Published public private(set) var lastError: UInt8 = 0
     @Published public private(set) var scanHz: UInt8 = 0
+    @Published public private(set) var selectedSensorRole: TofSensorRole = .rear
+    @Published public private(set) var availableSensorRoles: Set<TofSensorRole> = []
     @Published public private(set) var droppedFrameChunks: UInt32 = 0
     @Published public private(set) var framesParsed: UInt32 = 0
     @Published public private(set) var chunksReceived: UInt32 = 0
+    @Published public private(set) var debugSummary: String = "ToF BLE idle"
 
     private weak var peripheral: CBPeripheral?
     private weak var frameChar: CBCharacteristic?
     private weak var configChar: CBCharacteristic?
     private weak var statusChar: CBCharacteristic?
     private var debugStreamingEnabled = false
-    private var preferredConfig = TofConfig(sensor: .vl53l5cx,
+    private var frameNotificationsEnabled = false
+    private var statusNotificationsEnabled = false
+    private var statusNotificationsReceived: UInt32 = 0
+    private var configWritesQueued: UInt32 = 0
+    private var configWriteAcks: UInt32 = 0
+    private var streamWatchdogGeneration: UInt64 = 0
+    private var streamWatchdog: DispatchWorkItem?
+    public var onStreamStale: ((String) -> Void)?
+    private var preferredConfig = TofConfig(sensor: .vl53l8cx,
                                             layout: 4,
                                             distMode: 1,
                                             budgetUs: 0,
                                             frequencyHz: 10,
-                                            integrationMs: 20)
+                                            integrationMs: 20,
+                                            role: .rear)
     var preferredConfigForTesting: TofConfig { preferredConfig }
     var debugStreamingEnabledForTesting: Bool { debugStreamingEnabled }
+    var frameNotificationsEnabledForTesting: Bool { frameNotificationsEnabled }
+    var statusNotificationsEnabledForTesting: Bool { statusNotificationsEnabled }
 
     public override init() { super.init() }
 
@@ -47,27 +101,48 @@ public final class STM32TofService: NSObject, ObservableObject {
         self.frameChar = frameChar
         self.configChar = configChar
         self.statusChar = statusChar
+        frameNotificationsEnabled = false
+        statusNotificationsEnabled = false
+        resetFrameReassembly()
+        updateDebug("attached", detail: readinessSummary)
 
         applyDebugStreamingState()
     }
 
     /// Drop characteristic refs on disconnect so we don't write to a dead session.
     public func detach() {
+        cancelStreamWatchdog()
         peripheral = nil
         frameChar = nil
         configChar = nil
         statusChar = nil
-        DispatchQueue.main.async {
+        frameNotificationsEnabled = false
+        statusNotificationsEnabled = false
+        statusNotificationsReceived = 0
+        configWritesQueued = 0
+        configWriteAcks = 0
+        resetFrameReassembly()
+        updateOnMain {
             self.latestFrame = nil
             self.state = .unknown
             self.lastError = 0
             self.scanHz = 0
+            self.selectedSensorRole = .rear
+            self.availableSensorRoles = []
             self.droppedFrameChunks = 0
+            self.framesParsed = 0
+            self.chunksReceived = 0
+            self.debugSummary = "ToF BLE detached"
         }
     }
 
     public func setDebugStreamingEnabled(_ enabled: Bool) {
         debugStreamingEnabled = enabled
+        updateDebug(enabled ? "debug stream requested" : "debug stream stopped",
+                    detail: readinessSummary)
+        if !enabled {
+            cancelStreamWatchdog()
+        }
         applyDebugStreamingState()
     }
 
@@ -79,7 +154,8 @@ public final class STM32TofService: NSObject, ObservableObject {
                    profile: distMode,
                    frequencyHz: preferredConfig.frequencyHz,
                    integrationMs: preferredConfig.integrationMs,
-                   budgetMs: budgetMs)
+                   budgetMs: budgetMs,
+                   role: preferredConfig.role)
     }
 
     public func sendConfig(sensor: TofSensorType,
@@ -87,18 +163,39 @@ public final class STM32TofService: NSObject, ObservableObject {
                            profile: UInt8,
                            frequencyHz: UInt8,
                            integrationMs: UInt16,
-                           budgetMs: UInt16) {
+                           budgetMs: UInt16,
+                           role: TofSensorRole) {
+        let previousRole = preferredConfig.role
         preferredConfig = TofConfig(sensor: sensor,
                                     layout: layout,
                                     distMode: profile,
                                     budgetUs: UInt32(budgetMs) * 1000,
                                     frequencyHz: frequencyHz,
-                                    integrationMs: integrationMs)
-        writePreferredConfig()
+                                    integrationMs: integrationMs,
+                                    role: role)
+        if previousRole != role {
+            resetFrameReassembly()
+            updateOnMain {
+                self.latestFrame = nil
+                self.scanHz = 0
+                self.selectedSensorRole = role
+            }
+        }
+        writePreferredConfig(reason: "user config", force: true)
     }
 
-    private func writePreferredConfig() {
-        guard debugStreamingEnabled else { return }
+    private func writePreferredConfig(reason: String, force: Bool = false) {
+        guard STM32TofStreamStartupPolicy.canWriteConfig(
+            debugStreamingEnabled: debugStreamingEnabled,
+            hasPeripheral: peripheral != nil,
+            hasConfigCharacteristic: configChar != nil,
+            frameNotificationsEnabled: frameNotificationsEnabled,
+            statusNotificationsEnabled: statusNotificationsEnabled
+        ) else {
+            updateDebug("waiting to write FE61", detail: "\(reason)\n\(readinessSummary)")
+            if debugStreamingEnabled { scheduleStreamWatchdog(reason: "waiting FE61") }
+            return
+        }
         guard let peripheral, let configChar else { return }
 
         let payload = Self.makeConfigPayload(
@@ -107,12 +204,20 @@ public final class STM32TofService: NSObject, ObservableObject {
             profile: preferredConfig.distMode,
             frequencyHz: preferredConfig.frequencyHz,
             integrationMs: preferredConfig.integrationMs,
-            budgetMs: UInt16(min(UInt32(UInt16.max), preferredConfig.budgetUs / 1000))
+            budgetMs: UInt16(min(UInt32(UInt16.max), preferredConfig.budgetUs / 1000)),
+            role: preferredConfig.role
         )
 
         let writeType: CBCharacteristicWriteType =
             configChar.properties.contains(.write) ? .withResponse : .withoutResponse
+        configWritesQueued &+= 1
+        updateDebug("write FE61 \(configWritesQueued)",
+                    detail: "\(reason)\n\(readinessSummary)")
         peripheral.writeValue(payload, for: configChar, type: writeType)
+        if writeType == .withoutResponse {
+            configWriteAcks &+= 1
+        }
+        scheduleStreamWatchdog(reason: force ? "forced FE61" : "FE61")
     }
 
     private func applyDebugStreamingState() {
@@ -126,19 +231,44 @@ public final class STM32TofService: NSObject, ObservableObject {
               + "configProps=0x\(String(configProps, radix: 16))")
         if let frameChar, frameChar.properties.contains(.notify) {
             peripheral.setNotifyValue(true, for: frameChar)
+            frameNotificationsEnabled = frameChar.isNotifying
             NSLog("[TOF] setNotifyValue(true) requested for FE62 frame")
         } else {
             NSLog("[TOF] FE62 frame char missing or lacks .notify")
         }
         if let statusChar, statusChar.properties.contains(.notify) {
             peripheral.setNotifyValue(true, for: statusChar)
+            statusNotificationsEnabled = statusChar.isNotifying
             NSLog("[TOF] setNotifyValue(true) requested for FE63 status")
         } else {
             NSLog("[TOF] FE63 status char missing or lacks .notify")
         }
         if debugStreamingEnabled {
-            writePreferredConfig()
+            writePreferredConfig(reason: "apply stream state")
         }
+    }
+
+    public func handleNotificationState(_ characteristic: CBCharacteristic, error: Error?) {
+        if characteristic.uuid == frameChar?.uuid {
+            frameNotificationsEnabled = error == nil && characteristic.isNotifying
+            updateDebug("FE62 notify \(frameNotificationsEnabled ? "on" : "off")",
+                        detail: error.map { "\($0)" } ?? readinessSummary)
+        } else if characteristic.uuid == statusChar?.uuid {
+            statusNotificationsEnabled = error == nil && characteristic.isNotifying
+            updateDebug("FE63 notify \(statusNotificationsEnabled ? "on" : "off")",
+                        detail: error.map { "\($0)" } ?? readinessSummary)
+        }
+        if debugStreamingEnabled {
+            writePreferredConfig(reason: "notify ack")
+        }
+    }
+
+    public func handleConfigWriteAck(error: Error?) {
+        if error == nil {
+            configWriteAcks &+= 1
+        }
+        updateDebug(error == nil ? "FE61 write ack" : "FE61 write failed",
+                    detail: error.map { "\($0)" } ?? readinessSummary)
     }
 
     public static func makeConfigPayload(sensor: TofSensorType,
@@ -146,8 +276,9 @@ public final class STM32TofService: NSObject, ObservableObject {
                                          profile: UInt8,
                                          frequencyHz: UInt8,
                                          integrationMs: UInt16,
-                                         budgetMs: UInt16) -> Data {
-        var payload = Data(count: 8)
+                                         budgetMs: UInt16,
+                                         role: TofSensorRole) -> Data {
+        var payload = Data(count: 9)
         payload.withUnsafeMutableBytes { raw in
             let p = raw.baseAddress!
             p.storeBytes(of: sensor.rawValue, toByteOffset: 0, as: UInt8.self)
@@ -156,6 +287,7 @@ public final class STM32TofService: NSObject, ObservableObject {
             p.storeBytes(of: frequencyHz, toByteOffset: 3, as: UInt8.self)
             p.storeBytes(of: integrationMs.littleEndian, toByteOffset: 4, as: UInt16.self)
             p.storeBytes(of: budgetMs.littleEndian, toByteOffset: 6, as: UInt16.self)
+            p.storeBytes(of: role.rawValue, toByteOffset: 8, as: UInt8.self)
         }
         return payload
     }
@@ -179,9 +311,104 @@ public final class STM32TofService: NSObject, ObservableObject {
         case v2
     }
 
+    private func resetFrameReassembly() {
+        rxNext = 0
+        rxV2Next = 0
+        rxV2SeqLow = 0
+        rxMode = .unknown
+    }
+
+    private var readinessSummary: String {
+        let attached = peripheral != nil && frameChar != nil && configChar != nil && statusChar != nil
+        return [
+            "attached \(attached ? "yes" : "no") debug \(debugStreamingEnabled ? "on" : "off")",
+            "notify FE62 \(frameNotificationsEnabled ? "on" : "off") FE63 \(statusNotificationsEnabled ? "on" : "off")",
+            "cfg writes \(configWritesQueued) ack \(configWriteAcks)",
+            "rx chunks \(chunksReceived) frames \(framesParsed) status \(statusNotificationsReceived)"
+        ].joined(separator: "\n")
+    }
+
+    private func updateDebug(_ event: String, detail: String = "") {
+        let text = ([event] + detail.split(separator: "\n").map(String.init))
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        updateOnMain {
+            self.debugSummary = text
+        }
+    }
+
+    private func cancelStreamWatchdog() {
+        streamWatchdogGeneration &+= 1
+        streamWatchdog?.cancel()
+        streamWatchdog = nil
+    }
+
+    private func scheduleStreamWatchdog(reason: String) {
+        guard debugStreamingEnabled, peripheral != nil else { return }
+        streamWatchdogGeneration &+= 1
+        let generation = streamWatchdogGeneration
+        let startedAt = Date()
+        let chunksAtActivation = chunksReceived
+        let statusAtActivation = statusNotificationsReceived
+
+        streamWatchdog?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.evaluateStreamWatchdog(generation: generation,
+                                         startedAt: startedAt,
+                                         chunksAtActivation: chunksAtActivation,
+                                         statusAtActivation: statusAtActivation,
+                                         reason: reason)
+        }
+        streamWatchdog = item
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + STM32TofStreamStartupPolicy.streamTrafficGraceSeconds,
+            execute: item)
+    }
+
+    private func evaluateStreamWatchdog(generation: UInt64,
+                                        startedAt: Date,
+                                        chunksAtActivation: UInt32,
+                                        statusAtActivation: UInt32,
+                                        reason: String) {
+        guard generation == streamWatchdogGeneration else { return }
+        let attached = peripheral != nil && frameChar != nil && configChar != nil && statusChar != nil
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if STM32TofStreamStartupPolicy.shouldForceReconnect(
+            debugStreamingEnabled: debugStreamingEnabled,
+            attached: attached,
+            frameNotificationsEnabled: frameNotificationsEnabled,
+            statusNotificationsEnabled: statusNotificationsEnabled,
+            chunksAtActivation: chunksAtActivation,
+            chunksNow: chunksReceived,
+            statusAtActivation: statusAtActivation,
+            statusNow: statusNotificationsReceived,
+            elapsedSeconds: elapsed
+        ) {
+            let detail = "\(reason)\n\(readinessSummary)"
+            updateDebug("ToF stream stale", detail: detail)
+            onStreamStale?(detail)
+            return
+        }
+
+        if debugStreamingEnabled && attached && chunksReceived == chunksAtActivation {
+            writePreferredConfig(reason: "watchdog retry", force: true)
+        }
+    }
+
+    private func updateOnMain(_ update: @escaping () -> Void) {
+        if Thread.isMainThread {
+            update()
+        } else {
+            DispatchQueue.main.async(execute: update)
+        }
+    }
+
     public func handleFrameNotification(_ data: Data) {
         guard data.count >= 2 else { return }
         chunksReceived &+= 1
+        if chunksReceived == 1 {
+            updateDebug("FE62 first chunk", detail: readinessSummary)
+        }
         if chunksReceived <= 3 || chunksReceived & 0x3F == 0 {
             NSLog("[TOF] FE62 chunk #\(chunksReceived) len=\(data.count) "
                   + "hdr=0x\(String(data[0], radix: 16)) seqLow=0x\(String(data[1], radix: 16))")
@@ -223,9 +450,10 @@ public final class STM32TofService: NSObject, ObservableObject {
 
         if last {
             if let frame = STM32TofService.parseFrame(Data(rxBuf)) {
+                let taggedFrame = frame.tagged(role: selectedSensorRole)
                 framesParsed &+= 1
-                DispatchQueue.main.async {
-                    self.latestFrame = frame
+                updateOnMain {
+                    self.latestFrame = taggedFrame
                 }
             }
             rxNext = 0
@@ -262,9 +490,10 @@ public final class STM32TofService: NSObject, ObservableObject {
             }
             if frameLen <= copied,
                let frame = Self.parseFrameV2(Data(rxV2Buf.prefix(frameLen))) {
+                let taggedFrame = frame.tagged(role: selectedSensorRole)
                 framesParsed &+= 1
-                DispatchQueue.main.async {
-                    self.latestFrame = frame
+                updateOnMain {
+                    self.latestFrame = taggedFrame
                 }
             } else {
                 droppedFrameChunks += 1
@@ -276,12 +505,27 @@ public final class STM32TofService: NSObject, ObservableObject {
 
     public func handleStatusNotification(_ data: Data) {
         guard data.count >= 4 else { return }
+        statusNotificationsReceived &+= 1
         let bytes = [UInt8](data)
-        DispatchQueue.main.async {
+        let role = TofSensorRole(raw: bytes[3] & 0x03)
+        let available = Self.decodeAvailableRoles(mask: (bytes[3] >> 4) & 0x03)
+        if statusNotificationsReceived == 1 {
+            updateDebug("FE63 first status", detail: readinessSummary)
+        }
+        updateOnMain {
             self.state     = TofState(raw: bytes[0])
             self.lastError = bytes[1]
             self.scanHz    = bytes[2]
+            self.selectedSensorRole = role
+            self.availableSensorRoles = available
         }
+    }
+
+    private static func decodeAvailableRoles(mask: UInt8) -> Set<TofSensorRole> {
+        var roles = Set<TofSensorRole>()
+        if (mask & 0x01) != 0 { roles.insert(.rear) }
+        if (mask & 0x02) != 0 { roles.insert(.front) }
+        return roles
     }
 
     // MARK: - Pure parser (testable)

@@ -1,0 +1,85 @@
+name: Firmware Target Build
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/firmware-build.yml"
+      - "firmware/stm32-mcp/**"
+  pull_request:
+    paths:
+      - ".github/workflows/firmware-build.yml"
+      - "firmware/stm32-mcp/**"
+
+permissions:
+  contents: read
+
+jobs:
+  stm32-debug:
+    name: STM32 Debug build
+    runs-on: ubuntu-latest
+    env:
+      VL53L8CX_ULD_URL: ${{ secrets.VL53L8CX_ULD_URL }}
+      VL53L8CX_ULD_SHA256: ${{ secrets.VL53L8CX_ULD_SHA256 }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check VL53L8 driver secret
+        id: vl53l8
+        run: |
+          if [ -z "$VL53L8CX_ULD_URL" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping target build because VL53L8CX_ULD_URL is not configured."
+            echo "Set VL53L8CX_ULD_URL to a private STSW-IMG040 zip URL to enable this job."
+          else
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install ARM toolchain
+        if: steps.vl53l8.outputs.available == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            binutils-arm-none-eabi \
+            cmake \
+            gcc-arm-none-eabi \
+            ninja-build \
+            unzip
+
+      - name: Download VL53L8CX Ultra Lite Driver
+        if: steps.vl53l8.outputs.available == 'true'
+        run: |
+          curl --fail --location "$VL53L8CX_ULD_URL" --output "$RUNNER_TEMP/stsw-img040.zip"
+          if [ -n "$VL53L8CX_ULD_SHA256" ]; then
+            echo "$VL53L8CX_ULD_SHA256  $RUNNER_TEMP/stsw-img040.zip" | sha256sum --check -
+          fi
+          mkdir -p "$RUNNER_TEMP/stsw-img040"
+          unzip -q "$RUNNER_TEMP/stsw-img040.zip" -d "$RUNNER_TEMP/stsw-img040"
+
+      - name: Restore STM32 and VL53L8 dependencies
+        if: steps.vl53l8.outputs.available == 'true'
+        working-directory: firmware/stm32-mcp
+        run: ./scripts/fetch-deps.sh --vl53l8cx-path "$RUNNER_TEMP/stsw-img040"
+
+      - name: Configure firmware
+        if: steps.vl53l8.outputs.available == 'true'
+        working-directory: firmware/stm32-mcp
+        run: cmake --preset Debug
+
+      - name: Build firmware
+        if: steps.vl53l8.outputs.available == 'true'
+        working-directory: firmware/stm32-mcp
+        run: cmake --build --preset Debug
+
+      - name: Upload firmware artifacts
+        if: steps.vl53l8.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stm32-mcp-debug
+          path: |
+            firmware/stm32-mcp/build/Debug/stm32-mcp.elf
+            firmware/stm32-mcp/build/Debug/stm32-mcp.map
+          if-no-files-found: error

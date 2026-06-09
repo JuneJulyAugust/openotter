@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="760" viewBox="0 0 1240 760" role="img" aria-labelledby="title desc">
+  <title id="title">Mini-PCB Internal Case Assembly</title>
+  <desc id="desc">Cutaway assembly detail showing snap-off mini PCB retention, tiny DUT pad wiring, strain relief, interposer regulator board, JST-GH harness connector, and bottom mounting.</desc>
+  <defs>
+    <style>
+      .title { font: 22px sans-serif; font-weight: 700; fill: #111827; }
+      .label { font: 17px sans-serif; font-weight: 700; fill: #111827; }
+      .small { font: 14px sans-serif; fill: #374151; }
+      .tiny { font: 12px sans-serif; fill: #475569; }
+      .case { fill: #fff7ed; stroke: #9a3412; stroke-width: 3; }
+      .cut { fill: #fffaf0; stroke: #7c2d12; stroke-width: 2; }
+      .pcb { fill: #1e40af; stroke: #172554; stroke-width: 2; }
+      .interposer { fill: #eef2ff; stroke: #4338ca; stroke-width: 2.5; }
+      .pad { fill: #fbbf24; stroke: #92400e; stroke-width: 1.2; }
+      .rail { fill: #fed7aa; stroke: #c2410c; stroke-width: 2; }
+      .clamp { fill: #fdba74; stroke: #9a3412; stroke-width: 2; }
+      .connector { fill: #ffffff; stroke: #111827; stroke-width: 2; }
+      .wire-red { stroke: #dc2626; stroke-width: 3.2; fill: none; }
+      .wire-black { stroke: #111827; stroke-width: 3.2; fill: none; }
+      .wire-blue { stroke: #2563eb; stroke-width: 3.2; fill: none; }
+      .wire-green { stroke: #16a34a; stroke-width: 3.2; fill: none; }
+      .wire-yellow { stroke: #f59e0b; stroke-width: 3.2; fill: none; }
+      .wire-purple { stroke: #7c3aed; stroke-width: 3.2; fill: none; }
+      .arrow { stroke: #334155; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .callout { fill: #ffffff; stroke: #334155; stroke-width: 1.5; }
+      .warn { fill: #fee2e2; stroke: #b91c1c; stroke-width: 2; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#334155"/>
+    </marker>
+  </defs>
+
+  <text x="620" y="40" text-anchor="middle" class="title">Snap-Off Mini-PCB Internal Assembly</text>
+  <text x="620" y="68" text-anchor="middle" class="small">Compact final path: the mini board needs a real interposer/regulator board.</text>
+  <text x="620" y="90" text-anchor="middle" class="small">It is not a 5 V full-SATEL harness endpoint.</text>
+
+  <rect x="80" y="118" width="760" height="430" rx="20" class="case"/>
+  <rect x="112" y="152" width="700" height="344" rx="12" class="cut"/>
+
+  <rect x="158" y="206" width="210" height="185" rx="10" class="pcb"/>
+  <text x="263" y="232" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="16" font-weight="700">snap-off mini PCB</text>
+  <rect x="242" y="285" width="58" height="42" rx="5" fill="#020617"/>
+  <circle cx="271" cy="306" r="92" fill="none" stroke="#f59e0b" stroke-width="5"/>
+  <text x="263" y="418" text-anchor="middle" class="tiny">large aperture, no tunnel around sensor</text>
+
+  <rect x="128" y="188" width="24" height="230" rx="8" class="rail"/>
+  <rect x="372" y="188" width="24" height="230" rx="8" class="rail"/>
+  <text x="140" y="448" text-anchor="middle" class="tiny">edge rail</text>
+  <text x="384" y="448" text-anchor="middle" class="tiny">edge rail</text>
+
+  <circle cx="342" cy="232" r="4.5" class="pad"/>
+  <circle cx="342" cy="248" r="4.5" class="pad"/>
+  <circle cx="342" cy="264" r="4.5" class="pad"/>
+  <circle cx="342" cy="280" r="4.5" class="pad"/>
+  <circle cx="342" cy="296" r="4.5" class="pad"/>
+  <circle cx="342" cy="312" r="4.5" class="pad"/>
+  <circle cx="342" cy="328" r="4.5" class="pad"/>
+  <circle cx="342" cy="344" r="4.5" class="pad"/>
+  <text x="365" y="182" text-anchor="middle" class="tiny">0.8 x 1.6 mm DUT pads</text>
+
+  <rect x="410" y="360" width="180" height="42" rx="9" class="clamp"/>
+  <text x="500" y="386" text-anchor="middle" class="small">wire clamp / strain bar</text>
+  <rect x="650" y="218" width="190" height="155" rx="14" class="interposer"/>
+  <text x="745" y="248" text-anchor="middle" class="label">interposer PCB</text>
+  <text x="745" y="276" text-anchor="middle" class="small">DUT_AVDD / DUT_IOVDD</text>
+  <text x="745" y="300" text-anchor="middle" class="small">level shift if needed</text>
+  <text x="745" y="324" text-anchor="middle" class="small">test pads + labels</text>
+  <text x="745" y="348" text-anchor="middle" class="small">mechanical tie point</text>
+
+  <rect x="658" y="410" width="156" height="66" rx="12" class="connector"/>
+  <text x="736" y="437" text-anchor="middle" class="small">JST-GH 10-pin</text>
+  <text x="736" y="459" text-anchor="middle" class="tiny">exports harness to adapter</text>
+
+  <path d="M342 232 C418 212 480 272 650 245" class="wire-red"/>
+  <path d="M342 248 C430 226 482 292 650 268" class="wire-black"/>
+  <path d="M342 264 C430 248 490 316 650 291" class="wire-blue"/>
+  <path d="M342 280 C435 270 498 338 650 314" class="wire-green"/>
+  <path d="M342 296 C436 296 500 362 650 337" class="wire-yellow"/>
+  <path d="M342 312 C424 350 455 372 410 372" class="wire-purple"/>
+  <path d="M590 382 C625 382 640 415 658 432" class="wire-purple"/>
+  <path d="M814 444 C930 446 1002 425 1075 392" stroke="#111827" stroke-width="8" fill="none"/>
+  <text x="1018" y="370" text-anchor="middle" class="small">wrapped harness exits toward chassis</text>
+
+  <rect x="132" y="518" width="660" height="32" rx="8" fill="#111827"/>
+  <text x="462" y="540" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="14">flat bottom mounting face: VHB tape or M2 side ears attach to the car</text>
+
+  <rect x="875" y="130" width="304" height="110" rx="12" class="warn"/>
+  <text x="1027" y="160" text-anchor="middle" class="label" fill="#7f1d1d">Power warning</text>
+  <text x="1027" y="188" text-anchor="middle" class="small">Do not connect IOT01A1 5 V directly</text>
+  <text x="1027" y="212" text-anchor="middle" class="small">to the snapped-off mini PCB pads.</text>
+  <path d="M875 205 C805 220 765 224 745 232" class="arrow"/>
+
+  <rect x="875" y="286" width="304" height="120" rx="12" class="callout"/>
+  <text x="1027" y="314" text-anchor="middle" class="label">Pad protection</text>
+  <text x="1027" y="342" text-anchor="middle" class="small">Continuity-test first, then add insulation</text>
+  <text x="1027" y="364" text-anchor="middle" class="small">and strain relief on wire insulation.</text>
+  <text x="1027" y="386" text-anchor="middle" class="small">Never let harness pull on DUT pads.</text>
+  <path d="M875 352 C760 425 548 420 500 402" class="arrow"/>
+
+  <rect x="875" y="462" width="304" height="105" rx="12" class="callout"/>
+  <text x="1027" y="490" text-anchor="middle" class="label">Case shape</text>
+  <text x="1027" y="516" text-anchor="middle" class="small">Use a two-zone case: optical sensor cavity</text>
+  <text x="1027" y="538" text-anchor="middle" class="small">plus electronics bay for the interposer.</text>
+  <path d="M875 520 C805 500 755 425 736 476" class="arrow"/>
+
+  <text x="620" y="696" text-anchor="middle" class="small">Mini path rule: mini PCB wires terminate on the interposer,</text>
+  <text x="620" y="718" text-anchor="middle" class="small">the interposer terminates the removable harness, and the printed clamp absorbs cable force.</text>
+</svg>

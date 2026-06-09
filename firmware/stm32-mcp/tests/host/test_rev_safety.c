@@ -68,6 +68,52 @@ static RevSafetyInput_t make_input(float v, int16_t throttle, float depth,
   return in;
 }
 
+static void test_null_inputs_are_safe_noops(void) {
+  RevSafetyEvent_t ev;
+  memset(&ev, 0xAA, sizeof(ev));
+
+  RevSafetyInput_t in = make_input(-0.5f, 1400, 2.0f, true, 100);
+  RevSafety_Tick(NULL, &in, &ev);
+  expect_state("null ctx zeroes event state", ev.state, REV_SAFETY_STATE_SAFE);
+  expect_cause("null ctx zeroes event cause", ev.cause, REV_SAFETY_CAUSE_NONE);
+  expect_near("null ctx zeroes event depth", ev.smoothed_depth_m, 0.0f, 1e-6f);
+
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, NULL);
+  memset(&ev, 0xAA, sizeof(ev));
+  RevSafety_Tick(ctx, NULL, &ev);
+  expect_state("null input zeroes event state", ev.state, REV_SAFETY_STATE_SAFE);
+  expect_cause("null input zeroes event cause", ev.cause, REV_SAFETY_CAUSE_NONE);
+}
+
+static void test_default_init_uses_default_config(void) {
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, NULL);
+
+  RevSafetyEvent_t ev;
+  RevSafetyInput_t in = make_input(-1.0f, 1400, 2.0f, true, 100);
+  RevSafety_Tick(ctx, &in, &ev);
+  expect_near("default init critical distance",
+              ev.critical_distance_m,
+              RevSafety_CriticalDistance(NULL, 1.0f),
+              1e-3f);
+}
+
+static void test_constant_deceleration_fallback(void) {
+  RevSafetyConfig_t cfg;
+  RevSafety_GetDefaultConfig(&cfg);
+  cfg.decel_slope = 0.0f;
+
+  float speed = 1.0f;
+  float want = speed * cfg.t_sys_fw_s +
+               speed * speed / (2.0f * cfg.decel_intercept) +
+               cfg.d_margin_rear_m;
+  expect_near("constant decel critical distance",
+              RevSafety_CriticalDistance(&cfg, speed),
+              want,
+              1e-4f);
+}
+
 static void test_ema_smoothing_converges(void) {
   RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
   RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
@@ -270,6 +316,29 @@ static void test_driver_dead_brakes(void) {
   expect_cause("driver_dead cause", ev.cause, REV_SAFETY_CAUSE_DRIVER_DEAD);
 }
 
+static void test_is_braking_and_disarm(void) {
+  RevSafetyConfig_t cfg;
+  RevSafety_GetDefaultConfig(&cfg);
+  RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
+  RevSafety_Init(ctx, &cfg);
+  RevSafetyEvent_t ev;
+
+  RevSafetyInput_t in = make_input(-0.3f, 1400, 2.0f, true, 0);
+  in.driver_dead = true;
+  RevSafety_Tick(ctx, &in, &ev);
+  if (!RevSafety_IsBraking(ctx)) {
+    fprintf(stderr, "FAIL is_braking after BRAKE: got false want true\n");
+    g_fails++;
+  }
+
+  RevSafety_Disarm(ctx);
+  if (RevSafety_IsBraking(ctx)) {
+    fprintf(stderr, "FAIL is_braking after disarm: got true want false\n");
+    g_fails++;
+  }
+  RevSafety_Disarm(NULL);
+}
+
 static void test_safe_transition_zeroes_snapshot_fields(void) {
   RevSafetyConfig_t cfg;  RevSafety_GetDefaultConfig(&cfg);
   RevSafetyCtx *ctx = (RevSafetyCtx *)malloc(RevSafety_ContextSize());
@@ -436,6 +505,9 @@ static void test_partial_run_does_not_trip_frame_gap(void) {
 int main(void) {
   test_critical_distance_reverse_table();
   test_critical_distance_zero_speed();
+  test_null_inputs_are_safe_noops();
+  test_default_init_uses_default_config();
+  test_constant_deceleration_fallback();
   test_ema_smoothing_converges();
   test_invalid_tolerates_one_then_brakes_on_two();
   test_tof_blind_release_requires_valid_streak();
@@ -444,6 +516,7 @@ int main(void) {
   test_forward_command_releases_latch();
   test_frame_gap_watchdog();
   test_driver_dead_brakes();
+  test_is_braking_and_disarm();
   test_safe_transition_zeroes_snapshot_fields();
   test_driver_dead_latches_until_reboot();
   test_partial_frame_holds_smoothed_and_blind_counter();

@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /******************************************************************************
- * BLE GATT service for ToF debug frames (svc 0xFE60). Keeps the legacy
- * VL53L1CB 76-byte frame stream and adds the generic VL53L5CX V2 frame stream.
+ * BLE GATT service for VL53L8 ToF debug frames (svc 0xFE60).
  *
- *   FE61  config  write/write-w/o-resp, 8 B fixed
+ *   FE61  config  write/write-w/o-resp, 9 B fixed
  *   FE62  frame   notify, 20 B fixed chunks
  *   FE63  status  notify + read, 4 B fixed
  *
@@ -17,6 +16,7 @@
 
 #include "ble_app.h"
 #include "ble_attr_dispatch.h"
+#include "ble_tof_debug.h"
 #include "ble_tof_policy.h"
 #include "common.h"
 #include "tl_types.h"
@@ -26,8 +26,7 @@
 #include "blesvc.h"
 
 #include "tof_frame_codec.h"
-#include "tof_l1.h"
-#include "tof_l5.h"
+#include "tof_l8.h"
 #include "tof_types.h"
 
 #include <stdarg.h>
@@ -36,23 +35,8 @@
 
 extern UART_HandleTypeDef huart1;
 
-/* BlueNRG-MS hardcodes ATT_MTU = 23 -> max notify value = 20 bytes. The
- * 76-byte legacy TofL1_Frame_t is therefore split into 4 x 20-byte chunks. Each
- * chunk = 1 header byte (chunk_idx, top bit = "last") + 19 payload bytes.
- * 76 / 19 = 4 exactly, so no padding is needed. iOS reassembles in order
- * and drops on out-of-sequence delivery.
- */
-#define TOF_L1_FRAME_CHUNK_SIZE  20u
-#define TOF_L1_FRAME_CHUNK_DATA  19u
-#define TOF_L1_FRAME_CHUNK_COUNT 4u  /* 76 / 19 == 4 */
-
-_Static_assert(TOF_L1_FRAME_CHUNK_DATA * TOF_L1_FRAME_CHUNK_COUNT ==
-                   sizeof(TofL1_Frame_t),
-               "Chunk geometry must cover entire TofL1_Frame_t");
-
 typedef enum {
   TOF_PENDING_NONE = 0,
-  TOF_PENDING_L1_V1,
   TOF_PENDING_V2,
 } BLE_TofPendingProtocol_t;
 
@@ -70,7 +54,7 @@ typedef struct {
   uint8_t  scan_hz;
   uint8_t  state;       /* 0 idle, 1 running, 2 error */
   uint8_t  last_error;
-  uint8_t  debug_sensor;
+  uint8_t  debug_role;
 
   /* Frame chunk transmitter state. pending_chunk == 0 means idle; values
    * 1..pending_chunk_count are the next chunk to push. */
@@ -82,24 +66,27 @@ typedef struct {
   uint8_t  pending_buf[TOF_FRAME_MAX_PAYLOAD];
 
   /* Diagnostic counters reported via UART. */
-  uint32_t l5_frames_seen;
+  uint32_t l8_frames_seen;
   uint32_t chunks_pushed;
   uint32_t chunks_failed;
   uint32_t snapshots_taken;
   uint8_t  safety_config_pending;
   uint8_t  safety_config_ready;
   uint32_t safety_config_retry_tick;
+  uint8_t  status_publish_pending;
+  BLE_TofDebugConfigQueue_t config_queue;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
 
 #define STATUS_REFRESH_MS               1000u
-/* Boot-time grace before the first VL53L5CX init runs. Keeps the multi-second
+/* Boot-time grace before the first VL53L8CX init runs. Keeps the multi-second
  * blocking firmware download out of the earliest startup window where the
  * BLE stack is still settling. Independent of BLE connection state — the
  * sensor must come up whether or not the iOS app ever connects. */
 #define SAFETY_CONFIG_BOOT_GRACE_MS     1000u
 #define SAFETY_CONFIG_RETRY_MS          3000u
+#define SAFETY_CONFIG_HANDSHAKE_DEFER_MS 250u
 
 static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
 
@@ -144,10 +131,23 @@ static void publish_status(void)
       .state      = s_tof.state,
       .last_error = s_tof.last_error,
       .scan_hz    = s_tof.scan_hz,
-      ._pad       = 0,
+      .debug      = BLE_TofDebugStatusPad(s_tof.debug_role,
+                                          TofL8_AvailableMask()),
   };
   (void)aci_gatt_update_char_value(s_tof.svc_handle, s_tof.status_char_handle,
                                    0, sizeof(st), (uint8_t *)&st);
+}
+
+static TofL8SensorId_t selected_l8_sensor_id(void)
+{
+  return (s_tof.debug_role == BLE_TOF_DEBUG_ROLE_FRONT)
+      ? TOF_L8_SENSOR_FRONT
+      : TOF_L8_SENSOR_REAR;
+}
+
+static const char *debug_role_name(void)
+{
+  return (s_tof.debug_role == BLE_TOF_DEBUG_ROLE_FRONT) ? "front" : "rear";
 }
 
 static void reset_stream_state(void)
@@ -155,38 +155,25 @@ static void reset_stream_state(void)
   s_tof.last_published_seq    = 0;
   s_tof.last_rate_window_seq  = 0;
   s_tof.last_rate_window_tick = HAL_GetTick();
+  s_tof.scan_hz               = 0;
   s_tof.pending_chunk         = 0;
   s_tof.pending_chunk_count   = 0;
   s_tof.pending_len           = 0;
   s_tof.pending_protocol      = TOF_PENDING_NONE;
 }
 
-static void snapshot_l1_if_ready(void)
+static void snapshot_l8_if_ready(void)
 {
-  if (s_tof.pending_chunk != 0 || !TofL1_HasNewFrame()) return;
-
-  const TofL1_Frame_t *f = TofL1_GetLatestFrame();
-  if (f->seq == s_tof.last_published_seq) {
-    TofL1_ClearNewFrame();
+  TofL8SensorId_t sensor_id = selected_l8_sensor_id();
+  if (s_tof.pending_chunk != 0 ||
+      !TofL8_IsSensorAvailable(sensor_id) ||
+      !TofL8_HasNewFrameForSensor(sensor_id)) {
     return;
   }
 
-  memcpy(s_tof.pending_buf, f, sizeof(TofL1_Frame_t));
-  s_tof.pending_seq         = f->seq;
-  s_tof.pending_len         = sizeof(TofL1_Frame_t);
-  s_tof.pending_chunk_count = TOF_L1_FRAME_CHUNK_COUNT;
-  s_tof.pending_protocol    = TOF_PENDING_L1_V1;
-  s_tof.pending_chunk       = 1;
-  TofL1_ClearNewFrame();
-}
-
-static void snapshot_l5_if_ready(void)
-{
-  if (s_tof.pending_chunk != 0 || !TofL5_HasNewFrame()) return;
-
-  const Tof_Frame_t *f = TofL5_GetLatestFrame();
+  const Tof_Frame_t *f = TofL8_GetLatestFrameForSensor(sensor_id);
   if (f->seq == s_tof.last_published_seq) {
-    TofL5_ClearNewFrame();
+    TofL8_ClearNewFrameForSensor(sensor_id);
     return;
   }
 
@@ -195,8 +182,8 @@ static void snapshot_l5_if_ready(void)
                                    sizeof(s_tof.pending_buf), &payload_len);
   if (rc != TOF_CODEC_OK) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
-    s_tof.state = 2;
-    TofL5_ClearNewFrame();
+    s_tof.state = BLE_TOF_STATE_ERROR;
+    TofL8_ClearNewFrameForSensor(sensor_id);
     return;
   }
 
@@ -206,7 +193,7 @@ static void snapshot_l5_if_ready(void)
   s_tof.pending_protocol    = TOF_PENDING_V2;
   s_tof.pending_chunk       = 1;
   s_tof.snapshots_taken++;
-  TofL5_ClearNewFrame();
+  TofL8_ClearNewFrameForSensor(sensor_id);
 }
 
 static tBleStatus publish_pending_chunk(void)
@@ -214,11 +201,7 @@ static tBleStatus publish_pending_chunk(void)
   uint8_t idx = (uint8_t)(s_tof.pending_chunk - 1u);
   uint8_t buf[TOF_FRAME_CHUNK_SIZE];
 
-  if (s_tof.pending_protocol == TOF_PENDING_L1_V1) {
-    buf[0] = idx | ((idx == TOF_L1_FRAME_CHUNK_COUNT - 1u) ? 0x80u : 0u);
-    memcpy(&buf[1], &s_tof.pending_buf[idx * TOF_L1_FRAME_CHUNK_DATA],
-           TOF_L1_FRAME_CHUNK_DATA);
-  } else if (s_tof.pending_protocol == TOF_PENDING_V2) {
+  if (s_tof.pending_protocol == TOF_PENDING_V2) {
     int rc = TofFrameCodec_MakeChunk(s_tof.pending_buf, s_tof.pending_len,
                                      s_tof.pending_seq, idx, buf);
     if (rc != TOF_CODEC_OK) return BLE_STATUS_FAILED;
@@ -232,10 +215,19 @@ static tBleStatus publish_pending_chunk(void)
 
 static uint32_t current_debug_seq(void)
 {
-  if (s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
-    return TofL5_GetLatestFrame()->seq;
-  }
-  return TofL1_GetLatestFrame()->seq;
+  return TofL8_GetLatestFrameForSensor(selected_l8_sensor_id())->seq;
+}
+
+static void request_status_publish(void)
+{
+  s_tof.status_publish_pending = 1u;
+}
+
+static void publish_pending_status_if_needed(void)
+{
+  if (!s_tof.status_publish_pending || !BLE_App_IsConnected()) return;
+  s_tof.status_publish_pending = 0u;
+  publish_status();
 }
 
 int BLE_Tof_Init(void)
@@ -244,8 +236,9 @@ int BLE_Tof_Init(void)
   tBleStatus ret;
 
   memset(&s_tof, 0, sizeof(s_tof));
-  s_tof.state = 1;
-  s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
+  s_tof.state = BLE_TOF_STATE_RUNNING;
+  s_tof.debug_role = BLE_TOF_DEBUG_ROLE_REAR;
+  BLE_TofDebugConfigQueue_Init(&s_tof.config_queue);
 
   SVCCTL_RegisterSvcHandler(BLE_Tof_EventHandler);
 
@@ -258,7 +251,7 @@ int BLE_Tof_Init(void)
     return -1;
   }
 
-  /* FE61 — config (write + write-w/o-resp), fixed 8 B */
+  /* FE61 — config (write + write-w/o-resp), fixed 9 B */
   uuid = OPENOTTER_TOF_CONFIG_CHAR_UUID;
   ret = aci_gatt_add_char(s_tof.svc_handle, UUID_TYPE_16,
                           (const uint8_t *)&uuid,
@@ -303,7 +296,7 @@ int BLE_Tof_Init(void)
   s_tof.safety_config_pending = 1u;
   s_tof.safety_config_ready   = 0u;
   /* Defer the first init by the boot grace so it does not collide with
-   * the BLE stack's own startup. After this initial delay the L5 driver
+   * the BLE stack's own startup. After this initial delay the VL53L8 driver
    * comes up regardless of BLE connection state. */
   s_tof.safety_config_retry_tick = HAL_GetTick() + SAFETY_CONFIG_BOOT_GRACE_MS;
   publish_status();
@@ -313,6 +306,7 @@ int BLE_Tof_Init(void)
 
 void BLE_Tof_RequestSafetyConfig(void)
 {
+  BLE_TofDebugConfigQueue_Clear(&s_tof.config_queue);
   s_tof.safety_config_pending = 1u;
   s_tof.safety_config_ready = 0u;
   s_tof.safety_config_retry_tick = 0u;
@@ -324,48 +318,98 @@ int BLE_Tof_SafetyConfigReady(void)
          s_tof.safety_config_pending == 0u;
 }
 
+static int boot_grace_allows_debug_config(uint32_t now)
+{
+  if (TofL8_IsInitialized()) return 1;
+  if (!s_tof.safety_config_pending) return 1;
+  if (s_tof.safety_config_retry_tick == 0u) return 1;
+  return tick_reached(now, s_tof.safety_config_retry_tick);
+}
+
+static void apply_config_write(const uint8_t *data, uint16_t len);
+
+static uint8_t process_pending_debug_config(uint32_t now)
+{
+  if (!BLE_TofDebugConfigQueue_HasPending(&s_tof.config_queue)) return 0u;
+
+  if (!BLE_App_IsConnected()) {
+    BLE_TofDebugConfigQueue_Clear(&s_tof.config_queue);
+    return 1u;
+  }
+
+  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) {
+    BLE_TofDebugConfigQueue_Clear(&s_tof.config_queue);
+    s_tof.last_error = (uint8_t)TOF_STATUS_LOCKED_IN_DRIVE;
+    s_tof.state = BLE_TOF_STATE_RUNNING;
+    request_status_publish();
+    return 1u;
+  }
+
+  if (!boot_grace_allows_debug_config(now)) {
+    return 0u;
+  }
+
+  uint8_t data[BLE_TOF_DEBUG_CONFIG_PAYLOAD_SIZE] = {0};
+  uint16_t len = 0u;
+  if (BLE_TofDebugConfigQueue_Pop(&s_tof.config_queue, data, sizeof(data),
+                                  &len) < 0) {
+    s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+    s_tof.state = BLE_TOF_STATE_RUNNING;
+    request_status_publish();
+    return 1u;
+  }
+
+  apply_config_write(data, len);
+  return 1u;
+}
+
 void BLE_Tof_Process(void)
 {
   uint32_t now = HAL_GetTick();
 
-  /* L5 driver init / safety config — runs regardless of BLE connection
+  /* VL53L8 driver init / safety config — runs regardless of BLE connection
    * state so the reverse-safety sensor (and the LED2 frame heartbeat)
    * comes up at boot whether or not the iOS app ever connects. The boot
    * grace lives on safety_config_retry_tick (seeded in Init); subsequent
    * retries also use that field. */
-  if (s_tof.safety_config_pending) {
-    uint8_t retry_due =
-        (s_tof.safety_config_retry_tick == 0u ||
-         tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
-    if (retry_due) {
+  uint8_t safety_retry_due =
+      (s_tof.safety_config_retry_tick == 0u ||
+       tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
+  if (s_tof.safety_config_pending && safety_retry_due) {
+    if (BLE_App_HandshakePending()) {
+      s_tof.safety_config_retry_tick =
+          HAL_GetTick() + SAFETY_CONFIG_HANDSHAKE_DEFER_MS;
+    } else if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
       log_fmt("BLE_Tof safety_config fire mode=%u tick=%lu\r\n",
               (unsigned)BLE_App_GetMode(), (unsigned long)now);
-      if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
-        /* Drive: apply the full safety config (driver init + 4x4 30 Hz).
-         * Clears pending only on success; failure schedules a retry. */
-        s_tof.safety_config_pending = 0u;
-        BLE_Tof_EnforceSafetyConfig();
-        log_fmt("BLE_Tof enforce_done ready=%u err=%u tick=%lu\r\n",
-                (unsigned)s_tof.safety_config_ready,
-                (unsigned)s_tof.last_error,
-                (unsigned long)HAL_GetTick());
-        if (!s_tof.safety_config_ready) {
-          s_tof.safety_config_pending = 1u;
-          s_tof.safety_config_retry_tick =
-              HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
-        }
-      } else {
-        /* Debug/Park: only pre-init the VL53L5CX driver so the lazy init
-         * path inside apply_config_write does not block the BLE event
-         * handler with the multi-second sensor firmware download. Leave
-         * safety_config_pending = 1 so the next Drive-mode edge re-applies
-         * the safety config; throttle remains gated until then. */
-        (void)TofL5_EnsureInitialized();
+      /* Drive: apply the full safety config (driver init + 4x4 30 Hz).
+       * Clears pending only on success; failure schedules a retry. */
+      s_tof.safety_config_pending = 0u;
+      BLE_Tof_EnforceSafetyConfig();
+      log_fmt("BLE_Tof enforce_done ready=%u err=%u tick=%lu\r\n",
+              (unsigned)s_tof.safety_config_ready,
+              (unsigned)s_tof.last_error,
+              (unsigned long)HAL_GetTick());
+      if (!s_tof.safety_config_ready) {
+        s_tof.safety_config_pending = 1u;
         s_tof.safety_config_retry_tick =
             HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
       }
     }
   }
+
+  uint8_t handled_debug_config = process_pending_debug_config(now);
+  if (s_tof.safety_config_pending && safety_retry_due &&
+      BLE_App_GetMode() != OPENOTTER_MODE_DRIVE &&
+      !handled_debug_config) {
+    /* Debug/Park must not run VL53L8 init/config from a BLE event callback.
+     * If iOS has queued a debug FE61 write, process_pending_debug_config()
+     * applies it from this main-loop context. Without a queued config, keep
+     * retry bookkeeping alive for the next Drive edge. */
+    s_tof.safety_config_retry_tick = HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
+  }
+
+  publish_pending_status_if_needed();
 
   if (!BLE_App_IsConnected()) return;
 
@@ -378,17 +422,16 @@ void BLE_Tof_Process(void)
     return;
   }
 
-  uint8_t had_new_l5 = TofL5_HasNewFrame();
+  TofL8SensorId_t selected_id = selected_l8_sensor_id();
+  uint8_t had_new_l8 =
+      (TofL8_IsSensorAvailable(selected_id) &&
+       TofL8_HasNewFrameForSensor(selected_id)) ? 1u : 0u;
 
   /* If no chunk transmission in flight, snapshot the latest frame. */
-  if (s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
-    snapshot_l5_if_ready();
-  } else {
-    snapshot_l1_if_ready();
-  }
+  snapshot_l8_if_ready();
 
-  if (had_new_l5 && s_tof.debug_sensor == TOF_SENSOR_VL53L5CX) {
-    s_tof.l5_frames_seen++;
+  if (had_new_l8) {
+    s_tof.l8_frames_seen++;
   }
 
   /* Drain pending chunks, metered to avoid overflowing the BlueNRG-MS
@@ -436,14 +479,15 @@ void BLE_Tof_Process(void)
     /* Safe to log here — we only reach this branch when pending_chunk == 0
      * (gate above) and have just stolen one TX slot for status. The
      * UART blocks ~3-7 ms; chunk drain has nothing in flight to starve. */
-    log_fmt("L5 dbg: seen=%lu snap=%lu push=%lu fail=%lu mode=%u "
-            "sensor=%u dbgseq=%lu pubseq=%lu hz=%u\r\n",
-            (unsigned long)s_tof.l5_frames_seen,
+    log_fmt("L8 dbg: seen=%lu snap=%lu push=%lu fail=%lu mode=%u "
+            "role=%s avail=0x%02x dbgseq=%lu pubseq=%lu hz=%u\r\n",
+            (unsigned long)s_tof.l8_frames_seen,
             (unsigned long)s_tof.snapshots_taken,
             (unsigned long)s_tof.chunks_pushed,
             (unsigned long)s_tof.chunks_failed,
             (unsigned)BLE_App_GetMode(),
-            (unsigned)s_tof.debug_sensor,
+            debug_role_name(),
+            (unsigned)TofL8_AvailableMask(),
             (unsigned long)seq,
             (unsigned long)s_tof.last_published_seq,
             (unsigned)s_tof.scan_hz);
@@ -456,78 +500,50 @@ static void apply_config_write(const uint8_t *data, uint16_t len)
    * valid pointer, but a single defensive guard here is cheaper than the
    * eventual hard fault if that contract ever breaks (e.g. a future stack
    * version, a corrupted attribute write packet). */
-  if (data == NULL || len < sizeof(BLE_TofConfigPayload_t)) {
+  if (data == NULL || len < sizeof(Tof_Config_t)) {
     s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
-    s_tof.state      = 2;
+    s_tof.state      = BLE_TOF_STATE_ERROR;
+    publish_status();
+    return;
+  }
+
+  if (data[0] != TOF_SENSOR_VL53L8CX) {
+    s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+    s_tof.state = BLE_TOF_STATE_RUNNING;
     publish_status();
     return;
   }
 
   if (!BLE_Tof_ConfigWriteAllowed((uint8_t)BLE_App_GetMode(), data[0])) {
     s_tof.last_error = (uint8_t)TOF_STATUS_LOCKED_IN_DRIVE;
-    s_tof.state      = 1;
+    s_tof.state      = BLE_TOF_STATE_RUNNING;
     publish_status();
     return;
   }
 
-  if (data[0] == TOF_SENSOR_VL53L5CX) {
-    Tof_Config_t cfg;
-    memcpy(&cfg, data, sizeof(cfg));
-
-    int rc = TofL5_EnsureInitialized();
-    if (rc == TOF_STATUS_OK) {
-      rc = TofL5_Configure(&cfg);
-    }
-    if (rc != TOF_STATUS_BAD_CONFIG) {
-      s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
-      reset_stream_state();
-    }
-
-    if (rc == TOF_STATUS_OK) {
-      s_tof.last_error = 0;
-      s_tof.state = 1;
-    } else if (rc == TOF_STATUS_DRIVER_MISSING ||
-               rc == TOF_STATUS_NO_SENSOR ||
-               rc == TOF_STATUS_BOOT_FAILED ||
-               rc == TOF_STATUS_DRIVER_DEAD) {
-      s_tof.last_error = (uint8_t)rc;
-      s_tof.state = 2;
-    } else {
-      s_tof.last_error = (uint8_t)rc;
-      s_tof.state = 1;
-    }
+  uint8_t requested_role = BLE_TOF_DEBUG_ROLE_REAR;
+  if (BLE_TofDebugRoleFromConfigPayload(data, len, &requested_role) < 0) {
+    s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+    s_tof.state      = BLE_TOF_STATE_RUNNING;
     publish_status();
     return;
   }
 
-  BLE_TofConfigPayload_t cfg;
+  Tof_Config_t cfg;
   memcpy(&cfg, data, sizeof(cfg));
 
-  int rc = TofL1_Configure((TofL1_Layout_t)cfg.layout,
-                           (TofL1_DistMode_t)cfg.dist_mode,
-                           cfg.budget_us);
-
-  /* RECOVERED = combo was accepted by validation, driver rejected it, and
-   * we rolled back to the last-known-good config. Sensor is still streaming;
-   * surface the rc so the UI can show a transient warning. */
-  if (rc == TOF_L1_OK) {
-    s_tof.debug_sensor = TOF_SENSOR_VL53L1CB;
-    s_tof.last_error = 0;
-    s_tof.state = 1;
-    reset_stream_state();
-  } else if (rc == TOF_L1_ERR_RECOVERED) {
-    s_tof.debug_sensor = TOF_SENSOR_VL53L1CB;
-    s_tof.last_error = (uint8_t)rc;
-    s_tof.state = 1;
-    reset_stream_state();
-  } else if (rc == TOF_L1_ERR_DRIVER_DEAD) {
-    s_tof.last_error = (uint8_t)rc;
-    s_tof.state      = 2;
-  } else {
-    /* Bad combo rejected pre-driver. Sensor untouched, still running. */
-    s_tof.last_error = (uint8_t)rc;
-    s_tof.state      = 1;
+  int rc = TofL8_EnsureInitialized();
+  if (rc == TOF_STATUS_OK) {
+    rc = TofL8_Configure(&cfg);
   }
+  if (rc != TOF_STATUS_BAD_CONFIG) {
+    s_tof.debug_role = requested_role;
+    reset_stream_state();
+  }
+
+  BLE_TofStatusDecision_t decision = BLE_Tof_StatusForResult(rc);
+  s_tof.last_error = decision.last_error;
+  s_tof.state = decision.state;
   publish_status();
 }
 
@@ -546,7 +562,13 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
   if (BleAttrDispatch_IsValueWrite(attr_mod->attr_handle,
                                    s_tof.config_char_handle)) {
     ack = SVCCTL_EvtAck;
-    apply_config_write(attr_mod->att_data, attr_mod->data_length);
+    if (BLE_TofDebugConfigQueue_Push(&s_tof.config_queue,
+                                     attr_mod->att_data,
+                                     attr_mod->data_length) < 0) {
+      s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+      s_tof.state = BLE_TOF_STATE_RUNNING;
+      request_status_publish();
+    }
   }
   return ack;
 }
@@ -554,26 +576,22 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
 void BLE_Tof_EnforceSafetyConfig(void)
 {
   Tof_Config_t cfg = {
-      .sensor_type = TOF_SENSOR_VL53L5CX,
+      .sensor_type = TOF_SENSOR_VL53L8CX,
       .layout = 4,
-      .profile = TOF_PROFILE_L5_CONTINUOUS,
+      .profile = TOF_PROFILE_L8_CONTINUOUS,
       .frequency_hz = 30,
       .integration_ms = 20,
       .budget_ms = 0,
   };
 
-  int rc = TofL5_EnsureInitialized();
+  int rc = TofL8_EnsureInitialized();
   if (rc == TOF_STATUS_OK) {
-    rc = TofL5_Configure(&cfg);
+    rc = TofL8_Configure(&cfg);
   }
-  if (rc == TOF_STATUS_OK) {
-    s_tof.debug_sensor = TOF_SENSOR_VL53L5CX;
-  }
-  s_tof.safety_config_ready = (rc == TOF_STATUS_OK) ? 1u : 0u;
-  s_tof.last_error = (rc == TOF_STATUS_OK) ? 0 : (uint8_t)rc;
-  s_tof.state      = (rc == TOF_STATUS_DRIVER_DEAD ||
-                      rc == TOF_STATUS_NO_SENSOR ||
-                      rc == TOF_STATUS_BOOT_FAILED) ? 2 : 1;
   reset_stream_state();
+  s_tof.safety_config_ready = (rc == TOF_STATUS_OK) ? 1u : 0u;
+  BLE_TofStatusDecision_t decision = BLE_Tof_StatusForResult(rc);
+  s_tof.last_error = decision.last_error;
+  s_tof.state = decision.state;
   publish_status();
 }

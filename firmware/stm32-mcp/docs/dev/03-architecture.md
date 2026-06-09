@@ -117,19 +117,21 @@ SystemClock_Config()
 MX_GPIO_Init()          ← all pins except SPI3 (owned by BLE middleware)
 MX_DFSDM1_Init()        ← microphone clock, unused today
 MX_I2C2_Init()          ← internal I²C bus (sensors) — bus ready, not driven
+MX_I2C3_Init()          ← SATEL-VL53L8 I2C transport on A5/A4
+MX_SPI1_Init()          ← SATEL-VL53L8 SPI transport on D13/D12/D11
 MX_QUADSPI_Init()       ← external NOR flash, unused
 MX_TIM3_Init()          ← PWM channels for steering + throttle
 MX_USART1/3_UART_Init() ← UART1 = ST-LINK VCP, UART3 = internal TX/RX
 MX_USB_OTG_FS_PCD_Init()← USB device stack, inactive
 
-LD1 (PA5) GPIO init     ← user code: heartbeat LED
 HAL_TIM_PWM_Start(CH1)  ← start 50 Hz throttle output on PB4
 HAL_TIM_PWM_Start(CH4)  ← start 50 Hz steering output on PB1
 BLE_App_Init(&htim3)    ← see BLE integration doc
 
 while (1) {
     BLE_App_Process();             ← drives the scheduler & safety timeout
-    if (tick - last > 500) toggle LD1;
+    TofL8_Process();               ← polls the active VL53L8 transport
+    BLE_Tof_Process();             ← publishes debug/status frames
 }
 ```
 
@@ -258,7 +260,9 @@ The table below lists every pin that is initialized by `MX_GPIO_Init`
 
 | Pin  | #define                      | Direction | Function                                 |
 |------|------------------------------|-----------|------------------------------------------|
-| PA5  | *(ad-hoc)*                   | Out       | **LD1** heartbeat LED (toggle every 500 ms) |
+| PA5  | `ARD_D13_Pin`                | AF5       | SPI1 SCK for SATEL-VL53L8 SPI mode         |
+| PA6  | `ARD_D12_Pin`                | AF5       | SPI1 MISO for SATEL-VL53L8 SPI mode        |
+| PA7  | `ARD_D11_Pin`                | AF5       | SPI1 MOSI for SATEL-VL53L8 SPI mode        |
 | PB1  | `steering_pwm_Pin`           | AF2       | **TIM3_CH4 — steering PWM out**          |
 | PB4  | `throttle_pwm_Pin`           | AF2       | **TIM3_CH1 — throttle PWM out**          |
 | PB6  | `ST_LINK_UART1_TX_Pin`       | AF7       | USART1 TX → ST-LINK VCP                  |

@@ -191,23 +191,25 @@ sending at whatever rate it considers smooth (20–50 Hz typically).
 ```
   ┌──────────────────────────────────────────────────────────────────────┐
   │  boot                                                                │
+  │    main.c starts TIM3 neutral PWM, stack guard, MPU, and IWDG        │
   │    BLE_App_Init                                                      │
   │      ├─ BLE_InitLPM (standby disabled)                               │
   │      ├─ BLE_InitRTC (LSI 32 kHz for the timer server)                │
   │      ├─ HW_TS_Init                                                   │
   │      ├─ SCH_RegTask x3 (HciAsynchEvt, TlEvt, StartAdv)               │
+  │      ├─ BleAdvPolicy_Init (schedule first advertise from main loop)  │
   │      ├─ BLE_InitStack → TL_BLE_HCI_Init → SVCCTL_Init                │
-  │      │   │ hardware reset of BlueNRG-MS (~1 ms pulse)                │
-  │      │   │ wait for HCI "hardware error" / "READY" event             │
+  │      │   │ bounded GPIO reset of BlueNRG-MS (~2 ms pulse)            │
+  │      │   │ wait for HCI response, bounded below IWDG window          │
   │      │   │ SVCCTL_Init sets GAP name = "OPENOTTER-MCP"               │
-  │      ├─ BLE_InitGATTService (adds 0xFE40 / 0xFE41 / 0xFE42)          │
+  │      ├─ BLE_InitGATTService (adds FE40 service + FE41-FE44 chars)    │
   │      ├─ BLE_ApplyPWM(neutral, neutral)                               │
-  │      └─ BLE_StartAdvertising (ADV_IND, 80–100 ms interval)           │
+  │      └─ return to main loop without blocking on advertising retry     │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
                                  ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  idle: SCH_Run + LD1 toggle + safety watchdog                        │
+  │  idle: SCH_Run + BLE_ServiceAdvertising + LD2 heartbeat + watchdog   │
   │    (iOS central scans → sees "OPENOTTER-MCP")                        │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
@@ -257,19 +259,65 @@ sending at whatever rate it considers smooth (20–50 Hz typically).
 
 ### 5.1 Why advertising re-start is deferred
 
-Calling `aci_gap_set_discoverable` from inside the HCI event callback
-deadlocks the transport layer — the command channel is still owned by
-the current event. The fix is to schedule `BLE_AdvTask` via
-`SCH_SetTask(CFG_IdleTask_StartAdv)`; the next `SCH_Run()` iteration
-picks it up when the channel is idle. Without this, the device becomes
-undiscoverable after the first disconnect.
+Calling `aci_gap_set_discoverable` from inside the HCI event callback can fail
+because the command channel is still owned by the current event. Advertising is
+therefore driven by `BleAdvPolicy_t`: boot schedules the first attempt after
+the main loop is alive, disconnect schedules a new attempt after a short delay,
+and failures back off from 1 s to 5 s instead of immediately issuing another
+blocking HCI command. Look for `BLE adv_start ok` or `BLE adv_start fail ...`
+in the UART log when debugging reconnects.
 
-### 5.2 Why the backup-domain reset at boot
+### 5.2 Advertising health-check refresh
 
-`main.c:105` force-resets the RTC backup domain on pin reset. The BLE
+`BLE adv_active` is a passive firmware heartbeat: it says the advertising policy
+believes the BlueNRG is in discoverable mode, but it is not an RF scan. During
+the 2026-06-09 reset investigation the STM32 main loop and VL53L8 driver were
+healthy, `BLE adv_active` kept printing, but neither iOS nor a Mac scanner could
+initially see `OPENOTTER-MCP`.
+
+To recover that half-stale state, the disconnected advertising policy now arms a
+15 s health check after each successful advertising start. When due, the main
+loop calls `aci_gap_set_non_discoverable` and then `aci_gap_set_discoverable`
+again. The expected UART sequence is:
+
+```text
+BLE adv_refresh stop ok tick=...
+BLE adv_reassert ok tick=...
+```
+
+This refresh is deliberately run from the main loop, not from an HCI event
+callback. If `aci_gap_set_discoverable` returns `ERR_COMMAND_DISALLOWED`, the
+firmware treats that as "already active" rather than as a fatal failure.
+
+### 5.3 Why the backup-domain reset at boot
+
+`main.c` force-resets the RTC backup domain on pin reset. The BLE
 timer server uses the RTC wakeup timer, and stale state from a previous
 run can make `HW_TS_Init` spin forever. This is copied behavior from
 the `P2P_LedButton` reference.
+
+### 5.4 Startup recovery hardening
+
+The car deployment can power the IoT board from a noisy VIN rail instead of the
+quiet ST-LINK USB rail. In that case the STM32 core, BlueNRG coprocessor, and
+RTC/timer-server state may not all recover identically from a brownout. The
+firmware now treats BLE startup as watchdog-protected work:
+
+- `main.c` starts TIM3 at neutral PWM, initializes the stack guard/MPU, then
+  starts the IWDG before `BLE_App_Init`.
+- `BLE/hw/hw_spi.c` resets BlueNRG with a bounded HAL delay instead of waiting
+  on a timer-server callback during reset.
+- `OPENOTTER_BLE_HCI_TIMEOUT_MS` is 3 s, below the 30 s IWDG window and below
+  the STM32L4 IWDG's practical maximum at nominal 32 kHz LSI.
+- FE40/FE41/FE42/FE43/FE44 registration is fail-closed: if a required GATT
+  service or characteristic cannot be added, startup logs the failed handle
+  path and `PANIC:I` resets.
+- If the BlueNRG SPI peripheral remains busy while releasing chip select,
+  `PANIC:P` resets rather than spinning forever.
+
+The goal is not to hide a bad power rail. It is to avoid the old half-alive
+state where LD2 stopped, BLE disappeared, actuator commands did nothing, and
+only a full vehicle power cycle recovered the system.
 
 ---
 

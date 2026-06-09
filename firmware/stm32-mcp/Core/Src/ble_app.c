@@ -29,14 +29,19 @@
 #include "ble_lib.h"
 #include "blesvc.h"
 #include "rev_safety.h"
-#include "rev_safety_l5.h"
+#include "rev_safety_l8.h"
 #include "rev_safety_tof.h"
-#include "tof_l5.h"
+#include "drive_safety.h"
+#include "tof_l8.h"
 #include "ble_tof.h"
+#include "ble_adv_policy.h"
 #include "ble_command.h"
+#include "ble_connection_policy.h"
 #include "ble_drive_policy.h"
 #include "ble_gatt_layout.h"
 #include "ble_attr_dispatch.h"
+#include "firmware_panic.h"
+#include "firmware_watchdog.h"
 #include "pwm_control.h"
 
 #include <stdio.h>
@@ -85,6 +90,9 @@ typedef struct {
   int16_t reportedVelocityMmPerS;
 
   OpenOtterMode_t mode;
+  BleAdvPolicy_t adv;
+  BleConnectionPolicy_t connection_policy;
+  uint32_t advHeartbeatTick;
 } BLE_AppContext_t;
 
 /* Private variables ---------------------------------------------------------*/
@@ -100,8 +108,11 @@ static uint8_t HciEvtPool[POOL_SIZE];
 
 /* Forward declarations ------------------------------------------------------*/
 static void BLE_InitStack(void);
-static void BLE_InitGATTService(void);
-static void BLE_StartAdvertising(void);
+static int BLE_InitGATTService(void);
+static void BLE_StartAdvertising(bool healthcheck_reassert);
+static void BLE_RefreshAdvertising(uint32_t now_ms);
+static void BLE_ServiceAdvertising(uint32_t now_ms);
+static void BLE_ServiceConnectionHandshake(uint32_t now_ms);
 static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us);
 static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *event);
 
@@ -118,10 +129,11 @@ static void BLE_AdvTask(void);
 /* Max-aligned backing storage for the opaque RevSafetyCtx. Size is set by
  * REV_SAFETY_CTX_STORAGE_BYTES in rev_safety.h and re-checked at compile
  * time inside rev_safety.c (_Static_assert against the true struct size). */
-static _Alignas(double) uint8_t s_rev_safety_storage[REV_SAFETY_CTX_STORAGE_BYTES];
-static RevSafetyCtx *s_rev_ctx = (RevSafetyCtx *)s_rev_safety_storage;
-static uint32_t s_last_tof_seq   = 0;
-static uint32_t s_last_event_seq = 0;
+static _Alignas(double) uint8_t
+    s_safety_storage[TOF_L8_SENSOR_COUNT][REV_SAFETY_CTX_STORAGE_BYTES];
+static uint32_t s_last_tof_seq[TOF_L8_SENSOR_COUNT];
+static uint32_t s_last_event_seq[TOF_L8_SENSOR_COUNT];
+static uint32_t s_safety_payload_seq = 0;
 /*============================================================================*/
 /*  PUBLIC API                                                                */
 /*============================================================================*/
@@ -139,27 +151,55 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
 
   RevSafetyConfig_t rscfg;
   RevSafety_GetDefaultConfig(&rscfg);
-  RevSafety_Init(s_rev_ctx, &rscfg);
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    RevSafety_Init((RevSafetyCtx *)s_safety_storage[i], &rscfg);
+    s_last_tof_seq[i] = 0u;
+    s_last_event_seq[i] = 0u;
+  }
 
   BLE_InitLPM();
   BLE_InitRTC();
   HW_TS_Init(hw_ts_InitMode_Full, &hrtc_ble);
+  FwWatchdog_Refresh();
 
   SCH_RegTask(CFG_IdleTask_HciAsynchEvt, BLE_HciUserEvtTask);
   SCH_RegTask(CFG_IdleTask_TlEvt, BLE_TlEvtTask);
   SCH_RegTask(CFG_IdleTask_StartAdv, BLE_AdvTask);
+  BleAdvPolicy_Init(&bleCtx.adv, HAL_GetTick());
+  BleConnectionPolicy_Init(&bleCtx.connection_policy);
 
   BLE_InitStack();
-  BLE_InitGATTService();
+  FwWatchdog_Refresh();
+  int gatt_status = BLE_InitGATTService();
+  if (gatt_status != 0) {
+    return gatt_status;
+  }
   BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
-  BLE_StartAdvertising();
+  FwWatchdog_Refresh();
 
   return 0;
 }
 
+static RevSafetyCtx *safety_ctx(TofL8SensorId_t sensor_id) {
+  if ((uint8_t)sensor_id >= (uint8_t)TOF_L8_SENSOR_COUNT) return 0;
+  return (RevSafetyCtx *)s_safety_storage[(uint8_t)sensor_id];
+}
+
+static DriveSafetyDirection_t safety_direction(TofL8SensorId_t sensor_id) {
+  return (sensor_id == TOF_L8_SENSOR_FRONT)
+             ? DRIVE_SAFETY_DIRECTION_FRONT
+             : DRIVE_SAFETY_DIRECTION_REAR;
+}
+
+static void disarm_all_safety(void) {
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    RevSafety_Disarm(safety_ctx((TofL8SensorId_t)i));
+  }
+}
+
 static void publish_safety_event(const RevSafetyEvent_t *ev) {
   BLE_SafetyEventPayload_t p = {0};
-  p.seq                   = ev->seq;
+  p.seq                   = ++s_safety_payload_seq;
   p.timestamp_ms          = ev->trigger_timestamp_ms;
   p.state                 = (uint8_t)ev->state;
   p.cause                 = (uint8_t)ev->cause;
@@ -173,15 +213,82 @@ static void publish_safety_event(const RevSafetyEvent_t *ev) {
 
 static void publish_safe_safety_snapshot(void) {
   BLE_SafetyEventPayload_t p = {0};
-  p.seq = s_last_event_seq;
+  p.seq = s_safety_payload_seq;
   aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.safetyCharHandle,
                              0, sizeof(p), (uint8_t *)&p);
+}
+
+static RevSafetyTofReading_t select_l8_reading(TofL8SensorId_t sensor_id,
+                                               const Tof_Frame_t *frame) {
+  return (sensor_id == TOF_L8_SENSOR_FRONT)
+             ? RevSafetyL8_SelectFrontReading(frame)
+             : RevSafetyL8_SelectReverseReading(frame);
+}
+
+static void tick_direction_safety(TofL8SensorId_t sensor_id,
+                                  bool drive_safety_ready,
+                                  uint32_t now,
+                                  RevSafetyEvent_t *physical_event) {
+  if (!physical_event) return;
+  memset(physical_event, 0, sizeof(*physical_event));
+
+  RevSafetyCtx *ctx = safety_ctx(sensor_id);
+  int driver_dead = TofL8_IsDriverDeadForSensor(sensor_id) ? 1 : 0;
+  if (!TofL8_IsSensorAvailable(sensor_id) && !driver_dead) {
+    RevSafety_Disarm(ctx);
+    return;
+  }
+
+  const Tof_Frame_t *f = TofL8_GetLatestFrameForSensor(sensor_id);
+  bool new_frame = (f && f->seq != s_last_tof_seq[(uint8_t)sensor_id]);
+  if (f) s_last_tof_seq[(uint8_t)sensor_id] = f->seq;
+
+  RevSafetyInput_t physical = {0};
+  physical.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
+  physical.throttle_us = drive_safety_ready
+      ? bleCtx.desiredThrottleUs
+      : (int16_t)PWM_NEUTRAL_US;
+  physical.frame_is_new = new_frame;
+  if (f) {
+    RevSafetyTofReading_t reading = select_l8_reading(sensor_id, f);
+    physical.zone_valid =
+        (reading.tof_class == REV_SAFETY_TOF_VALID ||
+         reading.tof_class == REV_SAFETY_TOF_CLEAR);
+    physical.frame_is_partial =
+        (reading.tof_class == REV_SAFETY_TOF_PARTIAL);
+    physical.raw_depth_m = reading.depth_m;
+  }
+  physical.driver_dead = driver_dead ? true : false;
+  physical.now_ms = now;
+
+  RevSafetyInput_t projected = {0};
+  RevSafetyEvent_t projected_event = {0};
+  DriveSafety_ProjectInput(safety_direction(sensor_id), PWM_NEUTRAL_US,
+                           &physical, &projected);
+  RevSafety_Tick(ctx, &projected, &projected_event);
+  DriveSafety_ProjectEvent(safety_direction(sensor_id), &projected_event,
+                           physical_event);
+}
+
+static void publish_direction_events(const RevSafetyEvent_t events[TOF_L8_SENSOR_COUNT]) {
+  for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+    const RevSafetyEvent_t *ev = &events[i];
+    if (ev->transition && ev->seq != s_last_event_seq[i]) {
+      publish_safety_event(ev);
+      s_last_event_seq[i] = ev->seq;
+    } else if (ev->notify_refresh) {
+      publish_safety_event(ev);
+    }
+  }
 }
 
 void BLE_App_Process(void) {
   SCH_Run();
 
   uint32_t now = HAL_GetTick();
+  BLE_ServiceAdvertising(now);
+  BLE_ServiceConnectionHandshake(now);
+
   bool watchdog_trip =
       bleCtx.isConnected &&
       (now - bleCtx.lastCommandTick) > BLE_SAFETY_TIMEOUT_MS;
@@ -189,29 +296,14 @@ void BLE_App_Process(void) {
   /* 1. Run the reverse supervisor (Drive mode only). In Debug mode the
    *    supervisor is explicitly disarmed on the mode-edge in the event
    *    handler, not every tick. */
-  RevSafetyEvent_t ev = {0};
+  RevSafetyEvent_t events[TOF_L8_SENSOR_COUNT];
+  memset(events, 0, sizeof(events));
   bool drive_safety_ready = BLE_Tof_SafetyConfigReady() ? true : false;
   if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
-    const Tof_Frame_t *f = TofL5_GetLatestFrame();
-    bool new_frame = (f && f->seq != s_last_tof_seq);
-    s_last_tof_seq = f ? f->seq : s_last_tof_seq;
-
-    RevSafetyInput_t in = {0};
-    in.velocity_mps = (float)bleCtx.reportedVelocityMmPerS / 1000.0f;
-    in.throttle_us  = drive_safety_ready
-        ? bleCtx.desiredThrottleUs
-        : (int16_t)PWM_NEUTRAL_US;
-    in.frame_is_new = new_frame;
-    if (f) {
-      RevSafetyTofReading_t reading = RevSafetyL5_SelectReverseReading(f);
-      in.zone_valid       = (reading.tof_class == REV_SAFETY_TOF_VALID ||
-                             reading.tof_class == REV_SAFETY_TOF_CLEAR);
-      in.frame_is_partial = (reading.tof_class == REV_SAFETY_TOF_PARTIAL);
-      in.raw_depth_m      = reading.depth_m;
-    }
-    in.driver_dead = TofL5_IsDriverDead() ? true : false;
-    in.now_ms      = now;
-    RevSafety_Tick(s_rev_ctx, &in, &ev);
+    tick_direction_safety(TOF_L8_SENSOR_REAR, drive_safety_ready, now,
+                          &events[TOF_L8_SENSOR_REAR]);
+    tick_direction_safety(TOF_L8_SENSOR_FRONT, drive_safety_ready, now,
+                          &events[TOF_L8_SENSOR_FRONT]);
   }
 
   /* 2. Compute final throttle (arbitration per spec §3.5). */
@@ -229,10 +321,15 @@ void BLE_App_Process(void) {
              !BLE_DrivePolicy_ThrottleAllowed((uint8_t)bleCtx.mode,
                                               drive_safety_ready)) {
     throttle_us = neutral;
-  } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE &&
-             RevSafety_IsBraking(s_rev_ctx)) {
-    /* Per-direction clamp: block reverse, let forward through. */
-    if (throttle_us < neutral) throttle_us = neutral;
+  } else if (bleCtx.mode == OPENOTTER_MODE_DRIVE) {
+    for (uint8_t i = 0u; i < (uint8_t)TOF_L8_SENSOR_COUNT; ++i) {
+      TofL8SensorId_t sensor_id = (TofL8SensorId_t)i;
+      if (RevSafety_IsBraking(safety_ctx(sensor_id)) &&
+          DriveSafety_ThrottleBlocked(safety_direction(sensor_id),
+                                      throttle_us, PWM_NEUTRAL_US)) {
+        throttle_us = neutral;
+      }
+    }
   }
 
   if (watchdog_trip) {
@@ -243,12 +340,7 @@ void BLE_App_Process(void) {
   BLE_ApplyPWM(steering_us, throttle_us);
 
   /* 3. Publish safety notifications. */
-  if (ev.transition && ev.seq != s_last_event_seq) {
-    publish_safety_event(&ev);
-    s_last_event_seq = ev.seq;
-  } else if (ev.notify_refresh) {
-    publish_safety_event(&ev);
-  }
+  publish_direction_events(events);
 }
 
 uint32_t BLE_App_GetLastCommandTime(void) { return bleCtx.lastCommandTick; }
@@ -256,6 +348,10 @@ uint32_t BLE_App_GetLastCommandTime(void) { return bleCtx.lastCommandTick; }
 OpenOtterMode_t BLE_App_GetMode(void) { return bleCtx.mode; }
 
 int BLE_App_IsConnected(void) { return bleCtx.isConnected; }
+
+int BLE_App_HandshakePending(void) {
+  return BleConnectionPolicy_HandshakePending(&bleCtx.connection_policy);
+}
 
 /*============================================================================*/
 /*  BLE STACK INITIALIZATION                                                  */
@@ -270,7 +366,7 @@ static void BLE_InitStack(void) {
   SVCCTL_Init();
 }
 
-static void BLE_InitGATTService(void) {
+static int BLE_InitGATTService(void) {
   uint16_t uuid;
   tBleStatus ret;
 
@@ -298,8 +394,8 @@ static void BLE_InitGATTService(void) {
   ret = aci_gatt_add_serv(UUID_TYPE_16, (const uint8_t *)&uuid, PRIMARY_SERVICE,
                           slots, &bleCtx.svcHandle);
   if (ret != BLE_STATUS_SUCCESS) {
-    /* Service creation failed — halt */
-    return;
+    app_log_fmt("BLE_App: add_serv FE40 fail 0x%02X\r\n", (unsigned)ret);
+    return -1;
   }
 
   /*
@@ -317,6 +413,7 @@ static void BLE_InitGATTService(void) {
                           &bleCtx.cmdCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE41 fail 0x%02X\r\n", (unsigned)ret);
+    return -2;
   }
 
   /*
@@ -331,6 +428,7 @@ static void BLE_InitGATTService(void) {
                           0, &bleCtx.statusCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE42 fail 0x%02X\r\n", (unsigned)ret);
+    return -3;
   }
 
   /*
@@ -349,6 +447,7 @@ static void BLE_InitGATTService(void) {
                           &bleCtx.safetyCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE43 fail 0x%02X\r\n", (unsigned)ret);
+    return -4;
   }
 
   /* Seed a SAFE payload so a post-connect read returns sane bytes. */
@@ -373,14 +472,19 @@ static void BLE_InitGATTService(void) {
                           &bleCtx.modeCharHandle);
   if (ret != BLE_STATUS_SUCCESS) {
     app_log_fmt("BLE_App: add_char FE44 fail 0x%02X\r\n", (unsigned)ret);
+    return -5;
   }
   aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
                              &drive);
+  return 0;
 }
 
-static void BLE_StartAdvertising(void) {
-  if (bleCtx.isConnected)
+static void BLE_StartAdvertising(bool healthcheck_reassert) {
+  uint32_t now = HAL_GetTick();
+  if (bleCtx.isConnected) {
+    BleAdvPolicy_OnConnected(&bleCtx.adv);
     return;
+  }
 
   const char ad_name[] = {AD_TYPE_COMPLETE_LOCAL_NAME,
                           'O',
@@ -399,16 +503,94 @@ static void BLE_StartAdvertising(void) {
 
   const uint8_t svc_uuid_list[] = {AD_TYPE_16_BIT_SERV_UUID_CMPLT_LIST,
                                    (uint8_t)(OPENOTTER_CONTROL_SVC_UUID & 0xFF),
-                                   (uint8_t)(OPENOTTER_CONTROL_SVC_UUID >> 8)};
+                                   (uint8_t)(OPENOTTER_CONTROL_SVC_UUID >> 8),
+                                   (uint8_t)(OPENOTTER_TOF_SVC_UUID & 0xFF),
+                                   (uint8_t)(OPENOTTER_TOF_SVC_UUID >> 8)};
 
   tBleStatus ret = aci_gap_set_discoverable(
       ADV_IND, CFG_FAST_CONN_ADV_INTERVAL_MIN, CFG_FAST_CONN_ADV_INTERVAL_MAX,
       PUBLIC_ADDR, NO_WHITE_LIST_USE, sizeof(ad_name), ad_name,
       sizeof(svc_uuid_list), (uint8_t *)svc_uuid_list, 0, 0);
 
+  if (ret == ERR_COMMAND_DISALLOWED) {
+    BleAdvPolicy_OnSuccess(&bleCtx.adv, now);
+    bleCtx.advHeartbeatTick = now + 5000u;
+    app_log_fmt("BLE %s already_active tick=%lu\r\n",
+                healthcheck_reassert ? "adv_refresh" : "adv_start",
+                (unsigned long)now);
+    return;
+  }
+
   if (ret != BLE_STATUS_SUCCESS) {
-    /* Retry via scheduler if the stack wasn't ready yet */
-    SCH_SetTask(CFG_IdleTask_StartAdv);
+    if (healthcheck_reassert) {
+      BleAdvPolicy_OnHealthcheckFailure(&bleCtx.adv, now);
+    } else {
+      BleAdvPolicy_OnFailure(&bleCtx.adv, now);
+    }
+    app_log_fmt("BLE %s fail 0x%02X retry=%lums count=%u\r\n",
+                healthcheck_reassert ? "adv_reassert" : "adv_start",
+                (unsigned)ret,
+                (unsigned long)bleCtx.adv.retry_delay_ms,
+                (unsigned)bleCtx.adv.fail_count);
+    if (!healthcheck_reassert && ret == BLE_STATUS_TIMEOUT) {
+      Firmware_Panic(FW_PANIC_BLE_HCI);
+    }
+    return;
+  }
+
+  BleAdvPolicy_OnSuccess(&bleCtx.adv, now);
+  bleCtx.advHeartbeatTick = now + 5000u;
+  app_log_fmt("BLE %s ok tick=%lu\r\n",
+              healthcheck_reassert ? "adv_reassert" : "adv_start",
+              (unsigned long)now);
+}
+
+static void BLE_RefreshAdvertising(uint32_t now_ms) {
+  tBleStatus stop_ret = aci_gap_set_non_discoverable();
+  if (stop_ret != BLE_STATUS_SUCCESS &&
+      stop_ret != ERR_COMMAND_DISALLOWED) {
+    BleAdvPolicy_OnHealthcheckFailure(&bleCtx.adv, now_ms);
+    app_log_fmt("BLE adv_refresh stop fail 0x%02X retry=%lums count=%u\r\n",
+                (unsigned)stop_ret,
+                (unsigned long)bleCtx.adv.retry_delay_ms,
+                (unsigned)bleCtx.adv.fail_count);
+    return;
+  }
+
+  app_log_fmt("BLE adv_refresh stop %s tick=%lu\r\n",
+              (stop_ret == BLE_STATUS_SUCCESS) ? "ok" : "already_idle",
+              (unsigned long)now_ms);
+  BLE_StartAdvertising(true);
+}
+
+static void BLE_ServiceAdvertising(uint32_t now_ms) {
+  if (BleAdvPolicy_Due(&bleCtx.adv, now_ms, bleCtx.isConnected != 0u)) {
+    BLE_StartAdvertising(false);
+  } else if (BleAdvPolicy_HealthcheckDue(&bleCtx.adv, now_ms,
+                                         bleCtx.isConnected != 0u)) {
+    BLE_RefreshAdvertising(now_ms);
+  } else if (!bleCtx.isConnected && bleCtx.adv.active != 0u &&
+             (int32_t)(now_ms - bleCtx.advHeartbeatTick) >= 0) {
+    app_log_fmt("BLE adv_active tick=%lu\r\n", (unsigned long)now_ms);
+    bleCtx.advHeartbeatTick = now_ms + 5000u;
+  }
+}
+
+static void BLE_ServiceConnectionHandshake(uint32_t now_ms) {
+  if (!BleConnectionPolicy_ShouldTerminate(&bleCtx.connection_policy,
+                                           now_ms)) {
+    return;
+  }
+
+  tBleStatus ret = aci_gap_terminate(bleCtx.connectionHandle,
+                                     ERR_LOCAL_HOST_TERM_CONN);
+  if (ret == BLE_STATUS_SUCCESS) {
+    BleConnectionPolicy_OnTerminateRequested(&bleCtx.connection_policy);
+  }
+  app_log_fmt("BLE handshake timeout terminate handle=0x%04X ret=0x%02X\r\n",
+              (unsigned)bleCtx.connectionHandle, (unsigned)ret);
+  if (ret == BLE_STATUS_TIMEOUT) {
+    Firmware_Panic(FW_PANIC_BLE_HCI);
   }
 }
 
@@ -447,6 +629,7 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
 
           bleCtx.lastCommandTick = HAL_GetTick();
           bleCtx.safetyTriggered = 0;
+          BleConnectionPolicy_OnAppActivity(&bleCtx.connection_policy);
         }
       }
 
@@ -459,6 +642,7 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
               v == OPENOTTER_MODE_PARK) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
+            BleConnectionPolicy_OnAppActivity(&bleCtx.connection_policy);
             app_log_fmt("BLE mode_write prev=%u new=%u\r\n",
                         (unsigned)prev, (unsigned)v);
             if (prev != bleCtx.mode) {
@@ -467,13 +651,13 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
                  * latch from the prior Drive session before the supervisor
                  * starts ticking again. */
                 BLE_Tof_RequestSafetyConfig();
-                RevSafety_Disarm(s_rev_ctx);
+                disarm_all_safety();
                 publish_safe_safety_snapshot();
               } else {
                 /* Drive→(Debug|Park): supervisor is suppressed in both
                  * modes, so disarm once on the edge and broadcast a SAFE
                  * snapshot so the iOS overlay drops immediately. */
-                RevSafety_Disarm(s_rev_ctx);
+                disarm_all_safety();
                 publish_safe_safety_snapshot();
               }
             }
@@ -512,10 +696,12 @@ void SVCCTL_App_Notification(void *pckt) {
                 (unsigned)disc->handle, (unsigned)disc->reason);
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
+    BleAdvPolicy_OnDisconnected(&bleCtx.adv, HAL_GetTick());
+    BleConnectionPolicy_OnDisconnected(&bleCtx.connection_policy);
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
     BLE_Tof_RequestSafetyConfig();
-    RevSafety_Disarm(s_rev_ctx);
+    disarm_all_safety();
     publish_safe_safety_snapshot();
     uint8_t drive = (uint8_t)OPENOTTER_MODE_DRIVE;
     aci_gatt_update_char_value(bleCtx.svcHandle, bleCtx.modeCharHandle, 0, 1,
@@ -533,6 +719,9 @@ void SVCCTL_App_Notification(void *pckt) {
           (evt_le_connection_complete *)meta->data;
       bleCtx.connectionHandle = conn->handle;
       bleCtx.isConnected = 1;
+      BleAdvPolicy_OnConnected(&bleCtx.adv);
+      BleConnectionPolicy_OnConnected(&bleCtx.connection_policy,
+                                      HAL_GetTick());
       bleCtx.lastCommandTick = HAL_GetTick();
       bleCtx.safetyTriggered = 0;
       app_log_fmt("BLE connect handle=0x%04X\r\n", (unsigned)conn->handle);
@@ -577,7 +766,7 @@ static void BLE_HciUserEvtTask(void) { TL_BLE_HCI_UserEvtProc(); }
 
 static void BLE_TlEvtTask(void) { TL_BLE_R_EvtProc(); }
 
-static void BLE_AdvTask(void) { BLE_StartAdvertising(); }
+static void BLE_AdvTask(void) { BLE_ServiceAdvertising(HAL_GetTick()); }
 
 /*============================================================================*/
 /*  RTC & LPM INITIALIZATION (required by BLE middleware)                     */

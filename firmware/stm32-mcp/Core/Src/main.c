@@ -25,8 +25,7 @@
 #include "ble_tof.h"
 #include "stm32l4xx_ll_pwr.h"
 #include "stm32l4xx_ll_rcc.h"
-#include "tof_l1.h"
-#include "tof_l5.h"
+#include "tof_l8.h"
 #include "firmware_watchdog.h"
 #include "firmware_stack_guard.h"
 #include "firmware_panic.h"
@@ -56,6 +55,8 @@ I2C_HandleTypeDef hi2c3;
 
 QSPI_HandleTypeDef hqspi;
 
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
@@ -73,6 +74,7 @@ static void MX_GPIO_Init(void);
 static void MX_DFSDM1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_I2C3_Init(void);
+static void MX_SPI1_Init(void);
 static void MX_QUADSPI_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
@@ -184,6 +186,7 @@ int main(void) {
   MX_DFSDM1_Init();
   MX_I2C2_Init();
   MX_I2C3_Init();
+  MX_SPI1_Init();
   MX_QUADSPI_Init();
   /* SPI3 is owned by the BLE middleware (hw_spi.c) — do NOT init here */
   MX_TIM3_Init();
@@ -195,58 +198,45 @@ int main(void) {
    * exactly why we just rebooted (NRST button, IWDG, software, BOR, etc). */
   boot_log_str("\r\n=== OpenOtter STM32 boot ===\r\n");
   boot_log_reset_cause(s_boot_reset_flags);
+  __HAL_RCC_CLEAR_RESET_FLAGS();
   boot_log_fmt("BOOT phase=peripherals_done tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
-  /* LD1 (PA5) heartbeat LED */
-  {
-    GPIO_InitTypeDef led = {0};
-    led.Pin = GPIO_PIN_5;
-    led.Mode = GPIO_MODE_OUTPUT_PP;
-    led.Pull = GPIO_NOPULL;
-    led.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOA, &led);
-  }
-
   /* Start TIM3 PWM on CH1 (throttle PB4) and CH4 (steering PB1) */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_4);
 
-  /* VL53L1CB stays available for the existing reverse-safety path. VL53L5CX is
-   * initialized lazily from the BLE debug config path so a cold MSP01 power-up
-   * cannot block BLE advertising or the heartbeat LED before the main loop.
+  /* VL53L8CX is initialized lazily from BLE_Tof_Process so the multi-second
+   * sensor firmware download cannot block BLE advertising or the heartbeat LED
+   * before the main loop starts.
    */
-  boot_log_str("BOOT phase=tof_l1_init\r\n");
-  TofL1_Init();
+
+  /* Protect startup too: BLE/BlueNRG bringup is the highest-risk boot path
+   * when VIN is noisy. Start the watchdog after PWM is neutral and before
+   * BLE init so a stuck BLE reset/HCI wait reboots instead of freezing until
+   * the vehicle is power-cycled. */
+  FwStackGuard_Init();
+  FwMpu_Init();
+  FwWatchdog_Init();
+  boot_log_fmt("BOOT phase=watchdog_ready tick=%lu\r\n",
+               (unsigned long)HAL_GetTick());
 
   /* Initialize BLE stack and custom GATT service */
   boot_log_str("BOOT phase=ble_app_init\r\n");
-  BLE_App_Init(&htim3);
+  int ble_init_status = BLE_App_Init(&htim3);
+  if (ble_init_status != 0) {
+    boot_log_fmt("BOOT ble_app_init_failed status=%d\r\n", ble_init_status);
+    Firmware_Panic(FW_PANIC_INIT);
+  }
+  FwWatchdog_Refresh();
 
   /* Register the ToF GATT service (FE60). Must follow BLE_App_Init so the
    * BlueNRG stack and SVCCTL are already up. */
   boot_log_str("BOOT phase=ble_tof_init\r\n");
   BLE_Tof_Init();
+  FwWatchdog_Refresh();
   boot_log_fmt("BOOT phase=services_ready tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
 
-  /* Stamp the stack-bottom sentinel BEFORE the main loop starts pushing
-   * frames. If recursion or a deep call chain ever overwrites it, the
-   * check below catches the corruption before it manifests as something
-   * harder to triage. */
-  FwStackGuard_Init();
-
-  /* Configure the MPU's hardware no-access region immediately below the
-   * stack sentinel. Any push past the configured stack bottom traps as
-   * MemManage on the offending instruction; the sentinel remains readable
-   * for the cheap main-loop backup check below. */
-  FwMpu_Init();
-
-  /* Start the independent watchdog after fast startup init paths have run.
-   * The window is sized to tolerate lazy VL53L5CX boot from the main loop.
-   * From this point on, any main-loop iteration that exceeds the watchdog
-   * window reboots the chip — last-resort recovery from a hung BLE stack,
-   * blocked I²C transaction, or any other stuck-loop bug. */
-  FwWatchdog_Init();
   boot_log_fmt("BOOT phase=main_loop_enter tick=%lu\r\n",
                (unsigned long)HAL_GetTick());
   /* USER CODE END 2 */
@@ -255,20 +245,25 @@ int main(void) {
   /* USER CODE BEGIN WHILE */
   uint32_t loop_iter = 0;
   uint32_t last_loop_log_tick = 0;
+  uint32_t last_loop_led_toggle_tick = 0;
   while (1) {
     /* Refresh the watchdog at the top of every iteration. If we never get
-     * back here (e.g. BLE_App_Process or TofL5_Process spins forever), the
+     * back here (e.g. BLE_App_Process or TofL8_Process spins forever), the
      * IWDG fires after its configured window and resets the chip. */
     FwWatchdog_Refresh();
     loop_iter++;
 
     /* 1 Hz main-loop heartbeat. If the loop ever freezes after a successful
      * boot, the absence of this line in the UART log isolates the freeze to
-     * one of the four Process() calls below (or whatever was running between
+     * one of the Process() calls below (or whatever was running between
      * the last heartbeat and the freeze). Cheap: one HAL_GetTick + one
      * subtract per iteration. */
     {
       uint32_t now_hb = HAL_GetTick();
+      if ((now_hb - last_loop_led_toggle_tick) >= 500u) {
+        HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+        last_loop_led_toggle_tick = now_hb;
+      }
       if ((now_hb - last_loop_log_tick) >= 1000u) {
         boot_log_fmt("LOOP iter=%lu tick=%lu\r\n",
                      (unsigned long)loop_iter, (unsigned long)now_hb);
@@ -285,37 +280,11 @@ int main(void) {
     }
 
     BLE_App_Process();
-    TofL1_Process();
-    TofL5_Process();
+    TofL8_Process();
     /* BLE_Tof_Process is mode-gated: in Drive mode (default) frame
      * notifications are suppressed; in Debug mode they stream normally. */
     BLE_Tof_Process();
 
-    /* Toggle LD1 (PA5) every 500ms to show the board is alive */
-    static uint32_t last_toggle = 0;
-    if (HAL_GetTick() - last_toggle > 500) {
-      HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-      last_toggle = HAL_GetTick();
-    }
-
-    /* Toggle LED2 (PB14) at 1 Hz while VL53L5CX frames are arriving. */
-    static uint32_t last_l5_seq = 0;
-    static uint32_t last_l5_frame_tick = 0;
-    static uint32_t last_l5_led_toggle = 0;
-    uint32_t now = HAL_GetTick();
-    const Tof_Frame_t *l5_frame = TofL5_GetLatestFrame();
-    if (l5_frame && l5_frame->seq != 0u && l5_frame->seq != last_l5_seq) {
-      last_l5_seq = l5_frame->seq;
-      last_l5_frame_tick = now;
-    }
-    if (last_l5_frame_tick != 0u && (now - last_l5_frame_tick) <= 1500u) {
-      if ((now - last_l5_led_toggle) >= 1000u) {
-        HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
-        last_l5_led_toggle = now;
-      }
-    } else {
-      HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -461,7 +430,7 @@ static void MX_I2C2_Init(void) {
 }
 
 /**
- * @brief I2C3 Initialization Function — VL53L1CB on Arduino A4/A5 (PC1/PC0)
+ * @brief I2C3 Initialization Function — SATEL-VL53L8 on Arduino A4/A5 (PC1/PC0)
  * @retval None
  */
 static void MX_I2C3_Init(void) {
@@ -481,6 +450,32 @@ static void MX_I2C3_Init(void) {
     Error_Handler();
   }
   if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK) {
+    Error_Handler();
+  }
+}
+
+/**
+ * @brief SPI1 Initialization Function - SATEL-VL53L8 on Arduino D13/D12/D11.
+ * @retval None
+ */
+static void MX_SPI1_Init(void) {
+  __HAL_RCC_SPI1_CLK_ENABLE();
+
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_HIGH;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 7;
+  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK) {
     Error_Handler();
   }
 }
@@ -885,10 +880,7 @@ static void MX_GPIO_Init(void) {
  */
 void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1) {
-  }
+  Firmware_Panic(FW_PANIC_INIT);
   /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT

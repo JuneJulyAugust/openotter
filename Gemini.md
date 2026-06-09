@@ -24,6 +24,32 @@ The default order is:
 
 Never hide uncertainty. Never silently choose among materially different interpretations. Never solve a problem by adding speculative machinery.
 
+### Host-Bound Commands
+
+Some OpenOtter verification commands need macOS host services or physical USB
+devices and should be run with sandbox escalation immediately, not first tried
+inside the workspace sandbox:
+
+* iOS simulator tests: `bash openotter-ios/build.sh test` or `bash build.sh test`
+  use CoreSimulator services and can fail in the sandbox with
+  `CoreSimulatorService connection became invalid`.
+* iOS device build/deploy: `bash openotter-ios/build.sh --release deploy` uses
+  CoreDevice, signing assets, and the connected iPhone.
+* STM32 hardware-validation runs: firmware build plus flash plus UART log
+  capture should use host approval as one workflow. The pure `./build.sh` compile
+  can run in the worktree sandbox, but board validation immediately crosses into
+  host USB/filesystem access.
+* STM32 UART logging: `firmware/stm32-mcp/scripts/read_uart.py` opens
+  `/dev/cu.usbmodem*` and usually needs host serial-port access.
+* STM32 flashing/deploy: SWD flashing through `STM32_Programmer_CLI` and ST-LINK
+  mass-storage flashing through `/Volumes/DIS_L4IOT` need host USB or
+  filesystem access.
+
+For these commands, request escalation up front with a narrow prefix and a clear
+reason. Do not burn time on the known sandbox failure first. Firmware-specific
+flash and UART details live in
+`firmware/stm32-mcp/docs/dev/13-firmware-deploy-and-uart.md`.
+
 ---
 
 ## 1. Think Before Coding

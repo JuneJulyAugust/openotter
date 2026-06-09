@@ -16,6 +16,9 @@ char Firmware_PanicTag(Firmware_PanicReason_t reason) {
     case FW_PANIC_NMI:         return 'N';
     case FW_PANIC_ASSERT:      return 'A';
     case FW_PANIC_STACK:       return 'S';
+    case FW_PANIC_INIT:        return 'I';
+    case FW_PANIC_BLE_SPI:     return 'P';
+    case FW_PANIC_BLE_HCI:     return 'C';
     case FW_PANIC_NONE:        /* fallthrough */
     default:                   return '?';
   }

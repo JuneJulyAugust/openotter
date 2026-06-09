@@ -103,6 +103,12 @@ uint32_t BLE_App_GetLastCommandTime(void);
 int BLE_App_IsConnected(void);
 
 /**
+ * @brief  Returns true while a BLE link is connected but no app-level
+ *         command/mode write has proven that GATT discovery is complete.
+ */
+int BLE_App_HandshakePending(void);
+
+/**
  * @brief  Query current operating mode (used by ble_tof.c to gate
  *         config writes and frame notifications).
  */

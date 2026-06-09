@@ -85,13 +85,20 @@ static void test_default_timeout_is_in_safe_range(void) {
   expect_in_range("default timeout reload", r, 1u, 4095u);
 }
 
-static void test_default_timeout_covers_l5_boot_i2c_window(void) {
-  /* VL53L5CX firmware download can issue a single blocking I2C transfer with
+static void test_default_timeout_covers_l8_boot_i2c_window(void) {
+  /* VL53L8CX firmware download can issue a single blocking I2C transfer with
    * a 15 s timeout. The watchdog must not reset during that legal operation. */
   expect_in_range("default timeout >= 20 s",
                   FW_WATCHDOG_DEFAULT_TIMEOUT_MS,
                   20000u,
                   32760u);
+}
+
+static void test_default_timeout_covers_ble_hci_timeout(void) {
+  expect_in_range("BLE HCI timeout bounded",
+                  FW_WATCHDOG_BLE_HCI_TIMEOUT_MS,
+                  1000u,
+                  FW_WATCHDOG_DEFAULT_TIMEOUT_MS - 1u);
 }
 
 static void test_round_trip_actual_timeout_close_to_requested(void) {
@@ -118,7 +125,8 @@ int main(void) {
   test_pick_prescaler_handles_short_timeout();
   test_pick_prescaler_returns_zero_when_unrepresentable();
   test_default_timeout_is_in_safe_range();
-  test_default_timeout_covers_l5_boot_i2c_window();
+  test_default_timeout_covers_l8_boot_i2c_window();
+  test_default_timeout_covers_ble_hci_timeout();
   test_round_trip_actual_timeout_close_to_requested();
   if (g_fails == 0) {
     printf("firmware_watchdog tests: OK\n");
