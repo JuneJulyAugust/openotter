@@ -49,10 +49,10 @@ struct STM32DiscoveryPolicy {
         if advertisedName.range(of: "OPENOTTER", options: .caseInsensitive) != nil {
             return "advertised OPENOTTER name"
         }
-        if rememberedPeripheralID == peripheralID.uuidString {
-            return "remembered peripheral"
-        }
         if advertisedServiceUUIDs.contains("FE40") || advertisedServiceUUIDs.contains("FE60") {
+            if rememberedPeripheralID == peripheralID.uuidString {
+                return "remembered peripheral with OpenOtter service"
+            }
             return "advertised OpenOtter service"
         }
         if acceptBlueNRGFallback &&
@@ -88,7 +88,7 @@ struct STM32DiscoveryPolicy {
 
     static func shouldTryRememberedPeripheralOnScanTimeout(hasRememberedPeripheral: Bool,
                                                            status: STM32BleStatus) -> Bool {
-        hasRememberedPeripheral && status == .scanning
+        false
     }
 
     static func shouldUseRememberedPeripheralFastPath() -> Bool {

@@ -38,14 +38,25 @@ final class STM32TofServiceTests: XCTestCase {
             alreadyReasserted: false))
     }
 
-    func testDiscoveryAcceptsRememberedPeripheralWithoutAdvertisedName() {
+    func testDiscoveryRejectsRememberedPeripheralWithoutFreshOpenOtterEvidence() {
+        let id = UUID()
+
+        XCTAssertFalse(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "",
+            peripheralID: id,
+            rememberedPeripheralID: id.uuidString))
+    }
+
+    func testDiscoveryAcceptsRememberedPeripheralWithFreshOpenOtterService() {
         let id = UUID()
 
         XCTAssertTrue(STM32DiscoveryPolicy.isTargetPeripheral(
             cachedName: "BlueNRG",
             advertisedName: "",
             peripheralID: id,
-            rememberedPeripheralID: id.uuidString))
+            rememberedPeripheralID: id.uuidString,
+            advertisedServiceUUIDs: ["FE40"]))
     }
 
     func testDiscoveryRejectsUnnamedUnrememberedPeripheral() {
@@ -118,8 +129,8 @@ final class STM32TofServiceTests: XCTestCase {
             hasRememberedPeripheral: true))
     }
 
-    func testScanTimeoutRetriesRememberedPeripheralOnlyWhileScanning() {
-        XCTAssertTrue(STM32DiscoveryPolicy.shouldTryRememberedPeripheralOnScanTimeout(
+    func testScanTimeoutDoesNotBlindConnectRememberedPeripheral() {
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldTryRememberedPeripheralOnScanTimeout(
             hasRememberedPeripheral: true,
             status: .scanning))
         XCTAssertFalse(STM32DiscoveryPolicy.shouldTryRememberedPeripheralOnScanTimeout(

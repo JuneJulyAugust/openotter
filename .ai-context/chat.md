@@ -18,11 +18,14 @@ firmware policy/liveness, not proof that `OPENOTTER-MCP` is visible over BLE.
 2. **iOS scanner hardening:** STM32 Control avoids blind stale remembered
    peripheral reconnects after reset and waits for a fresh OpenOtter
    advertisement, while keeping the rolling BLE trace and host console logs.
-3. **Validation:** Firmware host tests, target build, flash, iOS tests, and iOS
+3. **Engineering invariant tests:** `STM32TofServiceTests` now reject remembered
+   CoreBluetooth UUID matches without fresh OpenOtter name or FE40/FE60 service
+   evidence, and verify scan timeouts do not trigger blind remembered reconnects.
+4. **Validation:** Firmware host tests, target build, flash, iOS tests, and iOS
    deploy passed. A Mac BLE scan saw `OPENOTTER-MCP` with FE40/FE60. User
    confirmed the iOS STM32 Control view connected, and UART showed FE62 pushes
    with `fail=0`.
-4. **Final E2E:** User completed end-to-end testing after the fix and reported
+5. **Final E2E:** User completed end-to-end testing after the fix and reported
    the one-rear-SATEL app/firmware flow working well.
 
 ### Prompt Context For Next Session
@@ -30,8 +33,10 @@ firmware policy/liveness, not proof that `OPENOTTER-MCP` is visible over BLE.
 visibility. `BLE adv_active` plus VL53L8 frames means firmware is alive;
 `BLE adv_refresh stop ok` / `BLE adv_reassert ok` plus an external scan seeing
 `OPENOTTER-MCP` FE40/FE60 proves advertising is visible. The iOS STM32 Control
-reset smoke test and final user E2E validation passed on 2026-06-09; remaining
-gate is PR CI/final release hygiene, then merge/tag."
+reset smoke test and final user E2E validation passed on 2026-06-09. Do not
+match a remembered CoreBluetooth UUID unless the latest advertisement also has
+OpenOtter name or FE40/FE60 service evidence; remaining gate is PR CI/final
+release hygiene, then merge/tag."
 
 ---
 
