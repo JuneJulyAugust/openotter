@@ -37,6 +37,20 @@ Use the build script from the `openotter-ios` directory:
 ./build.sh --release deploy
 ```
 
+If `./build.sh --release deploy` says the iPhone is `unavailable`, the Release
+app was built but not installed. Unlock the phone, keep it awake, confirm the
+Mac trust prompt if iOS shows one, reconnect USB if available, then rerun:
+
+```bash
+xcrun devicectl list devices
+./build.sh --release deploy
+```
+
+Do not use STM32 BLE screenshots from the phone until the latest app is
+installed. The current STM32 Control debug box includes numbered BLE trace
+entries such as `#12 scan...`; screenshots without numbered entries are from an
+older app build.
+
 ### Worktree Mode
 
 If the active feature branch lives in a git worktree while the repo root stays

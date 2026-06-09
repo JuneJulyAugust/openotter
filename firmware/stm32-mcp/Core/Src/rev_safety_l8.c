@@ -20,21 +20,25 @@
  * rejected every normal status=5 frame and tripped REV_SAFETY_CAUSE_TOF_BLIND
  * after `tof_blind_frames` clean reads, producing a spurious rear emergency
  * brake whenever the sensor was actually working.
+ *
+ * Bench testing showed the VL53L8CX becomes unstable near its 4 m published
+ * range limit. The safety supervisor therefore only trusts measured depths
+ * up to REV_SAFETY_L8_TRUSTED_MAX_MM. Valid-status values beyond that cap are
+ * treated as capped clearance; non-valid statuses remain degraded live data
+ * even if they carry a plausible close or far distance.
  */
-#define REV_SAFETY_L8_CLEAR_MIN_MM 4000u
 
-static int zone_is_valid(const Tof_Zone_t *zone) {
-  return zone && zone->range_mm > 0u && TofL8_StatusIsRangeValid(zone->status);
+static int zone_has_trusted_range(const Tof_Zone_t *zone) {
+  return zone &&
+         zone->range_mm > 0u &&
+         zone->range_mm <= REV_SAFETY_L8_TRUSTED_MAX_MM &&
+         TofL8_StatusIsRangeValid(zone->status);
 }
 
-static int zone_is_clear(const Tof_Zone_t *zone) {
-  if (!zone) return 0;
-  if (zone->range_mm == 0u && zone->flags == 0u) return 1;
-  return zone->status == 2u && zone->range_mm >= REV_SAFETY_L8_CLEAR_MIN_MM;
-}
-
-static int zone_is_near_invalid(const Tof_Zone_t *zone) {
-  return zone && !zone_is_valid(zone) && !zone_is_clear(zone);
+static int zone_is_far_clear(const Tof_Zone_t *zone) {
+  return zone &&
+         zone->range_mm > REV_SAFETY_L8_TRUSTED_MAX_MM &&
+         TofL8_StatusIsRangeValid(zone->status);
 }
 
 RevSafetyTofReading_t RevSafetyL8_SelectReverseReading(const Tof_Frame_t *frame) {
@@ -50,28 +54,24 @@ RevSafetyTofReading_t RevSafetyL8_SelectReverseReading(const Tof_Frame_t *frame)
   const Tof_Zone_t *b = &frame->zones[REV_SAFETY_L8_ZONE_ROW3_COL3];
   uint16_t min_mm = 0u;
 
-  if (zone_is_valid(a)) min_mm = a->range_mm;
-  if (zone_is_valid(b) && (min_mm == 0u || b->range_mm < min_mm)) {
+  if (zone_has_trusted_range(a)) min_mm = a->range_mm;
+  if (zone_has_trusted_range(b) && (min_mm == 0u || b->range_mm < min_mm)) {
     min_mm = b->range_mm;
   }
 
   if (min_mm > 0u) {
     out.tof_class = REV_SAFETY_TOF_VALID;
     out.depth_m = (float)min_mm / 1000.0f;
-  } else if (zone_is_clear(a) && zone_is_clear(b)) {
-    /* Both selected zones confirmed no near target — safe to report CLEAR
-     * and let the supervisor smoothe its depth toward the synthetic 4 m
-     * value. */
+  } else if (zone_is_far_clear(a) && zone_is_far_clear(b)) {
+    /* Both selected zones produced valid-status ranges, but only beyond the
+     * trusted safety band. Report capped clearance rather than feeding the
+     * unstable far values into the EMA. */
     out.tof_class = REV_SAFETY_TOF_CLEAR;
-    out.depth_m = REV_SAFETY_TOF_CLEAR_DEPTH_M;
-  } else if ((zone_is_clear(a) || zone_is_clear(b)) &&
-             (zone_is_near_invalid(a) || zone_is_near_invalid(b))) {
-    /* Mixed: one zone is solidly clear, the other saw a target but could
-     * not measure phase (status 2 with flags > 0, or any non-whitelisted
-     * status with non-zero range). Do NOT report CLEAR — the uncertain
-     * zone may be observing a real obstacle the supervisor must not
-     * average away. Do NOT report INVALID either, or the blind-frame
-     * counter would trip TOF_BLIND on benign single-zone flicker. */
+    out.depth_m = REV_SAFETY_L8_CLEAR_DEPTH_M;
+  } else {
+    /* The frame is alive, but the selected safety zones did not produce a
+     * trusted distance. Treat it as degraded live data: hold the previous
+     * supervisor depth and let driver-dead/frame-gap catch true sensor loss. */
     out.tof_class = REV_SAFETY_TOF_PARTIAL;
   }
   return out;

@@ -14,17 +14,26 @@ All notable changes to this project will be documented in this file.
 - **One-sensor SPI bench evidence**: Documented successful rear SATEL-VL53L8 SPI1 validation after a power-off I2C-to-SPI wiring change, cold boot, firmware auto-probe, and iOS depth-map rendering.
 - **H12Y mechanical integration visuals**: Added photo-based front/rear SATEL case placement, harness routing, and bench-to-car wiring transition renders for the MJX H12Y deployment.
 - **Case internal assembly diagrams**: Added full-SATEL and snap-off mini-PCB cutaway visuals showing PCB retention, pigtail routing, strain relief, case-side connector/interposer placement, and harness load paths.
+- **v1.2.0 validation and bug log**: Documented the final one-rear-SATEL E2E validation state and the resolved SATEL wiring, startup, BLE, iOS safety, and VL53L8 far-range safety bugs.
+- **BLE app-handshake policy tests**: Added host coverage for stale BLE connections that never send app-control traffic after connecting.
 
 ### Changed
 - **VL53L8 runtime driver**: Refactored the single VL53L8 runtime into rear/front slots. Rear probes I2C3 first, then SPI1 with D8 `NCS`; front probes SPI1 with D10 `NCS`.
 - **Drive throttle arbitration**: Drive mode now clamps reverse throttle only when the rear safety context is braking, and clamps forward throttle only when the front safety context is braking.
 - **ToF debug frame selection**: FE62 now streams the selected rear or front VL53L8 slot instead of always using the default available slot.
+- **VL53L8 safety range policy**: Drive-mode safety now trusts only valid-status VL53L8 center-zone depths up to `3.8 m`; valid farther readings become capped clearance, while non-valid statuses such as `2`, `4`, or `255` are treated as degraded live data that holds the previous filter value instead of feeding the EMA or `TOF_BLIND`.
 - **v1.2.0 validation scope**: The release candidate is scoped to one physically verified rear SATEL-VL53L8. Shared-SPI front/rear support remains code-ready and host-tested, but physical second-sensor validation is deferred until another SATEL board is available.
 - **Startup heartbeat semantics**: LD2/PB14 is now a true main-loop heartbeat. ToF frame health remains available through FE63, the STM32 diagnostic UI, and UART ToF logs.
 
 ### Fixed
 - **VIN startup recovery**: Hardened noisy RC-battery startup by starting the independent watchdog before BLE bringup, bounding the BlueNRG reset and HCI wait paths, fail-closing required GATT service registration, and panic-resetting on fatal init (`PANIC:I`) or BlueNRG SPI busy lockup (`PANIC:P`) instead of freezing until a full vehicle power cycle.
 - **BLE advertising startup/reconnect**: Moved advertising start out of blocking boot init and into a main-loop retry policy with 100 ms initial delay, 1-5 s backoff, `BLE adv_start` UART logs, and a shorter 3 s HCI command timeout so a failed advertising command no longer makes LD2 and app reconnects appear dead for 10-15 s.
+- **BLE reset discovery diagnostics**: Advertising now includes both FE40 control and FE60 ToF service UUIDs, emits a passive `BLE adv_active` UART heartbeat while disconnected, and treats a BlueNRG HCI timeout during advertising start as `PANIC:C` instead of silently leaving the iOS app in `Scanning`.
+- **BLE advertising visibility after reset**: A disconnected STM32 now refreshes BlueNRG discoverable state from the main loop every 15 s, logging `BLE adv_refresh stop ok` / `BLE adv_reassert ok`, so the board can recover when firmware believes advertising is active but phones no longer see `OPENOTTER-MCP`.
+- **BLE debug reconnect during STM32 reset**: FE61 VL53L8 debug-config writes are now queued in the BLE event callback and applied only from `BLE_Tof_Process()`, after the boot grace and current mode checks. This prevents an already-open iOS STM32 debug view or Self Driving session from forcing multi-second VL53L8 init/config work inside the BlueNRG event path immediately after reset.
+- **BLE handshake window during STM32 reset**: Safety ToF init/config now defers while a fresh BLE connection has not yet completed the FE41/FE44 app-control handshake. This prevents the multi-second VL53L8 probe/firmware-download path from starving iOS GATT discovery when the STM32 is reset while STM32 Control is open.
+- **Stale BLE connection recovery**: A connected central must send app-control traffic (`FE44` mode or `FE41` command) within the boot/reconnect handshake window. If not, firmware requests a local disconnect so advertising can resume; if the BlueNRG HCI command path itself times out, firmware panic-resets with tag `PANIC:C` instead of staying in the misleading state where FE63 says rear ToF is running but FE62 debug frames never arrive.
+- **VL53L8 far-range false rear stop**: Fixed the field case where objects beyond about 4 m produced non-OK selected-zone statuses with plausible 500-700 mm raw ranges, causing reverse motion to stay stopped. The safety selector now treats those frames as degraded live data instead of close obstacles or blind-frame evidence.
 
 ## [1.2.0] - 2026-06-02
 

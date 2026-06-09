@@ -1,5 +1,7 @@
 #include "ble_tof_debug.h"
 
+#include <string.h>
+
 int BLE_TofDebugRole_IsValid(uint8_t role)
 {
   return role == BLE_TOF_DEBUG_ROLE_REAR ||
@@ -48,4 +50,60 @@ uint8_t BLE_TofDebugStatusPad_AvailableMask(uint8_t pad)
 {
   return (uint8_t)((pad >> BLE_TOF_DEBUG_STATUS_AVAILABLE_SHIFT) &
                    BLE_TOF_DEBUG_AVAILABLE_MASK);
+}
+
+void BLE_TofDebugConfigQueue_Init(BLE_TofDebugConfigQueue_t *queue)
+{
+  if (!queue) return;
+  memset(queue, 0, sizeof(*queue));
+}
+
+int BLE_TofDebugConfigQueue_HasPending(
+    const BLE_TofDebugConfigQueue_t *queue)
+{
+  return queue && queue->pending;
+}
+
+void BLE_TofDebugConfigQueue_Clear(BLE_TofDebugConfigQueue_t *queue)
+{
+  if (!queue) return;
+  queue->pending = 0u;
+  queue->len = 0u;
+}
+
+int BLE_TofDebugConfigQueue_Push(BLE_TofDebugConfigQueue_t *queue,
+                                 const uint8_t *data,
+                                 uint16_t len)
+{
+  if (!queue) {
+    return -1;
+  }
+
+  if (!data ||
+      len < BLE_TOF_DEBUG_CONFIG_PREFIX_SIZE ||
+      len > BLE_TOF_DEBUG_CONFIG_PAYLOAD_SIZE) {
+    BLE_TofDebugConfigQueue_Clear(queue);
+    return -1;
+  }
+
+  memcpy(queue->data, data, len);
+  queue->len = len;
+  queue->pending = 1u;
+  return 0;
+}
+
+int BLE_TofDebugConfigQueue_Pop(BLE_TofDebugConfigQueue_t *queue,
+                                uint8_t *out,
+                                uint16_t out_capacity,
+                                uint16_t *out_len)
+{
+  if (!queue || !out || !out_len || !queue->pending ||
+      out_capacity < queue->len) {
+    return -1;
+  }
+
+  memcpy(out, queue->data, queue->len);
+  *out_len = queue->len;
+  BLE_TofDebugConfigQueue_Clear(queue);
+  return 0;
 }

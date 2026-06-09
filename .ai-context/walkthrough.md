@@ -32,6 +32,35 @@ Add entries only after real coding, integration, or testing work reveals valuabl
 
 ## Entries
 
+### 2026-06-09 - STM32 Reset Advertisement Visibility Fix
+
+- **Context:** STM32 Control could remain in `Scanning` after board reset even though LD2 blinked, VL53L8 frames were live on UART, and firmware printed `BLE adv_active`.
+- **What we built/tested:** Added a disconnected advertising health check that refreshes BlueNRG discoverable state from the main loop every 15 s, disabled the iOS blind remembered-peripheral fast path, and expanded STM32 Control BLE trace/console logging.
+- **Issue observed:** `BLE adv_active` proved firmware liveness but not over-the-air visibility; before the refresh, iOS and a Mac scanner could both miss `OPENOTTER-MCP` even while firmware believed advertising was active.
+- **Root cause:** BlueNRG could enter a half-stale state after reset/reconnect where the host-side policy thought advertising was active, but the advertisement was not reliably visible to scanners.
+- **Resolution:** Firmware now logs `BLE adv_refresh stop ok` and `BLE adv_reassert ok` while disconnected, treating `ERR_COMMAND_DISALLOWED` from discoverable as already-active instead of fatal. iOS waits for a fresh advertisement and records the scanner path.
+- **Validation:** Firmware host tests, STM32 target build, iOS tests, iOS deploy, firmware flash, and Mac BLE scan passed. Mac scan saw `OPENOTTER-MCP` FE40/FE60; the user confirmed the iOS STM32 Control view connected; UART showed `BLE mode_write prev=0 new=1`, `VL53L8 rear stream start`, and `L8 dbg: ... push=... fail=0`.
+- **Follow-up:** Run PR CI/final smoke checks before merge/tag. If serial monitoring later prints `Device not configured`, treat that as the Mac ST-LINK VCP disappearing, not as proof the BLE link failed.
+
+### 2026-06-08 - STM32 BLE Reset/Reconnect Boot Protection
+
+- **Context:** User observed a plausible crash/stall path when STM32 was reset or power-cycled while the iOS STM32 debug view or Self Driving mode stayed open and tried to reconnect immediately.
+- **What we built/tested:** Moved FE61 debug-config application out of the BlueNRG attribute-write callback. Added a BLE app-handshake policy: a newly connected central must write FE44 mode or FE41 command within 10 s, otherwise firmware requests a local disconnect; if BlueNRG HCI times out, firmware panic-resets with `PANIC:C`. iOS STM32 Control now waits for FE41+FE44 before showing connected, reasserts Debug+FE61 once per fresh connection, and keeps reconnect visible while connected.
+- **Root cause:** Two reset/reconnect failures overlapped. First, a reconnecting app could replay Debug/FE61 quickly enough to run VL53L8 init/config inside a BLE callback. Second, iOS could show FE63 `online/running` while FE62 stayed empty because the central occupied the only BlueNRG link without completing FE44 Debug/FE61 config. In that stale-link state `aci_gap_terminate` could return `0xFF`, proving the HCI command path itself was wedged.
+- **Resolution:** FE61 is now a lightweight enqueue in `BLE_Tof_EventHandler()`. `BLE_Tof_Process()` owns debug config, safety config, status publication, and sensor-frame streaming. Stale no-handshake BLE links are disconnected or rebooted through `PANIC:C`; app reconnect replays Debug/config once the required characteristics exist.
+- **Validation:** Added `test_ble_tof_debug` queue coverage, `test_ble_connection_policy`, `test_firmware_panic` coverage for `PANIC:C`, and iOS reconnect policy tests. Full firmware host suite, STM32 Debug/Release builds, iOS simulator suite (213 tests), iOS Release build, and Release firmware flashed through `/Volumes/DIS_L4IOT` passed. UART after flash showed rear SPI VL53L8 4x4 frames at about 30-32 Hz.
+- **Follow-up:** User should run one final reset-with-iOS-open smoke test on the phone before tagging: leave STM32 Control or Self Driving open, reset STM32, confirm the app reconnects and rear FE62 frames resume.
+
+### 2026-06-08 - VL53L8 Range-Trust Fix And E2E Validation
+
+- **Context:** Final v1.2.0 consolidation with one rear SATEL-VL53L8, iPhone forward LiDAR safety, STM32 rear ToF safety, and RC car hardware E2E testing.
+- **What we built/tested:** Added a central validation and resolved-bug log, updated firmware/iOS design docs, changelogs, and `.ai-context` to capture the final one-rear-SATEL release state.
+- **Issue observed:** When reversing with objects beyond about 4 m, the VL53L8 selected row-3 center cells could show non-OK statuses with plausible 500-700 mm raw ranges, causing a false reverse stop. Earlier consolidation also found forward LiDAR BRAKE latch persistence through Park/Reverse and STM32 startup stalls on noisy VIN power.
+- **Root cause:** VL53L8 raw range fields are not reliable safety distances unless target status is valid. The selected-zone invalid frames were live sensor data, not sensor blindness. Separately, the iOS planner's first zero-ramp tick hid reverse intent, FE43 sequence fencing was reset across safe modes, and startup could block in BlueNRG/HCI paths.
+- **Resolution:** v1.2.0 safety now trusts only VL53L8 statuses `5`, `6`, `9`, and `10` through `3.8 m`; valid far readings become capped clearance; non-OK selected-zone readings become `PARTIAL` and do not feed the EMA or `TOF_BLIND`. iOS debug classification mirrors firmware. The iOS latch and firmware startup fixes remain part of the same release.
+- **Validation:** Firmware host tests passed, STM32 Debug and Release builds passed, iOS simulator tests passed with 211 tests and 0 failures, and user hardware E2E testing went well after the final range-trust fix.
+- **Follow-up:** Rerun PR CI/final smoke checks, then merge/tag `ios-v1.2.0` and `stm32-mcp-v1.2.0` if accepted. Physical front/two-SATEL validation remains pending.
+
 ### 2026-06-07 - iOS Safety Latch Consolidation
 
 - **Context:** v1.2.0 end-to-end validation with one rear SATEL-VL53L8, iPhone forward LiDAR safety, Telegram Park/Reverse commands, and STM32 rear safety events.

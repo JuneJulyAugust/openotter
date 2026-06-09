@@ -79,10 +79,13 @@ auto_detect_device() {
 
     devices=$(printf '%s\n' "$devices_output" | awk '
         /[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}/ &&
-        /available|connected/ {
+        $0 !~ /^[-[:space:]]*$/ {
             for (i = 1; i <= NF; i++) {
                 if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
-                    print $i
+                    state = $(i + 1)
+                    if (state == "available" || state == "connected") {
+                        print $i
+                    }
                 }
             }
         }

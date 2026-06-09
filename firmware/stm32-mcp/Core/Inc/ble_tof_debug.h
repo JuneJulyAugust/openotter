@@ -22,6 +22,12 @@ extern "C" {
 #define BLE_TOF_DEBUG_CONFIG_PREFIX_SIZE   ((uint16_t)sizeof(Tof_Config_t))
 #define BLE_TOF_DEBUG_CONFIG_PAYLOAD_SIZE  (BLE_TOF_DEBUG_CONFIG_PREFIX_SIZE + 1u)
 
+typedef struct {
+  uint8_t pending;
+  uint16_t len;
+  uint8_t data[BLE_TOF_DEBUG_CONFIG_PAYLOAD_SIZE];
+} BLE_TofDebugConfigQueue_t;
+
 int BLE_TofDebugRole_IsValid(uint8_t role);
 int BLE_TofDebugRoleFromConfigPayload(const uint8_t *data,
                                       uint16_t len,
@@ -29,6 +35,17 @@ int BLE_TofDebugRoleFromConfigPayload(const uint8_t *data,
 uint8_t BLE_TofDebugStatusPad(uint8_t selected_role, uint8_t available_mask);
 uint8_t BLE_TofDebugStatusPad_SelectedRole(uint8_t pad);
 uint8_t BLE_TofDebugStatusPad_AvailableMask(uint8_t pad);
+void BLE_TofDebugConfigQueue_Init(BLE_TofDebugConfigQueue_t *queue);
+int BLE_TofDebugConfigQueue_HasPending(
+    const BLE_TofDebugConfigQueue_t *queue);
+void BLE_TofDebugConfigQueue_Clear(BLE_TofDebugConfigQueue_t *queue);
+int BLE_TofDebugConfigQueue_Push(BLE_TofDebugConfigQueue_t *queue,
+                                 const uint8_t *data,
+                                 uint16_t len);
+int BLE_TofDebugConfigQueue_Pop(BLE_TofDebugConfigQueue_t *queue,
+                                uint8_t *out,
+                                uint16_t out_capacity,
+                                uint16_t *out_len);
 
 #ifdef __cplusplus
 }

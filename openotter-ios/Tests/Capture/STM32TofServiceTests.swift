@@ -1,5 +1,6 @@
 import XCTest
 import Combine
+import CoreBluetooth
 @testable import openotter
 
 final class STM32TofServiceTests: XCTestCase {
@@ -13,6 +14,173 @@ final class STM32TofServiceTests: XCTestCase {
     func testDriveAndParkDoNotRefreshTofConfig() {
         XCTAssertFalse(STM32ControlViewModel.shouldRefreshTofConfig(afterModeChangeTo: .drive))
         XCTAssertFalse(STM32ControlViewModel.shouldRefreshTofConfig(afterModeChangeTo: .park))
+    }
+
+    func testConnectedDebugViewReassertsDebugOncePerConnection() {
+        XCTAssertTrue(STM32ControlViewModel.shouldReassertDebugOnConnection(
+            status: .connected,
+            firmwareMode: .debug,
+            alreadyReasserted: false))
+        XCTAssertFalse(STM32ControlViewModel.shouldReassertDebugOnConnection(
+            status: .connected,
+            firmwareMode: .debug,
+            alreadyReasserted: true))
+    }
+
+    func testNonDebugOrDisconnectedStateDoesNotReassertDebug() {
+        XCTAssertFalse(STM32ControlViewModel.shouldReassertDebugOnConnection(
+            status: .connected,
+            firmwareMode: .drive,
+            alreadyReasserted: false))
+        XCTAssertFalse(STM32ControlViewModel.shouldReassertDebugOnConnection(
+            status: .scanning,
+            firmwareMode: .debug,
+            alreadyReasserted: false))
+    }
+
+    func testDiscoveryAcceptsRememberedPeripheralWithoutAdvertisedName() {
+        let id = UUID()
+
+        XCTAssertTrue(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "",
+            peripheralID: id,
+            rememberedPeripheralID: id.uuidString))
+    }
+
+    func testDiscoveryRejectsUnnamedUnrememberedPeripheral() {
+        XCTAssertFalse(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "",
+            peripheralID: UUID(),
+            rememberedPeripheralID: nil))
+    }
+
+    func testDiscoveryAcceptsAdvertisedOpenOtterServiceUUID() {
+        XCTAssertTrue(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "",
+            peripheralID: UUID(),
+            rememberedPeripheralID: nil,
+            advertisedServiceUUIDs: ["FE60"]))
+    }
+
+    func testDiscoveryAcceptsBlueNRGOnlyDuringManualFallback() {
+        let id = UUID()
+
+        XCTAssertFalse(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "",
+            peripheralID: id,
+            rememberedPeripheralID: nil,
+            acceptBlueNRGFallback: false))
+        XCTAssertTrue(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "",
+            peripheralID: id,
+            rememberedPeripheralID: nil,
+            acceptBlueNRGFallback: true))
+    }
+
+    func testDiscoveryAcceptsAdvertisedOpenOtterName() {
+        XCTAssertTrue(STM32DiscoveryPolicy.isTargetPeripheral(
+            cachedName: "BlueNRG",
+            advertisedName: "OPENOTTER-MCP",
+            peripheralID: UUID(),
+            rememberedPeripheralID: nil))
+    }
+
+    func testRefreshScanUsesDuplicateAdvertisements() {
+        XCTAssertFalse(STM32DiscoveryPolicy.scanOptions(allowDuplicates: false).values.contains { value in
+            (value as? Bool) == true
+        })
+        XCTAssertEqual(
+            STM32DiscoveryPolicy.scanOptions(allowDuplicates: true)[CBCentralManagerScanOptionAllowDuplicatesKey] as? Bool,
+            true)
+    }
+
+    func testManualRefreshUsesFreshCentral() {
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldResetCentralForManualReconnect())
+    }
+
+    func testRepeatedScanTimeoutUsesFreshCentral() {
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldResetCentralAfterScanTimeout(
+            scanAttemptCount: 1,
+            hasRememberedPeripheral: false))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldResetCentralAfterScanTimeout(
+            scanAttemptCount: 2,
+            hasRememberedPeripheral: false))
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldResetCentralAfterScanTimeout(
+            scanAttemptCount: 3,
+            hasRememberedPeripheral: false))
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldResetCentralAfterScanTimeout(
+            scanAttemptCount: 1,
+            hasRememberedPeripheral: true))
+    }
+
+    func testScanTimeoutRetriesRememberedPeripheralOnlyWhileScanning() {
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldTryRememberedPeripheralOnScanTimeout(
+            hasRememberedPeripheral: true,
+            status: .scanning))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldTryRememberedPeripheralOnScanTimeout(
+            hasRememberedPeripheral: false,
+            status: .scanning))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldTryRememberedPeripheralOnScanTimeout(
+            hasRememberedPeripheral: true,
+            status: .connected))
+    }
+
+    func testRememberedPeripheralFastPathIsDisabledAfterResetHardening() {
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldUseRememberedPeripheralFastPath())
+    }
+
+    func testConnectionTimeoutForRememberedPeripheralForgetsStaleID() {
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterConnectionTimeout(
+            timedOutPeripheralID: "2D5EB700-0000-0000-0000-000000000000",
+            rememberedPeripheralID: "2D5EB700-0000-0000-0000-000000000000"))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterConnectionTimeout(
+            timedOutPeripheralID: "2D5EB700-0000-0000-0000-000000000000",
+            rememberedPeripheralID: "B0812F63-0000-0000-0000-000000000000"))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterConnectionTimeout(
+            timedOutPeripheralID: nil,
+            rememberedPeripheralID: "2D5EB700-0000-0000-0000-000000000000"))
+    }
+
+    func testUnexpectedDisconnectTimeoutForgetsRememberedPeripheral() {
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterDisconnect(
+            errorDescription: "Error Domain=CBErrorDomain Code=6 \"The connection has timed out unexpectedly.\""))
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterDisconnect(
+            errorDescription: "The connection has timed out unexpectedly."))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterDisconnect(
+            errorDescription: nil))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldForgetRememberedPeripheralAfterDisconnect(
+            errorDescription: "Error Domain=CBErrorDomain Code=7 \"Peripheral disconnected\""))
+    }
+
+    func testCoreBluetoothCallbackGuardsRejectStaleObjects() {
+        XCTAssertTrue(STM32DiscoveryPolicy.shouldAcceptCoreBluetoothCallback(isCurrentObject: true))
+        XCTAssertFalse(STM32DiscoveryPolicy.shouldAcceptCoreBluetoothCallback(isCurrentObject: false))
+    }
+
+    func testBleDebugTraceKeepsRecentEvents() {
+        var trace = STM32BleDebugTrace(limit: 3)
+
+        XCTAssertEqual(trace.append("scan 1"), "scan 1")
+        _ = trace.append("ignored MacBook")
+        _ = trace.append("scan timeout")
+        let text = trace.append("connect remembered")
+
+        XCTAssertFalse(text.contains("scan 1"))
+        XCTAssertTrue(text.contains("ignored MacBook"))
+        XCTAssertTrue(text.contains("scan timeout"))
+        XCTAssertTrue(text.contains("connect remembered"))
+    }
+
+    func testBleConsoleLogPolicyThrottlesIgnoredAdvertisementsOnly() {
+        XCTAssertFalse(STM32BleConsoleLogPolicy.shouldLog(event: "ignored advertisement", sequence: 9))
+        XCTAssertTrue(STM32BleConsoleLogPolicy.shouldLog(event: "ignored advertisement", sequence: 10))
+        XCTAssertTrue(STM32BleConsoleLogPolicy.shouldLog(event: "matched advertisement", sequence: 11))
+        XCTAssertTrue(STM32BleConsoleLogPolicy.shouldLog(event: "connect timeout", sequence: 12))
     }
 
     func testVL53L8CXConfigEncodesFE61V2() {
@@ -105,15 +273,101 @@ final class STM32TofServiceTests: XCTestCase {
         XCTAssertTrue(service.debugStreamingEnabledForTesting)
     }
 
-    func testVL53L8CXFarStatus2ClassifiesAsClear() {
+    func testTofConfigWaitsForBothNotificationAcks() {
+        XCTAssertFalse(STM32TofStreamStartupPolicy.canWriteConfig(
+            debugStreamingEnabled: true,
+            hasPeripheral: true,
+            hasConfigCharacteristic: true,
+            frameNotificationsEnabled: false,
+            statusNotificationsEnabled: true))
+        XCTAssertFalse(STM32TofStreamStartupPolicy.canWriteConfig(
+            debugStreamingEnabled: true,
+            hasPeripheral: true,
+            hasConfigCharacteristic: true,
+            frameNotificationsEnabled: true,
+            statusNotificationsEnabled: false))
+        XCTAssertTrue(STM32TofStreamStartupPolicy.canWriteConfig(
+            debugStreamingEnabled: true,
+            hasPeripheral: true,
+            hasConfigCharacteristic: true,
+            frameNotificationsEnabled: true,
+            statusNotificationsEnabled: true))
+    }
+
+    func testTofStartupDoesNotWriteConfigOutsideDebug() {
+        XCTAssertFalse(STM32TofStreamStartupPolicy.canWriteConfig(
+            debugStreamingEnabled: false,
+            hasPeripheral: true,
+            hasConfigCharacteristic: true,
+            frameNotificationsEnabled: true,
+            statusNotificationsEnabled: true))
+    }
+
+    func testTofStartupForcesReconnectWhenNotifyAckNeverArrives() {
+        XCTAssertTrue(STM32TofStreamStartupPolicy.shouldForceReconnect(
+            debugStreamingEnabled: true,
+            attached: true,
+            frameNotificationsEnabled: false,
+            statusNotificationsEnabled: true,
+            chunksAtActivation: 0,
+            chunksNow: 0,
+            statusAtActivation: 0,
+            statusNow: 0,
+            elapsedSeconds: STM32TofStreamStartupPolicy.notifyAckGraceSeconds + 0.1))
+    }
+
+    func testTofStartupForcesReconnectWhenStreamIsSilentAfterGrace() {
+        XCTAssertTrue(STM32TofStreamStartupPolicy.shouldForceReconnect(
+            debugStreamingEnabled: true,
+            attached: true,
+            frameNotificationsEnabled: true,
+            statusNotificationsEnabled: true,
+            chunksAtActivation: 4,
+            chunksNow: 4,
+            statusAtActivation: 1,
+            statusNow: 1,
+            elapsedSeconds: STM32TofStreamStartupPolicy.streamTrafficGraceSeconds + 0.1))
+    }
+
+    func testTofStartupKeepsConnectionWhenTrafficArrives() {
+        XCTAssertFalse(STM32TofStreamStartupPolicy.shouldForceReconnect(
+            debugStreamingEnabled: true,
+            attached: true,
+            frameNotificationsEnabled: true,
+            statusNotificationsEnabled: true,
+            chunksAtActivation: 4,
+            chunksNow: 5,
+            statusAtActivation: 1,
+            statusNow: 1,
+            elapsedSeconds: STM32TofStreamStartupPolicy.streamTrafficGraceSeconds + 0.1))
+        XCTAssertFalse(STM32TofStreamStartupPolicy.shouldForceReconnect(
+            debugStreamingEnabled: true,
+            attached: true,
+            frameNotificationsEnabled: true,
+            statusNotificationsEnabled: true,
+            chunksAtActivation: 4,
+            chunksNow: 4,
+            statusAtActivation: 1,
+            statusNow: 2,
+            elapsedSeconds: STM32TofStreamStartupPolicy.streamTrafficGraceSeconds + 0.1))
+    }
+
+    func testVL53L8CXValidFarRangeClassifiesAsClear() {
+        XCTAssertEqual(ZoneReading(rangeMm: 4300,
+                                   status: VL53L1RangeStatus(raw: 5),
+                                   flags: 1).vl53l8cxClass,
+                       .clear)
+    }
+
+    func testVL53L8CXNonOkFarRangeStaysInvalid() {
         XCTAssertEqual(ZoneReading(rangeMm: 4300,
                                    status: VL53L1RangeStatus(raw: 2),
                                    flags: 1).vl53l8cxClass,
-                       .clear)
+                       .invalid)
         XCTAssertEqual(ZoneReading(rangeMm: 0,
                                    status: VL53L1RangeStatus(raw: 2),
                                    flags: 0).vl53l8cxClass,
-                       .clear)
+                       .invalid)
     }
 
     func testVL53L8CXNearStatus2StaysInvalid() {

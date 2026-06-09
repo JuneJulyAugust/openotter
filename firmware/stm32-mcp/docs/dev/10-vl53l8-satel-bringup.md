@@ -40,6 +40,15 @@ firmware builds pass. The hardware release gate is:
 6. Autonomous-mode work only after the one-rear-sensor firmware safety path is
    proven on hardware.
 
+Status as of 2026-06-08: gates 2, 3, and 4 have passed by user hardware E2E
+validation after the VL53L8 range-trust fix. Before merge/tag, rerun PR CI and
+optionally do one final smoke test after documentation commits. The detailed
+validation and bug log is:
+
+```text
+docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md
+```
+
 For the one-sensor safety bench test, the expected behavior is:
 
 - reverse throttle can be clamped or braked by the rear SATEL when an obstacle
@@ -391,13 +400,130 @@ Available-role mask bits are bit 0 = rear online, bit 1 = front online. The iOS
 STM32 Control view decodes this byte and shows the selected role as online or
 not online.
 
+### Reset/Reconnect Protection
+
+It is safe to power-cycle or reset the STM32 while the iOS STM32 Control view or
+Self Driving mode is still open. The iOS app may reconnect quickly and replay
+Debug mode plus FE61 config writes as soon as GATT discovery finishes; firmware
+must not let that path do long-running sensor work inside the BLE event callback.
+
+The current protection is:
+
+- FE61 attribute-write events only copy the config into a one-slot queue.
+- Malformed FE61 writes clear any older queued config so stale requests cannot
+  run later.
+- `BLE_Tof_Process()` is the only place that applies queued Debug configs and
+  calls `TofL8_EnsureInitialized()` / `TofL8_Configure()`.
+- The first ToF init/config waits for the boot grace window before it can run.
+- If a BLE central is connected but has not yet written FE44 mode or FE41
+  command, safety ToF init/config defers in short slices. This keeps
+  multi-second VL53L8 probe/firmware-download work out of the GATT discovery and
+  app-handshake window after an STM32 reset.
+- If the app is in Drive, Park, or disconnected when a Debug config is pending,
+  the queued config is dropped and FE63 reports the policy result.
+- A newly connected central must prove app control by writing FE44 mode or FE41
+  command within `BLE_APP_HANDSHAKE_TIMEOUT_MS` (10 s). If it connects but never
+  completes that handshake, firmware requests a local BLE disconnect and resumes
+  advertising through the normal disconnect path.
+- While disconnected and advertising, UART emits passive `BLE adv_active`
+  heartbeats every 5 s. These only prove the firmware main loop is alive and
+  believes advertising is active; they are not proof that iOS or a Mac can see
+  the advertisement over the air.
+- While disconnected, firmware refreshes advertising from the main loop every
+  `BLE_ADV_HEALTHCHECK_MS` (15 s). The expected recovery logs are
+  `BLE adv_refresh stop ok` followed by `BLE adv_reassert ok`.
+- If that local disconnect command returns `BLE_STATUS_TIMEOUT` (`0xFF`), the
+  BlueNRG HCI command path is considered wedged. Firmware then enters
+  `PANIC:C`, forces PWM neutral through the panic path, and reboots into the
+  normal advertising/sensor bring-up sequence.
+- Drive throttle remains gated until `BLE_Tof_SafetyConfigReady()` is true; Debug
+  frame streaming begins only after the selected role is configured and frames
+  are available.
+
+This means an app-side reconnect burst should show temporary `Scanning`,
+`Waiting for VL53L8 frame...`, or FE63 error/running transitions, but it should
+not stop LD2/main-loop heartbeat or make the firmware disappear until a full
+vehicle power cycle.
+
+If iOS shows **STM32 Control = connected**, **Rear depth map = online**,
+**4x4 target = running**, but still shows **Waiting for VL53L8 frame...**, read
+that as "FE63 status is arriving, but FE62 debug streaming did not start." The
+most likely cause is a missing FE44 Debug handshake after reset/reconnect, not a
+dead VL53L8 driver. Current iOS STM32 Control reasserts Debug mode plus the
+current FE61 config once per fresh connection, and its toolbar reconnect button
+stays visible so the operator can force a clean reconnect.
+
+If iOS instead shows **STM32 Control = Scanning**, **ToF BLE detached**,
+`chunks rx 0`, and the BLE scan log contains only unrelated advertisements
+such as a nearby MacBook, the firmware may still be healthy. Check UART:
+
+- `BLE adv_active tick=...` plus regular VL53L8 frame/debug logs means the board
+  is alive and disconnected, but not necessarily visible over the air. Wait for
+  `BLE adv_refresh stop ok` / `BLE adv_reassert ok`, then confirm whether a Mac
+  or iOS scan sees `OPENOTTER-MCP` with FE40/FE60.
+- `BLE adv_start fail 0xFF` or `PANIC:C` means the BlueNRG HCI command path
+  timed out; let the firmware reboot and check that advertising returns.
+- No `BLE adv_start`, no `BLE adv_active`, and no LD2 heartbeat means this is a
+  firmware startup/main-loop problem, not an iOS scan problem.
+
+The iOS refresh button now restarts the STM32 scan and waits for a fresh
+advertisement instead of blindly connecting to a stale remembered peripheral.
+The BLE debug box keeps a rolling numbered trace so the next screenshot should
+show whether the app matched an OpenOtter advertisement, entered `connecting`,
+or only ignored unrelated devices.
+
+Hardware reset verification on 2026-06-08 captured the intended timing after the
+handshake defer fix:
+
+```text
+[296] BLE adv_start ok
+[405] BLE connect handle=0x0801
+[1504] BLE mode_write prev=0 new=1
+[1564] BLE mode_write prev=1 new=1
+[4729] VL53L8 init phase=gpio
+[10580] VL53L8 ready sensors=0x01 L=4 Hz=10 IT=20
+L8 dbg: ... mode=1 role=rear avail=0x01 ... fail=0
+```
+
+The earlier failing trace had started `BLE_Tof safety_config fire` at about
+`1229 ms` while the central had connected but had not finished the FE44/FE61
+handshake, then later hit a stale-link terminate timeout and `PANIC:C`.
+
+Hardware reset verification on 2026-06-09 captured the later advertisement
+visibility fix:
+
+```text
+BLE adv_start ok tick=...
+BLE adv_refresh stop ok tick=...
+BLE adv_reassert ok tick=...
+```
+
+A Mac BLE scan then saw `OPENOTTER-MCP` advertising FE40/FE60, and the iOS STM32
+Control view connected after refresh. UART subsequently showed
+`BLE mode_write prev=0 new=1`, `VL53L8 rear stream start`, and
+`L8 dbg: ... push=... fail=0`.
+
 ## Build, Flash, And Serial Logs
 
-Build and flash from the feature worktree:
+For the full deployment rulebook, including the live UART reader and the
+ST-LINK mass-storage fallback, read:
+
+```text
+firmware/stm32-mcp/docs/dev/13-firmware-deploy-and-uart.md
+```
+
+Build from the feature worktree:
 
 ```bash
 cd /Users/fang/projects/openotter/.worktrees/vl53l8-satel-firmware/firmware/stm32-mcp
-./build.sh all
+BUILD_TYPE=Release ./build.sh
+```
+
+Flash from a normal host terminal or with explicit approval if running in a
+sandbox. If `/Volumes/DIS_L4IOT` is mounted, the reliable fallback is:
+
+```bash
+cp build/Release/stm32-mcp.bin /Volumes/DIS_L4IOT/stm32-mcp.bin
 ```
 
 On Apple Silicon, if `STM32_Programmer_CLI` exits with:
@@ -425,6 +551,23 @@ screen /dev/cu.usbmodemXXXX 115200
 ```
 
 To exit `screen`, press `Ctrl-A`, then `Ctrl-\`, then confirm.
+
+Or use the reusable live reader:
+
+```bash
+/Users/fang/projects/openotter/.venv/bin/python scripts/read_uart.py --timestamp
+```
+
+If SWD flashing cannot see the debug probe but `/Volumes/DIS_L4IOT` is mounted,
+the ST-LINK mass-storage path can also flash the generated binary:
+
+```bash
+cp build/Release/stm32-mcp.bin /Volumes/DIS_L4IOT/stm32-mcp.bin
+```
+
+After the copy completes, reopen the serial console and confirm the boot log.
+On 2026-06-08 this fallback path flashed the Release image successfully after
+CubeProgrammer could see the ST-LINK UART but not the SWD probe.
 
 ### Expected Logs With No Sensor Power
 
@@ -643,6 +786,8 @@ VL53L8 rear frame layout=4 zones=16
 | SPI selected unexpectedly | `EXT_SPI_I2C_N` is high; this is SPI mode |
 | `alive=1` but no frames | Firmware download or stream config failed; check UART logs around `fw_download` |
 | Mostly tiny or zero ranges | Remove film/cover, aim at matte target 20-80 cm away, keep wires away from aperture |
+| iOS app left open during STM32 reset and reconnects immediately | Expected: BLE reconnect may happen before ToF frames are ready, but LD2 keeps blinking, FE61 is queued, and frames resume after main-loop ToF config |
+| iOS remains `Scanning` after STM32 reset | Check UART for `BLE adv_active`, `BLE adv_refresh stop ok`, and `BLE adv_reassert ok`. If the refresh logs appear and a Mac scan sees `OPENOTTER-MCP` FE40/FE60, press refresh and read the rolling BLE scan trace for `matched advertisement`, `connecting`, or only unrelated advertisements. |
 
 For frame logs, each compact grid cell is:
 
@@ -652,6 +797,36 @@ range_mm/status/target_count
 
 Valid VL53L8CX range statuses for safety are `5`, `6`, `9`, or `10`. Status
 `4` means target consistency failed and must not be used as a safety distance.
+
+### Safety Range Trust Policy
+
+Drive mode treats the VL53L8 as a safety sensor, not as a long-range mapper.
+Bench testing showed that values close to the published 4 m edge can be
+unstable, so the safety selector uses a stricter trusted band:
+
+| L8 selected-zone result | Safety classification |
+| --- | --- |
+| Any selected zone has status `5`, `6`, `9`, or `10` and `1..3800 mm` | `VALID`; the minimum trusted center-zone depth feeds the supervisor EMA |
+| Both selected zones have valid status above `3800 mm` | `CLEAR`; the supervisor receives capped `3.8 m` clearance |
+| No trusted selected-zone depth remains and a selected zone has status `2`, `4`, `255`, or any non-valid status | `PARTIAL`; the non-valid value is not fed into the EMA or blind-frame counter |
+| One selected zone is far-clear but the other is non-valid | `PARTIAL`; hold previous depth and rely on `FRAME_GAP`/driver-dead for true sensor loss |
+
+The generic raw debug depth map can still display values above `3.8 m` if the
+sensor reports them. The safety supervisor intentionally does not use those raw
+far values; it either caps valid far readings to `3.8 m` clearance or treats
+non-valid selected-zone statuses as degraded live data.
+
+### Resolved v1.2.0 Field Bugs
+
+| Bug | Resolution |
+| --- | --- |
+| Misread SATEL connector pins risked powering the mode pin or wrong rails. | This doc now treats `J1` and `J2` separately, with `J2 pin 11 EXT_5V0` on 5V and `J2 pin 1 EXT_SPI_I2C_N` on GND for I2C or 3V3 for SPI. |
+| Worktree iOS deploy built successfully but could not install because of bundle/CoreDevice mismatch. | iOS build/deploy now injects the correct bundle ID/version and parses newer CoreDevice `available (paired)` output. |
+| Forward iPhone LiDAR BRAKE could survive Park/Reverse until the car was moved by hand. | iOS clears the forward BRAKE latch for explicit reverse intent before the planner ramp's first zero tick, and FE43 stale-event fencing survives Park/Debug. |
+| STM32 could appear dead from RC battery VIN with no LD2 heartbeat, no ToF, and no PWM actuation. | Firmware startup now starts the watchdog early, bounds BlueNRG/HCI waits, retries advertising from the main loop, and panic-resets on fatal init or BLE SPI lockup. |
+| Leaving the iOS STM32 debug view or Self Driving mode open during STM32 reset could reconnect and replay FE61 while firmware was still booting. | FE61 writes now stay lightweight in the BLE event callback, are queued with stale-config clearing, and are applied only by the main loop after boot grace and mode checks. |
+| iOS could stay in `Scanning` after STM32 reset even though LD2 blinked and the sensor was running. | Firmware now advertises FE40/FE60, emits `BLE adv_active` UART heartbeats, and refreshes BlueNRG discoverable state from the main loop every 15 s while disconnected. iOS refresh waits for a fresh OpenOtter advertisement instead of blindly using a stale remembered peripheral and records a rolling BLE trace. 2026-06-09 verification: Mac scan saw `OPENOTTER-MCP` FE40/FE60, iOS connected after refresh, and UART showed FE62 pushes with `fail=0`. |
+| Rear ToF could falsely stop reverse motion when objects were beyond about 4 m and selected-zone statuses jumped with 500-700 mm-looking raw values. | Safety now trusts only valid VL53L8 statuses `5`, `6`, `9`, and `10` up to `3.8 m`; non-valid statuses are degraded live data and do not feed the EMA or `TOF_BLIND`. |
 
 ## Source Documents
 

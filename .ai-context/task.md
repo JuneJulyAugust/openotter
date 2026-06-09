@@ -75,15 +75,22 @@ This backlog is hierarchical and execution-focused. Primary STM32 work comes fir
 - [x] Add detailed full-SATEL and snap-off mini-PCB internal case assembly diagrams showing PCB retention, case-side connector/interposer wiring, pigtails, service loop, and strain relief.
 - [x] Decide the v1.2.0 scope: ship as "one rear SATEL verified, two-sensor code ready"; defer physical front/two-SATEL verification until more hardware is available.
 - [x] Harden iOS safety mode transitions so reverse intent clears the forward LiDAR BRAKE latch before the planner ramp's initial zero tick, and stale rear FE43 events cannot revive after Park/Debug.
+- [x] Harden VL53L8 reverse safety against far-range non-OK status noise by trusting only statuses `5`, `6`, `9`, and `10` through `3.8 m`, capping valid far clearance, and treating non-valid selected-zone frames as degraded live data instead of close obstacles or `TOF_BLIND`.
+- [x] Harden STM32 BLE boot/reconnect behavior so iOS FE61 replay after reset is queued and applied only from the main loop, not inside the BlueNRG event callback.
+- [x] Harden STM32 reset-with-iOS-open timing by deferring safety ToF init while a fresh BLE connection is still awaiting FE41/FE44 app handshake.
+- [x] Harden iOS STM32 Control refresh/scan diagnostics so reset recovery waits for a fresh OpenOtter advertisement instead of blindly using stale remembered peripherals, with a rolling BLE trace.
+- [x] Add reusable STM32 UART live-log tooling plus firmware deploy rules for remote/sandbox sessions.
+- [x] User-validated one-rear-SATEL end-to-end flow after the final safety fixes.
+- [x] Deploy updated iOS app and re-run the STM32 reset-with-debug-view-open smoke test; live recheck on 2026-06-09 showed STM32 Control connected and UART streaming FE62 frames with `fail=0`.
 - [ ] Confirm PR CI is green after the latest firmware/iOS test-hardening push.
-- [ ] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
-- [ ] End-to-end validate the one-rear-sensor v1.2.0 app/firmware path: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
+- [x] Bench-test one-sensor firmware safety with the robot immobilized: rear sensor should clamp/brake reverse motion, should not block forward motion, and should report unplug/failure states visibly.
+- [x] End-to-end validate the one-rear-sensor v1.2.0 app/firmware path: Park clears warnings, forward LiDAR BRAKE blocks forward but permits reverse escape, and rear STM32 BRAKE blocks unsafe reverse without blocking forward.
 - [ ] Measure intact SATEL carrier dimensions with calipers or ST STEP/Gerber files and update the full-carrier CadQuery defaults before printing the final car case.
 - [ ] Measure snapped-off SATEL mini-PCB dimensions with calipers and update the mini-PCB CadQuery defaults before printing the final compact case.
 - [ ] Build a board-side IOT01A1 ToF harness adapter using locking connectors before car deployment.
 - [ ] Physically verify the second front SATEL-VL53L8 on shared SPI1 with D10 `NCS`, A0 `LPn`, and A3 `GPIO1`.
 - [ ] Run vehicle-level autonomous validation with rear/front VL53L8 health visible in Self Driving.
-- [ ] After validation, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
+- [ ] After PR CI/final smoke checks, merge and tag `ios-v1.2.0` and `stm32-mcp-v1.2.0`.
 
 ### 1.4 Legacy Raspberry Pi WiFi bridge
 

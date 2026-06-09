@@ -8,7 +8,7 @@ INCDIR   = -I ../../Core/Inc
 BUILD_DIR = build
 COVERAGE_CFLAGS = -std=c11 -Wall -Wextra -Werror -O0 -g --coverage
 
-TESTS = test_rev_safety test_rev_safety_tof test_rev_safety_l8 test_drive_safety test_tof_frame_codec test_tof_l8_config test_tof_l8_topology test_tof_l8_transport test_ble_tof_policy test_ble_tof_debug test_ble_drive_policy test_ble_adv_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l8_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
+TESTS = test_rev_safety test_rev_safety_tof test_rev_safety_l8 test_drive_safety test_tof_frame_codec test_tof_l8_config test_tof_l8_topology test_tof_l8_transport test_ble_tof_policy test_ble_tof_debug test_ble_drive_policy test_ble_adv_policy test_ble_connection_policy test_pwm_control test_ble_command test_ble_gatt_layout test_tof_l8_debounce test_firmware_panic test_firmware_watchdog test_ble_attr_dispatch test_firmware_stack_guard test_firmware_mpu
 TARGETS = $(addprefix $(BUILD_DIR)/,$(TESTS))
 
 .PHONY: all test coverage clean dirs
@@ -56,6 +56,9 @@ $(BUILD_DIR)/test_ble_drive_policy: test_ble_drive_policy.c ../../Core/Src/ble_d
 
 $(BUILD_DIR)/test_ble_adv_policy: test_ble_adv_policy.c ../../Core/Src/ble_adv_policy.c ../../Core/Inc/ble_adv_policy.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_ble_adv_policy.c ../../Core/Src/ble_adv_policy.c -o $@
+
+$(BUILD_DIR)/test_ble_connection_policy: test_ble_connection_policy.c ../../Core/Src/ble_connection_policy.c ../../Core/Inc/ble_connection_policy.h | dirs
+	$(CC) $(CFLAGS) $(INCDIR) test_ble_connection_policy.c ../../Core/Src/ble_connection_policy.c -o $@
 
 $(BUILD_DIR)/test_pwm_control: test_pwm_control.c ../../Core/Src/pwm_control.c ../../Core/Inc/pwm_control.h | dirs
 	$(CC) $(CFLAGS) $(INCDIR) test_pwm_control.c ../../Core/Src/pwm_control.c -o $@

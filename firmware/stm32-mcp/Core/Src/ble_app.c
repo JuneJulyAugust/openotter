@@ -36,9 +36,11 @@
 #include "ble_tof.h"
 #include "ble_adv_policy.h"
 #include "ble_command.h"
+#include "ble_connection_policy.h"
 #include "ble_drive_policy.h"
 #include "ble_gatt_layout.h"
 #include "ble_attr_dispatch.h"
+#include "firmware_panic.h"
 #include "firmware_watchdog.h"
 #include "pwm_control.h"
 
@@ -89,6 +91,8 @@ typedef struct {
 
   OpenOtterMode_t mode;
   BleAdvPolicy_t adv;
+  BleConnectionPolicy_t connection_policy;
+  uint32_t advHeartbeatTick;
 } BLE_AppContext_t;
 
 /* Private variables ---------------------------------------------------------*/
@@ -105,8 +109,10 @@ static uint8_t HciEvtPool[POOL_SIZE];
 /* Forward declarations ------------------------------------------------------*/
 static void BLE_InitStack(void);
 static int BLE_InitGATTService(void);
-static void BLE_StartAdvertising(void);
+static void BLE_StartAdvertising(bool healthcheck_reassert);
+static void BLE_RefreshAdvertising(uint32_t now_ms);
 static void BLE_ServiceAdvertising(uint32_t now_ms);
+static void BLE_ServiceConnectionHandshake(uint32_t now_ms);
 static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us);
 static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *event);
 
@@ -160,6 +166,7 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   SCH_RegTask(CFG_IdleTask_TlEvt, BLE_TlEvtTask);
   SCH_RegTask(CFG_IdleTask_StartAdv, BLE_AdvTask);
   BleAdvPolicy_Init(&bleCtx.adv, HAL_GetTick());
+  BleConnectionPolicy_Init(&bleCtx.connection_policy);
 
   BLE_InitStack();
   FwWatchdog_Refresh();
@@ -280,6 +287,7 @@ void BLE_App_Process(void) {
 
   uint32_t now = HAL_GetTick();
   BLE_ServiceAdvertising(now);
+  BLE_ServiceConnectionHandshake(now);
 
   bool watchdog_trip =
       bleCtx.isConnected &&
@@ -340,6 +348,10 @@ uint32_t BLE_App_GetLastCommandTime(void) { return bleCtx.lastCommandTick; }
 OpenOtterMode_t BLE_App_GetMode(void) { return bleCtx.mode; }
 
 int BLE_App_IsConnected(void) { return bleCtx.isConnected; }
+
+int BLE_App_HandshakePending(void) {
+  return BleConnectionPolicy_HandshakePending(&bleCtx.connection_policy);
+}
 
 /*============================================================================*/
 /*  BLE STACK INITIALIZATION                                                  */
@@ -467,7 +479,7 @@ static int BLE_InitGATTService(void) {
   return 0;
 }
 
-static void BLE_StartAdvertising(void) {
+static void BLE_StartAdvertising(bool healthcheck_reassert) {
   uint32_t now = HAL_GetTick();
   if (bleCtx.isConnected) {
     BleAdvPolicy_OnConnected(&bleCtx.adv);
@@ -491,29 +503,94 @@ static void BLE_StartAdvertising(void) {
 
   const uint8_t svc_uuid_list[] = {AD_TYPE_16_BIT_SERV_UUID_CMPLT_LIST,
                                    (uint8_t)(OPENOTTER_CONTROL_SVC_UUID & 0xFF),
-                                   (uint8_t)(OPENOTTER_CONTROL_SVC_UUID >> 8)};
+                                   (uint8_t)(OPENOTTER_CONTROL_SVC_UUID >> 8),
+                                   (uint8_t)(OPENOTTER_TOF_SVC_UUID & 0xFF),
+                                   (uint8_t)(OPENOTTER_TOF_SVC_UUID >> 8)};
 
   tBleStatus ret = aci_gap_set_discoverable(
       ADV_IND, CFG_FAST_CONN_ADV_INTERVAL_MIN, CFG_FAST_CONN_ADV_INTERVAL_MAX,
       PUBLIC_ADDR, NO_WHITE_LIST_USE, sizeof(ad_name), ad_name,
       sizeof(svc_uuid_list), (uint8_t *)svc_uuid_list, 0, 0);
 
+  if (ret == ERR_COMMAND_DISALLOWED) {
+    BleAdvPolicy_OnSuccess(&bleCtx.adv, now);
+    bleCtx.advHeartbeatTick = now + 5000u;
+    app_log_fmt("BLE %s already_active tick=%lu\r\n",
+                healthcheck_reassert ? "adv_refresh" : "adv_start",
+                (unsigned long)now);
+    return;
+  }
+
   if (ret != BLE_STATUS_SUCCESS) {
-    BleAdvPolicy_OnFailure(&bleCtx.adv, now);
-    app_log_fmt("BLE adv_start fail 0x%02X retry=%lums count=%u\r\n",
+    if (healthcheck_reassert) {
+      BleAdvPolicy_OnHealthcheckFailure(&bleCtx.adv, now);
+    } else {
+      BleAdvPolicy_OnFailure(&bleCtx.adv, now);
+    }
+    app_log_fmt("BLE %s fail 0x%02X retry=%lums count=%u\r\n",
+                healthcheck_reassert ? "adv_reassert" : "adv_start",
                 (unsigned)ret,
+                (unsigned long)bleCtx.adv.retry_delay_ms,
+                (unsigned)bleCtx.adv.fail_count);
+    if (!healthcheck_reassert && ret == BLE_STATUS_TIMEOUT) {
+      Firmware_Panic(FW_PANIC_BLE_HCI);
+    }
+    return;
+  }
+
+  BleAdvPolicy_OnSuccess(&bleCtx.adv, now);
+  bleCtx.advHeartbeatTick = now + 5000u;
+  app_log_fmt("BLE %s ok tick=%lu\r\n",
+              healthcheck_reassert ? "adv_reassert" : "adv_start",
+              (unsigned long)now);
+}
+
+static void BLE_RefreshAdvertising(uint32_t now_ms) {
+  tBleStatus stop_ret = aci_gap_set_non_discoverable();
+  if (stop_ret != BLE_STATUS_SUCCESS &&
+      stop_ret != ERR_COMMAND_DISALLOWED) {
+    BleAdvPolicy_OnHealthcheckFailure(&bleCtx.adv, now_ms);
+    app_log_fmt("BLE adv_refresh stop fail 0x%02X retry=%lums count=%u\r\n",
+                (unsigned)stop_ret,
                 (unsigned long)bleCtx.adv.retry_delay_ms,
                 (unsigned)bleCtx.adv.fail_count);
     return;
   }
 
-  BleAdvPolicy_OnSuccess(&bleCtx.adv);
-  app_log_fmt("BLE adv_start ok tick=%lu\r\n", (unsigned long)now);
+  app_log_fmt("BLE adv_refresh stop %s tick=%lu\r\n",
+              (stop_ret == BLE_STATUS_SUCCESS) ? "ok" : "already_idle",
+              (unsigned long)now_ms);
+  BLE_StartAdvertising(true);
 }
 
 static void BLE_ServiceAdvertising(uint32_t now_ms) {
   if (BleAdvPolicy_Due(&bleCtx.adv, now_ms, bleCtx.isConnected != 0u)) {
-    BLE_StartAdvertising();
+    BLE_StartAdvertising(false);
+  } else if (BleAdvPolicy_HealthcheckDue(&bleCtx.adv, now_ms,
+                                         bleCtx.isConnected != 0u)) {
+    BLE_RefreshAdvertising(now_ms);
+  } else if (!bleCtx.isConnected && bleCtx.adv.active != 0u &&
+             (int32_t)(now_ms - bleCtx.advHeartbeatTick) >= 0) {
+    app_log_fmt("BLE adv_active tick=%lu\r\n", (unsigned long)now_ms);
+    bleCtx.advHeartbeatTick = now_ms + 5000u;
+  }
+}
+
+static void BLE_ServiceConnectionHandshake(uint32_t now_ms) {
+  if (!BleConnectionPolicy_ShouldTerminate(&bleCtx.connection_policy,
+                                           now_ms)) {
+    return;
+  }
+
+  tBleStatus ret = aci_gap_terminate(bleCtx.connectionHandle,
+                                     ERR_LOCAL_HOST_TERM_CONN);
+  if (ret == BLE_STATUS_SUCCESS) {
+    BleConnectionPolicy_OnTerminateRequested(&bleCtx.connection_policy);
+  }
+  app_log_fmt("BLE handshake timeout terminate handle=0x%04X ret=0x%02X\r\n",
+              (unsigned)bleCtx.connectionHandle, (unsigned)ret);
+  if (ret == BLE_STATUS_TIMEOUT) {
+    Firmware_Panic(FW_PANIC_BLE_HCI);
   }
 }
 
@@ -552,6 +629,7 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
 
           bleCtx.lastCommandTick = HAL_GetTick();
           bleCtx.safetyTriggered = 0;
+          BleConnectionPolicy_OnAppActivity(&bleCtx.connection_policy);
         }
       }
 
@@ -564,6 +642,7 @@ static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *Event) {
               v == OPENOTTER_MODE_PARK) {
             OpenOtterMode_t prev = bleCtx.mode;
             bleCtx.mode = (OpenOtterMode_t)v;
+            BleConnectionPolicy_OnAppActivity(&bleCtx.connection_policy);
             app_log_fmt("BLE mode_write prev=%u new=%u\r\n",
                         (unsigned)prev, (unsigned)v);
             if (prev != bleCtx.mode) {
@@ -618,6 +697,7 @@ void SVCCTL_App_Notification(void *pckt) {
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
     BleAdvPolicy_OnDisconnected(&bleCtx.adv, HAL_GetTick());
+    BleConnectionPolicy_OnDisconnected(&bleCtx.connection_policy);
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
     BLE_Tof_RequestSafetyConfig();
@@ -640,6 +720,8 @@ void SVCCTL_App_Notification(void *pckt) {
       bleCtx.connectionHandle = conn->handle;
       bleCtx.isConnected = 1;
       BleAdvPolicy_OnConnected(&bleCtx.adv);
+      BleConnectionPolicy_OnConnected(&bleCtx.connection_policy,
+                                      HAL_GetTick());
       bleCtx.lastCommandTick = HAL_GetTick();
       bleCtx.safetyTriggered = 0;
       app_log_fmt("BLE connect handle=0x%04X\r\n", (unsigned)conn->handle);

@@ -20,6 +20,7 @@ Read them in order the first time; after that each is self-contained.
 | 09 | [BLE GATT Slot Bug Postmortem](09-ble-gatt-slot-bug-postmortem.md) | Root cause: FE44 undiscoverable due to Max_Attribute_Records=10; fix; VL53L5CX status code bug.           |
 | 10 | [SATEL-VL53L8 Firmware Bring-Up](10-vl53l8-satel-bringup.md)    | Active SATEL-VL53L8 I2C/SPI wiring, one-sensor bring-up evidence, and two-sensor wiring plan.             |
 | 11 | [Firmware Test Strategy](11-firmware-test-strategy.md)          | Host tests, coverage workflow, hardware-in-the-loop checks, and two-sensor verification plan.             |
+| 13 | [Firmware Deploy And UART Log Playbook](13-firmware-deploy-and-uart.md) | Remote-safe flash paths, ST-LINK mass-storage fallback, and live UART logging with `read_uart.py`. |
 
 ---
 
@@ -42,6 +43,10 @@ Read them in order the first time; after that each is self-contained.
 
 **"How do I prove the firmware is ready?"**
 11 — host unit tests, coverage, and serial/BLE end-to-end checks.
+
+**"How do I flash and watch UART from a remote session?"**
+13 — build in the worktree, flash through host-approved ST-LINK paths, and use
+the reusable live UART reader.
 
 ---
 

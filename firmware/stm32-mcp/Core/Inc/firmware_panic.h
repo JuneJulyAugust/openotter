@@ -43,6 +43,7 @@ typedef enum {
   FW_PANIC_STACK        = 7, /* sentinel guard at stack bottom corrupted */
   FW_PANIC_INIT         = 8, /* unrecoverable init/startup failure */
   FW_PANIC_BLE_SPI      = 9, /* BlueNRG SPI transport stuck */
+  FW_PANIC_BLE_HCI      = 10, /* BlueNRG HCI command path timed out */
 } Firmware_PanicReason_t;
 
 /*

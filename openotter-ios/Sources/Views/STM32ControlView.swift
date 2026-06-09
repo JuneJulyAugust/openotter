@@ -185,11 +185,9 @@ struct STM32ControlView: View {
                             .foregroundColor(statusColor)
                     }
                 }
-                if viewModel.status != .connected {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: { viewModel.reconnect() }) {
-                            Image(systemName: "arrow.clockwise")
-                        }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { viewModel.reconnect() }) {
+                        Image(systemName: "arrow.clockwise")
                     }
                 }
             }
@@ -450,6 +448,16 @@ private struct TofDebugCard: View {
                 Text(verbatim: "chunks rx \(viewModel.tofChunksReceived)  parsed \(viewModel.tofFramesParsed)  dropped \(viewModel.tofDroppedFrameChunks)")
                 Text(verbatim: "state \(String(describing: viewModel.tofState))  err \(viewModel.tofLastError)  mode \(String(describing: viewModel.firmwareMode))")
                 Text(verbatim: "sensor \(viewModel.tofConfig.sensor.displayName)  role \(viewModel.tofConfig.role.displayName.lowercased())  layout \(viewModel.tofConfig.layout)x\(viewModel.tofConfig.layout)  freq \(viewModel.tofConfig.frequencyHz)Hz  it \(viewModel.tofConfig.integrationMs)ms")
+                Divider().padding(.vertical, 2)
+                Text("TOF STREAM")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Text(verbatim: viewModel.stm32TofDebugSummary)
+                Divider().padding(.vertical, 2)
+                Text("BLE SCAN")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.secondary)
+                Text(verbatim: viewModel.stm32BleDebugSummary)
             }
             .font(.caption2.monospaced())
             .foregroundStyle(.secondary)

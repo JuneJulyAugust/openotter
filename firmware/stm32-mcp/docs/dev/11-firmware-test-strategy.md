@@ -42,7 +42,8 @@ Important SATEL-VL53L8 tests:
 | `test_tof_frame_codec` | FE62 frame payloads and 20-byte chunks are deterministic and bounded |
 | `test_ble_tof_policy` | BLE ToF status mapping reports hardware-health failures as error state |
 | `test_ble_tof_debug` | FE61/FE63 front/rear debug role metadata is valid and bounded |
-| `test_rev_safety_l8` | Reverse safety consumes only valid VL53L8 range-status zones |
+| `test_ble_connection_policy` | BLE connections that never send FE41/FE44 app-control traffic time out instead of occupying the only BlueNRG link forever |
+| `test_rev_safety_l8` | Reverse safety consumes only valid VL53L8 range-status zones, caps valid far-clear readings at 3.8 m, and treats non-valid selected-zone statuses as degraded live data |
 | `test_drive_safety` | Front safety projects forward motion into the reverse-safety model and clamps only forward throttle |
 | `test_tof_l8_topology` | Front/rear sensors use safe transports, buses, addresses, chip selects, and control pins |
 | `test_tof_l8_transport` | Boot probe choice and SPI register header bits match the VL53L8 protocol |
@@ -98,10 +99,13 @@ order:
 3. One-sensor firmware safety is bench-tested with the robot immobilized.
 4. App/firmware end-to-end validation passes for Park clearing, forward iPhone
    LiDAR BRAKE, rear STM32 ToF BRAKE, and reverse escape behavior.
-5. The v1.2.0 release scope is one rear SATEL verified and two-sensor code
+5. Reset/power-cycle STM32 while the iOS STM32 Control view or Self Driving mode
+   remains open. The app may reconnect before frames are ready, but LD2 must keep
+   blinking, BLE must stay discoverable, and FE61 replay must not stall boot.
+6. The v1.2.0 release scope is one rear SATEL verified and two-sensor code
    ready. Physical front/two-SATEL shared-SPI verification is deferred until a
    second SATEL board is available.
-6. Vehicle-level autonomous validation runs only after the one-rear-sensor
+7. Vehicle-level autonomous validation runs only after the one-rear-sensor
    firmware safety path is proven on hardware.
 
 The second SATEL wiring is already documented and covered by host topology
@@ -109,15 +113,27 @@ tests, but it remains code-ready rather than release-proven until physical SPI
 verification is complete. This is intentional for v1.2.0 and is not a tag
 blocker.
 
-Current hardware status as of 2026-06-04:
+Current hardware status as of 2026-06-08:
 
 - Gate 2 has passed for one rear SATEL-VL53L8 in both I2C3 mode and SPI1 mode.
 - The one-sensor SPI pass used a power-off wiring change, cold boot, firmware
   auto-probe, and iOS STM32 Control depth-map rendering.
-- Gate 3 remains pending: immobilized robot safety behavior still needs a
-  deliberate reverse-clamp/brake bench test.
+- Gates 3 and 4 passed by user end-to-end hardware validation after the VL53L8
+  range-trust policy fix.
+- Final software verification after the range-trust and reset/reconnect fixes
+  passed: `make test`, STM32 Debug build, STM32 Release build,
+  `bash openotter-ios/build.sh test` with 213 iOS tests and 0 failures, and
+  `bash openotter-ios/build.sh --release build`.
+- Firmware boot/reconnect protection has host coverage for both the FE61
+  debug-config queue and the BLE app-handshake timeout. The updated Release
+  image was flashed through `/Volumes/DIS_L4IOT` on 2026-06-08 and UART showed
+  the rear SPI VL53L8 streaming 4x4 frames at about 30-32 Hz. A final
+  reset-with-iOS-open smoke validation on the physical iPhone remains
+  recommended before tagging.
 - Two-sensor physical SPI validation remains pending until the front SATEL is
   installed.
+- See `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`
+  for the resolved-bug log and final validation evidence.
 
 ## One-Sensor End-To-End Test
 
@@ -189,6 +205,8 @@ observably instead of silently:
 | SPI SCK/MOSI/MISO/NCS swapped | Rear SPI probe fails or never reaches frame logs; iOS depth map remains empty |
 | Debug config with invalid timing | FE63 keeps running state and reports `TOF_STATUS_BAD_CONFIG` |
 | Drive-mode FE61 write | FE63 keeps running state and reports `TOF_STATUS_LOCKED_IN_DRIVE` |
+| STM32 reset while iOS STM32 Control or Self Driving is open | App may reconnect and replay mode/config writes; firmware keeps LD2 blinking, queues or drops FE61 safely, starts ToF only from the main loop, and drops any BLE connection that never writes FE41 or FE44 |
+| iOS shows FE63 online/running but FE62 frame count stays at 0 | Treat as a missing Debug handshake, not a sensor-driver failure. Expected recovery: iOS reasserts FE44 Debug and FE61 config; if the central remains half-attached, firmware disconnects or `PANIC:C` resets on BlueNRG HCI timeout |
 
 ## Two-Sensor Test Plan
 

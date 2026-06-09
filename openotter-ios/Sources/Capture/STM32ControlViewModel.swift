@@ -9,6 +9,8 @@ class STM32ControlViewModel: ObservableObject {
     @Published var deviceName: String = "Unknown"
     @Published var rssi: Int = 0
     @Published var commandsSent: Int = 0
+    @Published var stm32BleDebugSummary: String = ""
+    @Published var stm32TofDebugSummary: String = ""
 
     /// Steering: -1.0 (full left) to +1.0 (full right), 0 = center
     @Published var steering: Float = 0.0
@@ -57,6 +59,7 @@ class STM32ControlViewModel: ObservableObject {
     /// Single debounce window for any ToF picker/slider change — collapses
     /// rapid touches into one FE61 write.
     private var tofConfigTimer: Timer?
+    private var didReassertDebugForCurrentConnection = false
 
     // MARK: - Timing Constants
 
@@ -111,8 +114,7 @@ class STM32ControlViewModel: ObservableObject {
     }
 
     func reconnect() {
-        bleManager.stop()
-        bleManager.start()
+        bleManager.reconnect()
     }
 
     func setFirmwareMode(_ mode: OperatingMode) {
@@ -125,6 +127,12 @@ class STM32ControlViewModel: ObservableObject {
 
     static func shouldRefreshTofConfig(afterModeChangeTo mode: OperatingMode) -> Bool {
         mode == .debug
+    }
+
+    static func shouldReassertDebugOnConnection(status: STM32BleStatus,
+                                                firmwareMode: OperatingMode,
+                                                alreadyReasserted: Bool) -> Bool {
+        status == .connected && firmwareMode == .debug && !alreadyReasserted
     }
 
     // MARK: - ToF API
@@ -258,7 +266,21 @@ class STM32ControlViewModel: ObservableObject {
     private func setupSubscriptions() {
         bleManager.$status
             .receive(on: DispatchQueue.main)
-            .assign(to: &$status)
+            .sink { [weak self] status in
+                guard let self else { return }
+                self.status = status
+                if Self.shouldReassertDebugOnConnection(
+                    status: status,
+                    firmwareMode: self.firmwareMode,
+                    alreadyReasserted: self.didReassertDebugForCurrentConnection
+                ) {
+                    self.didReassertDebugForCurrentConnection = true
+                    self.setFirmwareMode(.debug)
+                } else if status != .connected {
+                    self.didReassertDebugForCurrentConnection = false
+                }
+            }
+            .store(in: &cancellables)
 
         bleManager.$deviceName
             .receive(on: DispatchQueue.main)
@@ -271,6 +293,10 @@ class STM32ControlViewModel: ObservableObject {
         bleManager.$commandsSent
             .receive(on: DispatchQueue.main)
             .assign(to: &$commandsSent)
+
+        bleManager.$debugSummary
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$stm32BleDebugSummary)
 
         bleManager.$lastSafetyEvent
             .receive(on: DispatchQueue.main)
@@ -327,6 +353,10 @@ class STM32ControlViewModel: ObservableObject {
         tofService.$chunksReceived
             .receive(on: DispatchQueue.main)
             .assign(to: &$tofChunksReceived)
+
+        tofService.$debugSummary
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$stm32TofDebugSummary)
     }
 
     // PWM mapping moved to `PwmMapping.toPulseWidth(_:)` (Sources/Util/).

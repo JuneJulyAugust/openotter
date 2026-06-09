@@ -14,6 +14,7 @@ void BleAdvPolicy_Init(BleAdvPolicy_t *policy, uint32_t now_ms) {
   policy->fail_count = 0u;
   policy->retry_delay_ms = BLE_ADV_RETRY_MIN_MS;
   policy->retry_tick_ms = now_ms + BLE_ADV_INITIAL_DELAY_MS;
+  policy->healthcheck_tick_ms = 0u;
 }
 
 bool BleAdvPolicy_Due(const BleAdvPolicy_t *policy,
@@ -23,12 +24,21 @@ bool BleAdvPolicy_Due(const BleAdvPolicy_t *policy,
   return policy->pending != 0u && tick_reached(now_ms, policy->retry_tick_ms);
 }
 
-void BleAdvPolicy_OnSuccess(BleAdvPolicy_t *policy) {
+bool BleAdvPolicy_HealthcheckDue(const BleAdvPolicy_t *policy,
+                                  uint32_t now_ms,
+                                  bool connected) {
+  if (policy == NULL || connected) return false;
+  if (policy->pending != 0u || policy->active == 0u) return false;
+  return tick_reached(now_ms, policy->healthcheck_tick_ms);
+}
+
+void BleAdvPolicy_OnSuccess(BleAdvPolicy_t *policy, uint32_t now_ms) {
   if (policy == NULL) return;
   policy->pending = 0u;
   policy->active = 1u;
   policy->fail_count = 0u;
   policy->retry_delay_ms = BLE_ADV_RETRY_MIN_MS;
+  policy->healthcheck_tick_ms = now_ms + BLE_ADV_HEALTHCHECK_MS;
 }
 
 void BleAdvPolicy_OnFailure(BleAdvPolicy_t *policy, uint32_t now_ms) {
@@ -48,12 +58,18 @@ void BleAdvPolicy_OnFailure(BleAdvPolicy_t *policy, uint32_t now_ms) {
       (delay > BLE_ADV_RETRY_MAX_MS) ? BLE_ADV_RETRY_MAX_MS : delay;
 }
 
+void BleAdvPolicy_OnHealthcheckFailure(BleAdvPolicy_t *policy,
+                                        uint32_t now_ms) {
+  BleAdvPolicy_OnFailure(policy, now_ms);
+}
+
 void BleAdvPolicy_OnConnected(BleAdvPolicy_t *policy) {
   if (policy == NULL) return;
   policy->pending = 0u;
   policy->active = 0u;
   policy->fail_count = 0u;
   policy->retry_delay_ms = BLE_ADV_RETRY_MIN_MS;
+  policy->healthcheck_tick_ms = 0u;
 }
 
 void BleAdvPolicy_OnDisconnected(BleAdvPolicy_t *policy, uint32_t now_ms) {
@@ -63,4 +79,5 @@ void BleAdvPolicy_OnDisconnected(BleAdvPolicy_t *policy, uint32_t now_ms) {
   policy->fail_count = 0u;
   policy->retry_delay_ms = BLE_ADV_RETRY_MIN_MS;
   policy->retry_tick_ms = now_ms + BLE_ADV_INITIAL_DELAY_MS;
+  policy->healthcheck_tick_ms = 0u;
 }

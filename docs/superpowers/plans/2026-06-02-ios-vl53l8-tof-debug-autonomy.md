@@ -17,8 +17,12 @@
   or tagged yet.
 - Debug status: STM32 Control was deployed from the feature worktree and the
   live VL53L8 ToF visualization worked against the connected IOT01A1.
-- Autonomous status: rear ToF health presentation is implemented; full
-  vehicle-level autonomous validation is still pending.
+- Autonomous status: rear ToF health presentation is implemented; one rear
+  sensor app/firmware E2E validation passed after the final safety fixes. Full
+  front/two-SATEL validation remains pending until the second SATEL is
+  available.
+- Validation log:
+  `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`.
 
 ## Files
 
@@ -130,18 +134,26 @@ public enum VL53L8CXZoneClass: Equatable, Sendable {
 }
 ```
 
-Rename tests:
+Rename tests. Field validation later tightened the policy so non-OK VL53L8
+statuses stay invalid even if the raw range looks far:
 
 ```swift
-func testVL53L8CXFarStatus2ClassifiesAsClear() {
+func testVL53L8CXValidFarRangeClassifiesAsClear() {
+    XCTAssertEqual(ZoneReading(rangeMm: 4300,
+                               status: VL53L1RangeStatus(raw: 5),
+                               flags: 1).vl53l8cxClass,
+                   .clear)
+}
+
+func testVL53L8CXNonOkFarRangeStaysInvalid() {
     XCTAssertEqual(ZoneReading(rangeMm: 4300,
                                status: VL53L1RangeStatus(raw: 2),
                                flags: 1).vl53l8cxClass,
-                   .clear)
+                   .invalid)
     XCTAssertEqual(ZoneReading(rangeMm: 0,
                                status: VL53L1RangeStatus(raw: 2),
                                flags: 0).vl53l8cxClass,
-                   .clear)
+                   .invalid)
 }
 
 func testVL53L8CXNearStatus2StaysInvalid() {
@@ -158,13 +170,13 @@ In `ZoneReading` extension, replace `vl53l5cxClass` with:
 
 ```swift
 var vl53l8cxClass: VL53L8CXZoneClass {
+    let trustedMaxMm: UInt16 = 3_800
     switch status.rawValue {
     case 5, 6, 9, 10:
-        return rangeMm > 0 ? .valid : .invalid
-    case 2 where rangeMm >= 4000:
-        return .clear
+        if rangeMm == 0 { return .invalid }
+        return rangeMm > trustedMaxMm ? .clear : .valid
     default:
-        return rangeMm == 0 && flags == 0 ? .clear : .invalid
+        return .invalid
     }
 }
 ```

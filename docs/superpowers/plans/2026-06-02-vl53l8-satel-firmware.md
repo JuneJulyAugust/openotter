@@ -16,12 +16,16 @@
 - Branch status: implemented and committed as a release candidate; not merged
   or tagged yet.
 - Hardware status: one SATEL-VL53L8 on I2C3 produced stable 4x4 safety frames
-  at about 30 Hz after the sensor was repositioned away from the bench.
+  at about 30 Hz after the sensor was repositioned away from the bench. The same
+  rear SATEL also passed one-sensor SPI1 validation and later user E2E testing
+  after the VL53L8 range-trust fix.
 - New transport scope: keep the proven I2C3 path and add SPI1 support. The
   firmware will not hot-swap modes; it probes transports at boot after the user
   powers off and rewires `EXT_SPI_I2C_N`.
 - Future scope: two-sensor front/rear safety should prefer shared SPI1 with
   independent `NCS` and `LPn`. Separate I2C buses remain a fallback.
+- Final validation log:
+  `docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md`.
 
 ## Files
 

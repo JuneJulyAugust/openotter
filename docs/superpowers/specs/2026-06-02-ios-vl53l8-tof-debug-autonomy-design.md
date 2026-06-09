@@ -9,14 +9,21 @@ must leave one clear extension point for a future second VL53L8 sensor.
 
 ## Release-Candidate Status
 
-As of 2026-06-02, the iOS app is prepared as `1.2.0` for more testing before
-merge and tag. The STM32 Control diagnostics path was deployed to the iPhone
-from the feature worktree and verified against the connected IOT01A1 plus one
-SATEL-VL53L8. The debug view rendered live VL53L8 ToF data without requiring an
-iOS protocol change.
+As of 2026-06-08, the iOS app is prepared as `1.2.0` for final PR CI/release
+hygiene before merge and tag. The STM32 Control diagnostics path was deployed
+to the iPhone from the feature worktree and verified against the connected
+IOT01A1 plus one rear SATEL-VL53L8. The debug view rendered live VL53L8 ToF
+data without requiring an iOS protocol change.
 
-Autonomous-mode UI support for rear VL53L8 health is implemented, but the full
-vehicle-level autonomous validation remains intentionally pending.
+One-rear-sensor app/firmware end-to-end validation passed after the final
+forward/rear safety fixes. Full front/two-SATEL validation remains intentionally
+pending until the second SATEL board is available.
+
+Final validation and resolved-bug evidence is tracked in:
+
+```text
+docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md
+```
 
 ## Current App Context
 
@@ -30,9 +37,9 @@ The app already has the right physical boundaries:
 - `SelfDrivingViewModel` drives autonomy through `PlannerOrchestrator`, while
   firmware reverse safety arrives independently through FE43.
 
-The current iOS names still describe VL53L5CX. The firmware migration keeps the
-wire value `2`, but that value now means `TOF_SENSOR_VL53L8CX`. iOS must keep
-the numeric value stable while renaming the semantic model.
+The iOS semantic model now describes VL53L8CX while preserving the historical
+wire value `2`. Firmware and iOS both treat that value as
+`TOF_SENSOR_VL53L8CX`; VL53L5 remains historical/deprecated.
 
 ## Wire Contract
 
@@ -59,14 +66,17 @@ The debug view must be the first working iOS outcome. It should:
 - Keep V2 chunk reassembly unchanged; the frame format is already generic.
 - Decode and display VL53L8 target statuses with VL53L8 semantics:
   - `5`, `6`, `9`, and `10` are usable range readings when range is non-zero.
-  - `2` with no target or a range at/above the clear threshold is clear space.
-  - Other non-zero or flagged statuses are invalid/uncertain and should be
-    visually distinct without hiding their raw status code.
+  - valid-status ranges above the firmware trusted band render as clear.
+  - non-OK statuses such as `2`, `4`, or `255` are invalid/uncertain even when
+    their range field looks plausible, and should be visually distinct without
+    hiding their raw status code.
 - Update the debug card copy and error messages from VL53L5CX to VL53L8CX.
 
 The grid remains compact and operator-focused: one heat-map cell per zone,
-range in millimeters, status pill, and border color. The first release does not
-need multi-sensor tabs because firmware exposes only one sensor today.
+range in millimeters, status pill, and border color. The STM32 Control view has
+`Rear` and `Front` debug selectors, but v1.2.0 physically verifies only the
+rear role. Selecting `Front` with one rear sensor connected should show the
+front role as unavailable and avoid displaying stale rear frames.
 
 ## Phase 2: Autonomous Mode
 
@@ -117,9 +127,11 @@ public enum TofSensorRole: Equatable, Sendable {
 }
 ```
 
-Today, FE62 frames parsed from the current firmware are assigned `.rear` by the
-service because only the rear sensor exists. When firmware adds a front sensor,
-the role should come from a protocol extension rather than from UI state.
+Today, FE61 carries the selected debug role and FE63 reports the selected role
+plus available-role mask. FE62 publishes one selected debug depth stream at a
+time. When the future front sensor is installed, the same role convention
+continues; autonomous safety should consume high-level role-aware safety state
+rather than raw debug frames.
 
 Autonomous safety then remains direction-aware:
 

@@ -123,16 +123,17 @@ public enum VL53L8CXZoneClass: Equatable, Sendable {
 
 public extension ZoneReading {
     /// Mirrors firmware reverse-safety handling for VL53L8CX zones.
-    /// Status 2 at/above the useful range, or a zero-range no-target cell,
-    /// means clear space rather than an obstacle or blind sensor.
+    /// Only valid-status readings are visualized as usable. Values beyond the
+    /// firmware's trusted safety band are shown as capped clear space; non-OK
+    /// statuses remain invalid even if they carry a plausible distance.
     var vl53l8cxClass: VL53L8CXZoneClass {
+        let trustedMaxMm: UInt16 = 3_800
         switch status.rawValue {
         case 5, 6, 9, 10:
-            return rangeMm > 0 ? .valid : .invalid
-        case 2 where rangeMm >= 4000:
-            return .clear
+            if rangeMm == 0 { return .invalid }
+            return rangeMm > trustedMaxMm ? .clear : .valid
         default:
-            return rangeMm == 0 && flags == 0 ? .clear : .invalid
+            return .invalid
         }
     }
 }

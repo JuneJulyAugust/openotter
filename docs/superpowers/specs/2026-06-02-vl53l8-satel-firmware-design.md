@@ -12,9 +12,16 @@ autonomy plan is tracked separately in
 
 ## Release-Candidate Status
 
-As of 2026-06-02, the one-sensor SATEL-VL53L8 firmware path is implemented and
+As of 2026-06-08, the one-sensor SATEL-VL53L8 firmware path is implemented and
 prepared as `stm32-mcp` `1.2.0`. The branch is intentionally not merged or
-tagged yet because additional vehicle-level verification is still planned.
+tagged yet pending final PR CI/release hygiene, but one-rear-sensor hardware
+end-to-end validation has passed.
+
+Final validation and resolved-bug evidence is tracked in:
+
+```text
+docs/superpowers/specs/2026-06-08-vl53l8-v1.2-validation-and-bugs.md
+```
 
 Bench evidence from ST-LINK serial after the sensor was moved off the table:
 
@@ -358,6 +365,9 @@ Required checks for this phase:
 - Firmware build if STSW-IMG040 and STM32CubeCLT dependencies are available.
 - Manual wiring check against
   `firmware/stm32-mcp/docs/dev/10-vl53l8-satel-bringup.md`.
+- One-rear-sensor app/firmware E2E validation for Park clearing, forward iPhone
+  LiDAR BRAKE reverse escape, rear STM32 ToF BRAKE behavior, and far-range
+  VL53L8 non-OK status handling.
 
 ## References
 

@@ -12,6 +12,8 @@ extern "C" {
 #define REV_SAFETY_L8_LAYOUT 4u
 #define REV_SAFETY_L8_ZONE_ROW3_COL2 9u
 #define REV_SAFETY_L8_ZONE_ROW3_COL3 10u
+#define REV_SAFETY_L8_TRUSTED_MAX_MM 3800u
+#define REV_SAFETY_L8_CLEAR_DEPTH_M 3.8f
 
 RevSafetyTofReading_t RevSafetyL8_SelectReverseReading(const Tof_Frame_t *frame);
 RevSafetyTofReading_t RevSafetyL8_SelectFrontReading(const Tof_Frame_t *frame);

@@ -267,14 +267,36 @@ and failures back off from 1 s to 5 s instead of immediately issuing another
 blocking HCI command. Look for `BLE adv_start ok` or `BLE adv_start fail ...`
 in the UART log when debugging reconnects.
 
-### 5.2 Why the backup-domain reset at boot
+### 5.2 Advertising health-check refresh
+
+`BLE adv_active` is a passive firmware heartbeat: it says the advertising policy
+believes the BlueNRG is in discoverable mode, but it is not an RF scan. During
+the 2026-06-09 reset investigation the STM32 main loop and VL53L8 driver were
+healthy, `BLE adv_active` kept printing, but neither iOS nor a Mac scanner could
+initially see `OPENOTTER-MCP`.
+
+To recover that half-stale state, the disconnected advertising policy now arms a
+15 s health check after each successful advertising start. When due, the main
+loop calls `aci_gap_set_non_discoverable` and then `aci_gap_set_discoverable`
+again. The expected UART sequence is:
+
+```text
+BLE adv_refresh stop ok tick=...
+BLE adv_reassert ok tick=...
+```
+
+This refresh is deliberately run from the main loop, not from an HCI event
+callback. If `aci_gap_set_discoverable` returns `ERR_COMMAND_DISALLOWED`, the
+firmware treats that as "already active" rather than as a fatal failure.
+
+### 5.3 Why the backup-domain reset at boot
 
 `main.c` force-resets the RTC backup domain on pin reset. The BLE
 timer server uses the RTC wakeup timer, and stale state from a previous
 run can make `HW_TS_Init` spin forever. This is copied behavior from
 the `P2P_LedButton` reference.
 
-### 5.3 Startup recovery hardening
+### 5.4 Startup recovery hardening
 
 The car deployment can power the IoT board from a noisy VIN rail instead of the
 quiet ST-LINK USB rail. In that case the STM32 core, BlueNRG coprocessor, and

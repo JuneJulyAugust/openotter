@@ -73,6 +73,8 @@ typedef struct {
   uint8_t  safety_config_pending;
   uint8_t  safety_config_ready;
   uint32_t safety_config_retry_tick;
+  uint8_t  status_publish_pending;
+  BLE_TofDebugConfigQueue_t config_queue;
 } BLE_TofContext_t;
 
 static BLE_TofContext_t s_tof;
@@ -84,6 +86,7 @@ static BLE_TofContext_t s_tof;
  * sensor must come up whether or not the iOS app ever connects. */
 #define SAFETY_CONFIG_BOOT_GRACE_MS     1000u
 #define SAFETY_CONFIG_RETRY_MS          3000u
+#define SAFETY_CONFIG_HANDSHAKE_DEFER_MS 250u
 
 static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *event);
 
@@ -215,6 +218,18 @@ static uint32_t current_debug_seq(void)
   return TofL8_GetLatestFrameForSensor(selected_l8_sensor_id())->seq;
 }
 
+static void request_status_publish(void)
+{
+  s_tof.status_publish_pending = 1u;
+}
+
+static void publish_pending_status_if_needed(void)
+{
+  if (!s_tof.status_publish_pending || !BLE_App_IsConnected()) return;
+  s_tof.status_publish_pending = 0u;
+  publish_status();
+}
+
 int BLE_Tof_Init(void)
 {
   uint16_t uuid;
@@ -223,6 +238,7 @@ int BLE_Tof_Init(void)
   memset(&s_tof, 0, sizeof(s_tof));
   s_tof.state = BLE_TOF_STATE_RUNNING;
   s_tof.debug_role = BLE_TOF_DEBUG_ROLE_REAR;
+  BLE_TofDebugConfigQueue_Init(&s_tof.config_queue);
 
   SVCCTL_RegisterSvcHandler(BLE_Tof_EventHandler);
 
@@ -290,6 +306,7 @@ int BLE_Tof_Init(void)
 
 void BLE_Tof_RequestSafetyConfig(void)
 {
+  BLE_TofDebugConfigQueue_Clear(&s_tof.config_queue);
   s_tof.safety_config_pending = 1u;
   s_tof.safety_config_ready = 0u;
   s_tof.safety_config_retry_tick = 0u;
@@ -301,6 +318,51 @@ int BLE_Tof_SafetyConfigReady(void)
          s_tof.safety_config_pending == 0u;
 }
 
+static int boot_grace_allows_debug_config(uint32_t now)
+{
+  if (TofL8_IsInitialized()) return 1;
+  if (!s_tof.safety_config_pending) return 1;
+  if (s_tof.safety_config_retry_tick == 0u) return 1;
+  return tick_reached(now, s_tof.safety_config_retry_tick);
+}
+
+static void apply_config_write(const uint8_t *data, uint16_t len);
+
+static uint8_t process_pending_debug_config(uint32_t now)
+{
+  if (!BLE_TofDebugConfigQueue_HasPending(&s_tof.config_queue)) return 0u;
+
+  if (!BLE_App_IsConnected()) {
+    BLE_TofDebugConfigQueue_Clear(&s_tof.config_queue);
+    return 1u;
+  }
+
+  if (BLE_App_GetMode() != OPENOTTER_MODE_DEBUG) {
+    BLE_TofDebugConfigQueue_Clear(&s_tof.config_queue);
+    s_tof.last_error = (uint8_t)TOF_STATUS_LOCKED_IN_DRIVE;
+    s_tof.state = BLE_TOF_STATE_RUNNING;
+    request_status_publish();
+    return 1u;
+  }
+
+  if (!boot_grace_allows_debug_config(now)) {
+    return 0u;
+  }
+
+  uint8_t data[BLE_TOF_DEBUG_CONFIG_PAYLOAD_SIZE] = {0};
+  uint16_t len = 0u;
+  if (BLE_TofDebugConfigQueue_Pop(&s_tof.config_queue, data, sizeof(data),
+                                  &len) < 0) {
+    s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+    s_tof.state = BLE_TOF_STATE_RUNNING;
+    request_status_publish();
+    return 1u;
+  }
+
+  apply_config_write(data, len);
+  return 1u;
+}
+
 void BLE_Tof_Process(void)
 {
   uint32_t now = HAL_GetTick();
@@ -310,39 +372,44 @@ void BLE_Tof_Process(void)
    * comes up at boot whether or not the iOS app ever connects. The boot
    * grace lives on safety_config_retry_tick (seeded in Init); subsequent
    * retries also use that field. */
-  if (s_tof.safety_config_pending) {
-    uint8_t retry_due =
-        (s_tof.safety_config_retry_tick == 0u ||
-         tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
-    if (retry_due) {
+  uint8_t safety_retry_due =
+      (s_tof.safety_config_retry_tick == 0u ||
+       tick_reached(now, s_tof.safety_config_retry_tick)) ? 1u : 0u;
+  if (s_tof.safety_config_pending && safety_retry_due) {
+    if (BLE_App_HandshakePending()) {
+      s_tof.safety_config_retry_tick =
+          HAL_GetTick() + SAFETY_CONFIG_HANDSHAKE_DEFER_MS;
+    } else if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
       log_fmt("BLE_Tof safety_config fire mode=%u tick=%lu\r\n",
               (unsigned)BLE_App_GetMode(), (unsigned long)now);
-      if (BLE_App_GetMode() == OPENOTTER_MODE_DRIVE) {
-        /* Drive: apply the full safety config (driver init + 4x4 30 Hz).
-         * Clears pending only on success; failure schedules a retry. */
-        s_tof.safety_config_pending = 0u;
-        BLE_Tof_EnforceSafetyConfig();
-        log_fmt("BLE_Tof enforce_done ready=%u err=%u tick=%lu\r\n",
-                (unsigned)s_tof.safety_config_ready,
-                (unsigned)s_tof.last_error,
-                (unsigned long)HAL_GetTick());
-        if (!s_tof.safety_config_ready) {
-          s_tof.safety_config_pending = 1u;
-          s_tof.safety_config_retry_tick =
-              HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
-        }
-      } else {
-        /* Debug/Park: only pre-init the VL53L8CX driver so the lazy init
-         * path inside apply_config_write does not block the BLE event
-         * handler with the multi-second sensor firmware download. Leave
-         * safety_config_pending = 1 so the next Drive-mode edge re-applies
-         * the safety config; throttle remains gated until then. */
-        (void)TofL8_EnsureInitialized();
+      /* Drive: apply the full safety config (driver init + 4x4 30 Hz).
+       * Clears pending only on success; failure schedules a retry. */
+      s_tof.safety_config_pending = 0u;
+      BLE_Tof_EnforceSafetyConfig();
+      log_fmt("BLE_Tof enforce_done ready=%u err=%u tick=%lu\r\n",
+              (unsigned)s_tof.safety_config_ready,
+              (unsigned)s_tof.last_error,
+              (unsigned long)HAL_GetTick());
+      if (!s_tof.safety_config_ready) {
+        s_tof.safety_config_pending = 1u;
         s_tof.safety_config_retry_tick =
             HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
       }
     }
   }
+
+  uint8_t handled_debug_config = process_pending_debug_config(now);
+  if (s_tof.safety_config_pending && safety_retry_due &&
+      BLE_App_GetMode() != OPENOTTER_MODE_DRIVE &&
+      !handled_debug_config) {
+    /* Debug/Park must not run VL53L8 init/config from a BLE event callback.
+     * If iOS has queued a debug FE61 write, process_pending_debug_config()
+     * applies it from this main-loop context. Without a queued config, keep
+     * retry bookkeeping alive for the next Drive edge. */
+    s_tof.safety_config_retry_tick = HAL_GetTick() + SAFETY_CONFIG_RETRY_MS;
+  }
+
+  publish_pending_status_if_needed();
 
   if (!BLE_App_IsConnected()) return;
 
@@ -495,7 +562,13 @@ static SVCCTL_EvtAckStatus_t BLE_Tof_EventHandler(void *Event)
   if (BleAttrDispatch_IsValueWrite(attr_mod->attr_handle,
                                    s_tof.config_char_handle)) {
     ack = SVCCTL_EvtAck;
-    apply_config_write(attr_mod->att_data, attr_mod->data_length);
+    if (BLE_TofDebugConfigQueue_Push(&s_tof.config_queue,
+                                     attr_mod->att_data,
+                                     attr_mod->data_length) < 0) {
+      s_tof.last_error = (uint8_t)TOF_STATUS_BAD_CONFIG;
+      s_tof.state = BLE_TOF_STATE_RUNNING;
+      request_status_publish();
+    }
   }
   return ack;
 }
