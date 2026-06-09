@@ -34,6 +34,7 @@
 #include "drive_safety.h"
 #include "tof_l8.h"
 #include "ble_tof.h"
+#include "ble_adv_policy.h"
 #include "ble_command.h"
 #include "ble_drive_policy.h"
 #include "ble_gatt_layout.h"
@@ -87,6 +88,7 @@ typedef struct {
   int16_t reportedVelocityMmPerS;
 
   OpenOtterMode_t mode;
+  BleAdvPolicy_t adv;
 } BLE_AppContext_t;
 
 /* Private variables ---------------------------------------------------------*/
@@ -104,6 +106,7 @@ static uint8_t HciEvtPool[POOL_SIZE];
 static void BLE_InitStack(void);
 static int BLE_InitGATTService(void);
 static void BLE_StartAdvertising(void);
+static void BLE_ServiceAdvertising(uint32_t now_ms);
 static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us);
 static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *event);
 
@@ -156,6 +159,7 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   SCH_RegTask(CFG_IdleTask_HciAsynchEvt, BLE_HciUserEvtTask);
   SCH_RegTask(CFG_IdleTask_TlEvt, BLE_TlEvtTask);
   SCH_RegTask(CFG_IdleTask_StartAdv, BLE_AdvTask);
+  BleAdvPolicy_Init(&bleCtx.adv, HAL_GetTick());
 
   BLE_InitStack();
   FwWatchdog_Refresh();
@@ -164,7 +168,6 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
     return gatt_status;
   }
   BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
-  BLE_StartAdvertising();
   FwWatchdog_Refresh();
 
   return 0;
@@ -276,6 +279,8 @@ void BLE_App_Process(void) {
   SCH_Run();
 
   uint32_t now = HAL_GetTick();
+  BLE_ServiceAdvertising(now);
+
   bool watchdog_trip =
       bleCtx.isConnected &&
       (now - bleCtx.lastCommandTick) > BLE_SAFETY_TIMEOUT_MS;
@@ -463,8 +468,11 @@ static int BLE_InitGATTService(void) {
 }
 
 static void BLE_StartAdvertising(void) {
-  if (bleCtx.isConnected)
+  uint32_t now = HAL_GetTick();
+  if (bleCtx.isConnected) {
+    BleAdvPolicy_OnConnected(&bleCtx.adv);
     return;
+  }
 
   const char ad_name[] = {AD_TYPE_COMPLETE_LOCAL_NAME,
                           'O',
@@ -491,8 +499,21 @@ static void BLE_StartAdvertising(void) {
       sizeof(svc_uuid_list), (uint8_t *)svc_uuid_list, 0, 0);
 
   if (ret != BLE_STATUS_SUCCESS) {
-    /* Retry via scheduler if the stack wasn't ready yet */
-    SCH_SetTask(CFG_IdleTask_StartAdv);
+    BleAdvPolicy_OnFailure(&bleCtx.adv, now);
+    app_log_fmt("BLE adv_start fail 0x%02X retry=%lums count=%u\r\n",
+                (unsigned)ret,
+                (unsigned long)bleCtx.adv.retry_delay_ms,
+                (unsigned)bleCtx.adv.fail_count);
+    return;
+  }
+
+  BleAdvPolicy_OnSuccess(&bleCtx.adv);
+  app_log_fmt("BLE adv_start ok tick=%lu\r\n", (unsigned long)now);
+}
+
+static void BLE_ServiceAdvertising(uint32_t now_ms) {
+  if (BleAdvPolicy_Due(&bleCtx.adv, now_ms, bleCtx.isConnected != 0u)) {
+    BLE_StartAdvertising();
   }
 }
 
@@ -596,6 +617,7 @@ void SVCCTL_App_Notification(void *pckt) {
                 (unsigned)disc->handle, (unsigned)disc->reason);
     bleCtx.isConnected = 0;
     bleCtx.connectionHandle = 0;
+    BleAdvPolicy_OnDisconnected(&bleCtx.adv, HAL_GetTick());
     BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
     BLE_Tof_RequestSafetyConfig();
@@ -617,6 +639,7 @@ void SVCCTL_App_Notification(void *pckt) {
           (evt_le_connection_complete *)meta->data;
       bleCtx.connectionHandle = conn->handle;
       bleCtx.isConnected = 1;
+      BleAdvPolicy_OnConnected(&bleCtx.adv);
       bleCtx.lastCommandTick = HAL_GetTick();
       bleCtx.safetyTriggered = 0;
       app_log_fmt("BLE connect handle=0x%04X\r\n", (unsigned)conn->handle);
@@ -661,7 +684,7 @@ static void BLE_HciUserEvtTask(void) { TL_BLE_HCI_UserEvtProc(); }
 
 static void BLE_TlEvtTask(void) { TL_BLE_R_EvtProc(); }
 
-static void BLE_AdvTask(void) { BLE_StartAdvertising(); }
+static void BLE_AdvTask(void) { BLE_ServiceAdvertising(HAL_GetTick()); }
 
 /*============================================================================*/
 /*  RTC & LPM INITIALIZATION (required by BLE middleware)                     */

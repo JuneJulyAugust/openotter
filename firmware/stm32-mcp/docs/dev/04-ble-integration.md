@@ -197,18 +197,19 @@ sending at whatever rate it considers smooth (20–50 Hz typically).
   │      ├─ BLE_InitRTC (LSI 32 kHz for the timer server)                │
   │      ├─ HW_TS_Init                                                   │
   │      ├─ SCH_RegTask x3 (HciAsynchEvt, TlEvt, StartAdv)               │
+  │      ├─ BleAdvPolicy_Init (schedule first advertise from main loop)  │
   │      ├─ BLE_InitStack → TL_BLE_HCI_Init → SVCCTL_Init                │
   │      │   │ bounded GPIO reset of BlueNRG-MS (~2 ms pulse)            │
   │      │   │ wait for HCI response, bounded below IWDG window          │
   │      │   │ SVCCTL_Init sets GAP name = "OPENOTTER-MCP"               │
   │      ├─ BLE_InitGATTService (adds FE40 service + FE41-FE44 chars)    │
   │      ├─ BLE_ApplyPWM(neutral, neutral)                               │
-  │      └─ BLE_StartAdvertising (ADV_IND, 80–100 ms interval)           │
+  │      └─ return to main loop without blocking on advertising retry     │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
                                  ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  idle: SCH_Run + LD2 main-loop heartbeat + command watchdog          │
+  │  idle: SCH_Run + BLE_ServiceAdvertising + LD2 heartbeat + watchdog   │
   │    (iOS central scans → sees "OPENOTTER-MCP")                        │
   └──────────────────────────────────────────────────────────────────────┘
                                  │
@@ -258,12 +259,13 @@ sending at whatever rate it considers smooth (20–50 Hz typically).
 
 ### 5.1 Why advertising re-start is deferred
 
-Calling `aci_gap_set_discoverable` from inside the HCI event callback
-deadlocks the transport layer — the command channel is still owned by
-the current event. The fix is to schedule `BLE_AdvTask` via
-`SCH_SetTask(CFG_IdleTask_StartAdv)`; the next `SCH_Run()` iteration
-picks it up when the channel is idle. Without this, the device becomes
-undiscoverable after the first disconnect.
+Calling `aci_gap_set_discoverable` from inside the HCI event callback can fail
+because the command channel is still owned by the current event. Advertising is
+therefore driven by `BleAdvPolicy_t`: boot schedules the first attempt after
+the main loop is alive, disconnect schedules a new attempt after a short delay,
+and failures back off from 1 s to 5 s instead of immediately issuing another
+blocking HCI command. Look for `BLE adv_start ok` or `BLE adv_start fail ...`
+in the UART log when debugging reconnects.
 
 ### 5.2 Why the backup-domain reset at boot
 
@@ -283,7 +285,7 @@ firmware now treats BLE startup as watchdog-protected work:
   starts the IWDG before `BLE_App_Init`.
 - `BLE/hw/hw_spi.c` resets BlueNRG with a bounded HAL delay instead of waiting
   on a timer-server callback during reset.
-- `OPENOTTER_BLE_HCI_TIMEOUT_MS` is 15 s, below the 30 s IWDG window and below
+- `OPENOTTER_BLE_HCI_TIMEOUT_MS` is 3 s, below the 30 s IWDG window and below
   the STM32L4 IWDG's practical maximum at nominal 32 kHz LSI.
 - FE40/FE41/FE42/FE43/FE44 registration is fail-closed: if a required GATT
   service or characteristic cannot be added, startup logs the failed handle

@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **VIN startup recovery**: Hardened noisy RC-battery startup by starting the independent watchdog before BLE bringup, bounding the BlueNRG reset and HCI wait paths, fail-closing required GATT service registration, and panic-resetting on fatal init (`PANIC:I`) or BlueNRG SPI busy lockup (`PANIC:P`) instead of freezing until a full vehicle power cycle.
+- **BLE advertising startup/reconnect**: Moved advertising start out of blocking boot init and into a main-loop retry policy with 100 ms initial delay, 1-5 s backoff, `BLE adv_start` UART logs, and a shorter 3 s HCI command timeout so a failed advertising command no longer makes LD2 and app reconnects appear dead for 10-15 s.
 
 ## [1.2.0] - 2026-06-02
 

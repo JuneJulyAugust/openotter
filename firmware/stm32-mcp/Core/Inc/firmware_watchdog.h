@@ -11,7 +11,7 @@
  * Timeout sizing: ~30 seconds gives enough slack for the slowest documented
  * blocking operations while still fitting the STM32L4 IWDG's 12-bit reload
  * limit at the nominal 32 kHz LSI. It covers the VL53L8CX firmware-download
- * transfer cap (15 s) and the bounded BlueNRG HCI command timeout (15 s),
+ * transfer cap (15 s) and the bounded BlueNRG HCI command timeout (3 s),
  * both of which can happen during bringup or lazy safety configuration.
  * Normal steady-state loop iterations are sub-millisecond, so this remains a
  * last-resort recovery path rather than a loop-health monitor.
@@ -38,10 +38,10 @@ extern "C" {
 
 /* Bound BlueNRG HCI waits below the IWDG window so BLE startup can fail
  * closed instead of exceeding the watchdog's representable timeout. */
-#define FW_WATCHDOG_BLE_HCI_TIMEOUT_MS 15000u
+#define FW_WATCHDOG_BLE_HCI_TIMEOUT_MS 3000u
 
 /* Default timeout. Must exceed the VL53L8CX driver's largest blocking I2C/SPI
- * transaction timeout (15 s) and the BlueNRG HCI command timeout (15 s), while
+ * transaction timeout (15 s) and the BlueNRG HCI command timeout (3 s), while
  * staying under the IWDG max representable timeout (~32.76 s at LSI 32 kHz). */
 #define FW_WATCHDOG_DEFAULT_TIMEOUT_MS  30000u
 

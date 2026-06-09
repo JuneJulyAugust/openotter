@@ -190,8 +190,9 @@ Alternatives: `minicom -D /dev/tty.usbmodem1103 -b 115200`, or `picocom`.
 
 ### 3.3 BLE advertising check (no iOS app required)
 
-The firmware advertises as **`OPENOTTER-MCP`** (GAP device name) after
-`BLE_App_Init` completes. Any BLE scanner can confirm this:
+The firmware advertises as **`OPENOTTER-MCP`** (GAP device name) from the
+main-loop advertising retry path after BLE/GATT initialization completes. Any
+BLE scanner can confirm this:
 
 **macOS** (built-in):
 
@@ -230,7 +231,9 @@ core. The firmware now hardens this path by:
 - starting the independent watchdog before BlueNRG BLE bringup;
 - resetting the BlueNRG coprocessor with a bounded GPIO reset pulse that does
   not depend on the BLE timer server;
-- limiting BlueNRG HCI command waits to 15 s, below the watchdog window;
+- limiting BlueNRG HCI command waits to 3 s, below the watchdog window;
+- starting BLE advertising from the main-loop retry/backoff path instead of
+  blocking boot inside `BLE_App_Init`;
 - panic-resetting instead of spinning forever on init errors or BlueNRG SPI
   busy lockups;
 - clearing reset-cause flags after each boot log so `BOR`, `IWDG`, `PIN`, and
@@ -291,6 +294,6 @@ self-powers from the CN7 USB cable and the BLE module runs from the same
 | Repeated `BOOT cause=IWDG`                          | Watchdog is recovering a persistent startup/loop stall. Capture the last boot phase. |
 | `PANIC:I`                                          | Fatal init/GATT setup failure; inspect prior boot phase and BLE logs. |
 | `PANIC:P`                                          | BlueNRG SPI stayed busy; inspect SPI3/BlueNRG power/reset behavior. |
-| `LOOP` continues but no BLE advert                 | SPI3 / SPBTLE-RF fault, or BlueNRG startup/GATT service failure.   |
+| `LOOP` continues but no BLE advert                 | Check for `BLE adv_start fail ...` logs; SPI3 / SPBTLE-RF fault, or BlueNRG startup/GATT service failure. |
 | Advert seen as "BlueNRG"                           | Old firmware on flash — reflash latest Debug build.               |
 | iOS app connects once, then refuses to reconnect   | GAP name mismatch with iOS cache — see BLE doc for cache notes.   |

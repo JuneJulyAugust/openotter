@@ -54,6 +54,7 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof_debug.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_drive_policy.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_adv_policy.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_tof.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/pwm_control.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/ble_command.c
