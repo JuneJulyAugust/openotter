@@ -42,7 +42,7 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 3QG94NJJQQ
+        DEVELOPMENT_TEAM: 73UU4A5H44
         TARGETED_DEVICE_FAMILY: "1"
     entitlements:
       path: Resources/openotter.entitlements

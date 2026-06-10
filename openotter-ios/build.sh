@@ -30,7 +30,8 @@ Options:
   --release         Use Release configuration
 
 Environment:
-  DEVICE_UDID       Device UDID (alternative to --device flag)
+  DEVICE_UDID       CoreDevice or hardware device UDID (alternative to --device flag)
+  XCODE_DEVICE_UDID Hardware device UDID for xcodebuild (auto-detected for deploy)
   CONFIG            Build configuration (default: Debug)
   BUNDLE_ID         Product bundle identifier (default: com.openotter-ios.app)
   APP_VERSION       Marketing version (default: contents of VERSION)
@@ -40,18 +41,27 @@ Environment:
   ENABLE_CODE_COVERAGE  Set to 1 or YES to collect XCTest coverage
   RESULT_BUNDLE_PATH    Optional xcodebuild .xcresult path for tests
   CODE_SIGNING_ALLOWED  Optional xcodebuild override for simulator CI
+  BUILD_DESTINATION     Optional xcodebuild destination override for device builds
+  DEVELOPMENT_TEAM      Optional Apple Developer team override
+  REINSTALL_ON_SIGNING_MISMATCH
+                      Set to 0 to stop instead of uninstalling/retrying when
+                      an installed app is signed by a different Apple team
 EOF
     exit 1
 }
 
 # Parse global options
 DEVICE_UDID="${DEVICE_UDID:-}"
+XCODE_DEVICE_UDID="${XCODE_DEVICE_UDID:-}"
+DEVICE_NAME="${DEVICE_NAME:-}"
 SIMULATOR_NAME="${SIMULATOR_NAME:-iPhone 17}"
 SIMULATOR_UDID="${SIMULATOR_UDID:-}"
 TEST_DESTINATION="${TEST_DESTINATION:-}"
 ENABLE_CODE_COVERAGE="${ENABLE_CODE_COVERAGE:-0}"
 RESULT_BUNDLE_PATH="${RESULT_BUNDLE_PATH:-}"
 CODE_SIGNING_ALLOWED="${CODE_SIGNING_ALLOWED:-}"
+BUILD_DESTINATION="${BUILD_DESTINATION:-}"
+REINSTALL_ON_SIGNING_MISMATCH="${REINSTALL_ON_SIGNING_MISMATCH:-1}"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device) DEVICE_UDID="$2"; shift 2 ;;
@@ -66,49 +76,81 @@ COMMAND="${COMMAND:-}"
 [[ -z "$COMMAND" ]] && usage
 
 auto_detect_device() {
-    if [[ -n "$DEVICE_UDID" ]]; then return; fi
-
-    local devices
-    local devices_output
-    if ! devices_output=$(xcrun devicectl list devices --timeout 30 2>&1); then
+    local devices_json
+    local devices_error
+    devices_json="$(mktemp)"
+    devices_error="$(mktemp)"
+    if ! xcrun devicectl list devices \
+        --filter "State BEGINSWITH 'available' OR State == 'connected'" \
+        --timeout 30 \
+        --json-output "$devices_json" \
+        --quiet 2> "$devices_error"; then
         echo "Unable to query connected iOS devices via CoreDevice."
-        echo "$devices_output"
+        cat "$devices_error"
+        rm -f "$devices_json" "$devices_error"
         echo "Try reconnecting the iPhone, unlocking it, and running: xcrun devicectl list devices"
         exit 1
     fi
+    rm -f "$devices_error"
 
-    devices=$(printf '%s\n' "$devices_output" | awk '
-        /[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}/ &&
-        $0 !~ /^[-[:space:]]*$/ {
-            for (i = 1; i <= NF; i++) {
-                if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
-                    state = $(i + 1)
-                    if (state == "available" || state == "connected") {
-                        print $i
-                    }
-                }
-            }
-        }
-    ' || true)
-    local count
-    if [[ -n "$devices" ]]; then
-        count=$(printf '%s\n' "$devices" | wc -l | tr -d '[:space:]')
-    else
-        count=0
-    fi
+    local -a core_ids=()
+    local -a xcode_ids=()
+    local -a names=()
+    local index=0
+    while true; do
+        local core_id
+        core_id="$(/usr/bin/plutil -extract "result.devices.$index.identifier" raw -o - "$devices_json" 2>/dev/null || true)"
+        if [[ ! "$core_id" =~ ^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$ ]]; then
+            break
+        fi
 
-    if [[ "$count" -eq 1 ]]; then
-        DEVICE_UDID="$(printf '%s\n' "$devices" | head -1 | xargs)"
-        echo "Auto-detected device: $DEVICE_UDID"
+        local xcode_id
+        local name
+        xcode_id="$(/usr/bin/plutil -extract "result.devices.$index.hardwareProperties.udid" raw -o - "$devices_json" 2>/dev/null || true)"
+        name="$(/usr/bin/plutil -extract "result.devices.$index.deviceProperties.name" raw -o - "$devices_json" 2>/dev/null || echo "Unknown")"
+
+        core_ids+=("$core_id")
+        xcode_ids+=("$xcode_id")
+        names+=("$name")
+        index=$((index + 1))
+    done
+    rm -f "$devices_json"
+
+    local count="${#core_ids[@]}"
+    local selected=-1
+    local requested="${DEVICE_UDID:-$XCODE_DEVICE_UDID}"
+
+    if [[ -n "$requested" ]]; then
+        local i
+        for ((i = 0; i < count; i++)); do
+            if [[ "$requested" == "${core_ids[$i]}" || "$requested" == "${xcode_ids[$i]}" ]]; then
+                selected="$i"
+                break
+            fi
+        done
+        if [[ "$selected" -lt 0 ]]; then
+            echo "Specified iOS device is not available: $requested"
+            echo
+            echo "Available devices:"
+            for ((i = 0; i < count; i++)); do
+                printf '  %s  CoreDevice=%s  Xcode=%s\n' "${names[$i]}" "${core_ids[$i]}" "${xcode_ids[$i]}"
+            done
+            exit 1
+        fi
+    elif [[ "$count" -eq 1 ]]; then
+        selected=0
     elif [[ "$count" -gt 1 ]]; then
         echo "Multiple devices found. Specify with --device <UDID>:"
-        echo "$devices_output"
+        local i
+        for ((i = 0; i < count; i++)); do
+            printf '  %s  CoreDevice=%s  Xcode=%s\n' "${names[$i]}" "${core_ids[$i]}" "${xcode_ids[$i]}"
+        done
         exit 1
     else
         echo "No available iOS devices found."
         echo
         echo "CoreDevice currently reports:"
-        echo "$devices_output"
+        xcrun devicectl list devices --timeout 30 || true
         cat <<'EOF'
 
 If your iPhone is listed as unavailable, reconnect it, unlock it, confirm
@@ -118,6 +160,11 @@ Then rerun:
 EOF
         exit 1
     fi
+
+    DEVICE_UDID="${core_ids[$selected]}"
+    XCODE_DEVICE_UDID="${xcode_ids[$selected]}"
+    DEVICE_NAME="${names[$selected]}"
+    echo "Auto-detected device: $DEVICE_NAME (CoreDevice $DEVICE_UDID, Xcode $XCODE_DEVICE_UDID)"
 }
 
 app_path() {
@@ -152,31 +199,61 @@ cmd_generate() {
     echo "==> Done: $PROJECT_NAME.xcodeproj"
 }
 
+ensure_project() {
+    cmd_generate
+}
+
+build_destination() {
+    if [[ -n "$BUILD_DESTINATION" ]]; then
+        echo "$BUILD_DESTINATION"
+    elif [[ -n "$XCODE_DEVICE_UDID" ]]; then
+        echo "id=$XCODE_DEVICE_UDID"
+    elif [[ -n "$DEVICE_UDID" ]]; then
+        echo "id=$DEVICE_UDID"
+    else
+        echo "generic/platform=iOS"
+    fi
+}
+
+is_device_destination() {
+    [[ -n "$XCODE_DEVICE_UDID" || -n "$DEVICE_UDID" || "$BUILD_DESTINATION" == id=* || "$BUILD_DESTINATION" == *",id="* ]]
+}
+
 cmd_build() {
-    if [[ ! -d "$PROJECT_NAME.xcodeproj" ]]; then
-        cmd_generate
+    if [[ -n "$DEVICE_UDID" && -z "$XCODE_DEVICE_UDID" ]]; then
+        auto_detect_device
     fi
+    ensure_project
 
-    local team_arg=""
+    local destination
+    destination="$(build_destination)"
+
+    local xcodebuild_args=(
+        -project "$PROJECT_NAME.xcodeproj"
+        -scheme "$SCHEME"
+        -configuration "$CONFIG"
+        -destination "$destination"
+        -destination-timeout 30
+        -derivedDataPath "$DERIVED_DATA"
+        -allowProvisioningUpdates
+    )
+    if is_device_destination; then
+        xcodebuild_args+=(-allowProvisioningDeviceRegistration)
+    fi
+    xcodebuild_args+=(
+        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
+        MARKETING_VERSION="$APP_VERSION"
+    )
     if [[ -n "${DEVELOPMENT_TEAM:-}" ]]; then
-        team_arg="DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM"
+        xcodebuild_args+=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM")
     fi
+    xcodebuild_args+=(build)
 
-    echo "==> Building $SCHEME ($CONFIG)..."
+    echo "==> Building $SCHEME ($CONFIG) for $destination..."
     local build_output
     build_output="$(mktemp)"
-    if ! xcodebuild \
-        -project "$PROJECT_NAME.xcodeproj" \
-        -scheme "$SCHEME" \
-        -configuration "$CONFIG" \
-        -destination "generic/platform=iOS" \
-        -derivedDataPath "$DERIVED_DATA" \
-        -allowProvisioningUpdates \
-        PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
-        MARKETING_VERSION="$APP_VERSION" \
-        $team_arg \
-        build 2>&1 | tee "$build_output" | tail -20; then
-        if grep -qiE 'expired provisioning profile|profile has expired|invalid code signature|profile has not been explicitly trusted|0xe8008011|0x2712' "$build_output"; then
+    if ! xcodebuild "${xcodebuild_args[@]}" 2>&1 | tee "$build_output" | tail -20; then
+        if grep -qiE 'expired provisioning profile|profile has expired|invalid code signature|profile has not been explicitly trusted|no devices from which to generate a provisioning profile|No profiles for|0xe8008011|0x2712' "$build_output"; then
             show_signing_hint
         fi
         rm -f "$build_output"
@@ -189,11 +266,46 @@ cmd_build() {
 
 cmd_install() {
     auto_detect_device
+    local bundle_id
+    bundle_id="$(app_bundle_id)"
     echo "==> Installing on $DEVICE_UDID..."
-    xcrun devicectl device install app \
+    local install_output
+    install_output="$(mktemp)"
+    if xcrun devicectl device install app \
         --device "$DEVICE_UDID" \
-        "$(app_path)"
-    echo "==> Installed."
+        "$(app_path)" 2>&1 | tee "$install_output"; then
+        rm -f "$install_output"
+        echo "==> Installed."
+        return 0
+    fi
+
+    if grep -qiE 'MismatchedApplicationIdentifierEntitlement|application-identifier entitlement string' "$install_output"; then
+        if [[ "$REINSTALL_ON_SIGNING_MISMATCH" != "1" && "$REINSTALL_ON_SIGNING_MISMATCH" != "YES" ]]; then
+            rm -f "$install_output"
+            cat <<EOF
+Hint: the installed app is signed by a different Apple team.
+Delete OpenOtter from the iPhone, or rerun with:
+  REINSTALL_ON_SIGNING_MISMATCH=1 ./build.sh --release deploy
+EOF
+            return 1
+        fi
+
+        echo "==> Installed app was signed by a different Apple team; uninstalling $bundle_id and retrying..."
+        xcrun devicectl device uninstall app \
+            --device "$DEVICE_UDID" \
+            "$bundle_id"
+
+        if xcrun devicectl device install app \
+            --device "$DEVICE_UDID" \
+            "$(app_path)"; then
+            rm -f "$install_output"
+            echo "==> Installed."
+            return 0
+        fi
+    fi
+
+    rm -f "$install_output"
+    return 1
 }
 
 cmd_launch() {
@@ -222,6 +334,7 @@ EOF
 }
 
 cmd_deploy() {
+    auto_detect_device
     cmd_build
     cmd_install
     cmd_launch
@@ -299,9 +412,7 @@ EOF
 }
 
 cmd_test() {
-    if [[ ! -d "$PROJECT_NAME.xcodeproj" ]]; then
-        cmd_generate
-    fi
+    ensure_project
     local destination
     destination="$(test_destination)"
 
