@@ -14,6 +14,13 @@
 
 ## File Map
 
+### Design and technical docs
+
+- `docs/superpowers/specs/2026-06-10-figure-eight-control-design.md`
+  - Revised design, field-failure review, and implementation ownership.
+- `docs/superpowers/specs/2026-06-10-figure-eight-path-following-technical.md`
+  - Expanded math, control theory, steering/speed control, and pseudocode.
+
 ### Modified iOS source
 
 - `openotter-ios/Sources/Util/RobotGeometry.swift`

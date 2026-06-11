@@ -3,6 +3,7 @@
 **Status:** Implemented waypoint-controller baseline for review
 **Date:** 2026-06-10
 **Branch/worktree:** `control-figure-eight-design` at `.worktrees/control-figure-eight-design`
+**Technical note:** `docs/superpowers/specs/2026-06-10-figure-eight-path-following-technical.md`
 
 ## 1. Goal
 
