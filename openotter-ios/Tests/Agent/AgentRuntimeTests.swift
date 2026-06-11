@@ -41,7 +41,7 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(response, "Drive")
         XCTAssertEqual(speech.lastSpoken, response)
         if case .constantThrottle(let t) = goalReceiver.lastGoal {
-            XCTAssertEqual(t, 0.4, accuracy: 0.001)
+            XCTAssertEqual(t, 0.6, accuracy: 0.001)
         } else {
             XCTFail("Expected constantThrottle goal")
         }
@@ -63,11 +63,11 @@ final class AgentRuntimeTests: XCTestCase {
         let response = runtime.handleMessage("/figure8")
         XCTAssertEqual(response, "Starting figure-8 mission")
 
-        if case .followWaypoints(let waypoints, let maxThrottle) = goalReceiver.lastGoal {
-            XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
-            XCTAssertEqual(waypoints.count, 72)
+        if case .followFigureEight(let config, let maxThrottle) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.6, accuracy: 0.001)
+            XCTAssertEqual(config.segmentCount, 120)
         } else {
-            XCTFail("Expected followWaypoints goal")
+            XCTFail("Expected followFigureEight goal")
         }
     }
 

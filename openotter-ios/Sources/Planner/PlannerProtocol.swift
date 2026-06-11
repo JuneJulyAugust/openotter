@@ -17,6 +17,7 @@ struct Waypoint {
 enum PlannerGoal {
     case idle
     case followWaypoints([Waypoint], maxThrottle: Float)
+    case followFigureEight(config: FigureEightTrajectory.Config, maxThrottle: Float)
     case constantThrottle(targetThrottle: Float)
 }
 

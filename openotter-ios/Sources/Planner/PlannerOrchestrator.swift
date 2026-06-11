@@ -40,6 +40,9 @@ final class PlannerOrchestrator: ObservableObject {
     /// Nil while SAFE.
     @Published private(set) var brakeRecord: SafetyBrakeRecord?
 
+    /// Current planner waypoints for map overlay and field debugging.
+    @Published private(set) var activeWaypoints: [Waypoint] = []
+
     // MARK: - Init
 
     init(planner: any PlannerProtocol,
@@ -57,6 +60,7 @@ final class PlannerOrchestrator: ObservableObject {
         activePlanner.reset()
         cachePlannerReference(newPlanner)
         activePlanner = newPlanner
+        refreshPlannerDebugState()
     }
 
     // MARK: - Control Tick
@@ -79,6 +83,7 @@ final class PlannerOrchestrator: ObservableObject {
         lastSupervisorEvent = supervisor.lastEvent
         supervisorState = supervisor.state
         brakeRecord = supervisor.currentBrake
+        refreshPlannerDebugState()
 
         if case .brake = supervisor.state {
             isOverridden = true
@@ -106,6 +111,7 @@ final class PlannerOrchestrator: ObservableObject {
         }
         transition(to: .drive)
         activePlanner.setGoal(goal)
+        refreshPlannerDebugState()
     }
 
     /// Transition to Park: clear planner intent, drop any supervisor latch,
@@ -120,6 +126,7 @@ final class PlannerOrchestrator: ObservableObject {
         isOverridden = false
         supervisorState = .safe
         brakeRecord = nil
+        activeWaypoints = []
         transition(to: .park)
     }
 
@@ -141,7 +148,7 @@ final class PlannerOrchestrator: ObservableObject {
 
     private func ensurePlanner(for goal: PlannerGoal) {
         switch goal {
-        case .followWaypoints:
+        case .followWaypoints, .followFigureEight:
             if !(activePlanner is WaypointPlanner) {
                 activePlanner = waypointPlanner
             }
@@ -149,6 +156,14 @@ final class PlannerOrchestrator: ObservableObject {
             if !(activePlanner is ConstantSpeedPlanner) {
                 activePlanner = constantSpeedPlanner
             }
+        }
+    }
+
+    private func refreshPlannerDebugState() {
+        if let waypointProvider = activePlanner as? WaypointDebugProviding {
+            activeWaypoints = waypointProvider.activeWaypoints
+        } else {
+            activeWaypoints = []
         }
     }
 

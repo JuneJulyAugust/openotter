@@ -7,8 +7,21 @@ struct WaypointPlannerConfig {
     /// Full deflection would be 1.0; 0.6 gives smoother response.
     var steeringFractionAt90Deg: Float = 0.6
 
+    /// Keep enough throttle through normal turns that the car does not stall
+    /// while the heading loop is still converging.
+    var minimumThrottleFraction: Float = 0.35
+
+    /// If the target is almost behind the car, hold throttle at zero instead
+    /// of pushing forward into a U-turn.
+    var maxPoweredHeadingError: Float = 5 * .pi / 6
+
     /// Derived gain: maps heading error (rad) → steering fraction.
     var steeringGain: Float { steeringFractionAt90Deg / (.pi / 2) }
+}
+
+protocol WaypointDebugProviding: AnyObject {
+    var activeWaypoints: [Waypoint] { get }
+    var currentWaypointIndex: Int { get }
 }
 
 // MARK: - WaypointPlanner
@@ -17,7 +30,7 @@ struct WaypointPlannerConfig {
 ///
 /// Steering is proportional to heading error.
 /// Throttle fades toward zero as the turn sharpens, preventing high-speed cornering.
-final class WaypointPlanner: PlannerProtocol {
+final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
 
     let name = "WaypointPlanner"
     let config: WaypointPlannerConfig
@@ -31,6 +44,11 @@ final class WaypointPlanner: PlannerProtocol {
     private var waypoints: [Waypoint] = []
     private var maxThrottle: Float = 0
     private var currentIndex: Int = 0
+    private var isClosedLoop: Bool = false
+    private var pendingFigureEightConfig: FigureEightTrajectory.Config?
+
+    var activeWaypoints: [Waypoint] { waypoints }
+    var currentWaypointIndex: Int { currentIndex }
 
     // MARK: - PlannerProtocol
 
@@ -41,20 +59,24 @@ final class WaypointPlanner: PlannerProtocol {
         case .followWaypoints(let wps, let throttle):
             waypoints = wps
             maxThrottle = throttle
+            isClosedLoop = false
+        case .followFigureEight(let config, let throttle):
+            pendingFigureEightConfig = config
+            maxThrottle = throttle
+            isClosedLoop = true
         case .constantThrottle:
             break // Not handled by WaypointPlanner
         }
     }
 
     func plan(context: PlannerContext) -> ControlCommand {
+        materializePendingFigureEightIfNeeded(anchor: context.pose)
         guard !waypoints.isEmpty, currentIndex < waypoints.count else { return .neutral }
 
-        let target = waypoints[currentIndex]
+        advanceReachedWaypoints(from: context.pose)
+        guard currentIndex < waypoints.count else { return .neutral }
 
-        if hasReached(target: target, pose: context.pose) {
-            currentIndex += 1
-            return plan(context: context) // recurse for next waypoint
-        }
+        let target = waypoints[currentIndex]
 
         let yawError = headingError(to: target, from: context.pose)
         return ControlCommand(
@@ -68,9 +90,39 @@ final class WaypointPlanner: PlannerProtocol {
         waypoints = []
         maxThrottle = 0
         currentIndex = 0
+        isClosedLoop = false
+        pendingFigureEightConfig = nil
     }
 
     // MARK: - Private
+
+    private func materializePendingFigureEightIfNeeded(anchor: PoseEntry) {
+        guard let pendingFigureEightConfig else { return }
+        waypoints = FigureEightTrajectory.waypoints(config: pendingFigureEightConfig, anchor: anchor)
+        currentIndex = 0
+        self.pendingFigureEightConfig = nil
+    }
+
+    private func advanceReachedWaypoints(from pose: PoseEntry) {
+        var checkedCount = 0
+        while !waypoints.isEmpty,
+              currentIndex < waypoints.count,
+              checkedCount < waypoints.count,
+              hasReached(target: waypoints[currentIndex], pose: pose) {
+            currentIndex += 1
+            if isClosedLoop, currentIndex >= waypoints.count {
+                currentIndex = 0
+            }
+            checkedCount += 1
+        }
+
+        if !isClosedLoop,
+           checkedCount >= waypoints.count,
+           currentIndex < waypoints.count,
+           hasReached(target: waypoints[currentIndex], pose: pose) {
+            currentIndex = waypoints.count
+        }
+    }
 
     private func hasReached(target: Waypoint, pose: PoseEntry) -> Bool {
         groundDistance(ax: pose.x, az: pose.z, bx: target.x, bz: target.z) < target.acceptanceRadius
@@ -84,12 +136,16 @@ final class WaypointPlanner: PlannerProtocol {
     }
 
     private func steeringOutput(for yawError: Float) -> Float {
-        max(-1, min(1, config.steeringGain * yawError))
+        max(-1, min(1, -config.steeringGain * yawError))
     }
 
-    /// Throttle fades to zero at 180° error; full throttle when heading is aligned.
+    /// Throttle fades as heading error grows, but keeps a small floor through
+    /// normal turns so high-friction starts do not stall the mission.
     private func throttleOutput(for yawError: Float) -> Float {
-        maxThrottle * (1.0 - abs(yawError) / .pi)
+        let absError = abs(yawError)
+        guard absError <= config.maxPoweredHeadingError else { return 0 }
+        let fade = 1.0 - absError / .pi
+        return maxThrottle * max(config.minimumThrottleFraction, fade)
     }
 }
 

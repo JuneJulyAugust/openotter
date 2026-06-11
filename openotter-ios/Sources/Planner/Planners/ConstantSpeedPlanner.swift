@@ -39,7 +39,7 @@ final class ConstantSpeedPlanner: PlannerProtocol {
         case .constantThrottle(let throttle):
             targetThrottle = max(-1.0, min(1.0, throttle))
             isActive = true
-        case .idle, .followWaypoints:
+        case .idle, .followWaypoints, .followFigureEight:
             break
         }
     }

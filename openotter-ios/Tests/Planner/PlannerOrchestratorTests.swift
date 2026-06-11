@@ -278,6 +278,29 @@ final class PlannerOrchestratorTests: XCTestCase {
         )
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
         XCTAssertGreaterThan(cmd.throttle, 0.39)
+        XCTAssertEqual(orchestrator.activeWaypoints.count, 1)
+    }
+
+    func testSetGoalFollowFigureEightSwitchesToWaypointPlannerAndPublishesAnchoredWaypoints() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+        let anchor = PoseEntry(timestamp: 0.1, x: 1.5, y: 0, z: -0.5, yaw: 0, confidence: 1)
+
+        orchestrator.setGoal(.followFigureEight(
+            config: .init(segmentCount: 72, length: 1.5, width: 1.0, acceptanceRadius: 0.2),
+            maxThrottle: 0.6
+        ))
+
+        XCTAssertTrue(orchestrator.activePlanner is WaypointPlanner)
+
+        let cmd = orchestrator.tick(
+            context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0, pose: anchor)
+        )
+
+        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(orchestrator.activeWaypoints.count, 72)
+        XCTAssertEqual(orchestrator.activeWaypoints.first?.x ?? -1, anchor.x, accuracy: 0.001)
+        XCTAssertEqual(orchestrator.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)
+        XCTAssertGreaterThan(cmd.throttle, 0.4)
     }
 
     func testSetGoalConstantThrottleSwitchesBackToConstantPlanner() {
@@ -291,6 +314,7 @@ final class PlannerOrchestratorTests: XCTestCase {
 
         orchestrator.setGoal(.constantThrottle(targetThrottle: 0.3))
         XCTAssertTrue(orchestrator.activePlanner is ConstantSpeedPlanner)
+        XCTAssertTrue(orchestrator.activeWaypoints.isEmpty)
 
         let cmd = orchestrator.tick(
             context: PlannerTestFactory.context(timestamp: 0.2, forwardDepth: 10.0)

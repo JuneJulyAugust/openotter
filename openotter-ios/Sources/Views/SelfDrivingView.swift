@@ -472,7 +472,7 @@ struct SelfDrivingView: View {
                     poses: viewModel.poseModel.poses,
                     currentPose: viewModel.poseModel.currentPose,
                     isTracking: viewModel.poseModel.isTracking,
-                    waypoints: viewModel.waypoints,
+                    waypoints: viewModel.orchestrator.activeWaypoints,
                     scale: $scale,
                     offset: $offset
                 )

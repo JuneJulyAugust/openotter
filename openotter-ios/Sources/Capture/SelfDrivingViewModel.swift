@@ -23,9 +23,6 @@ final class SelfDrivingViewModel: ObservableObject {
     private let speech: SpeechOutput
     private var gatewayBridge: GatewayBridge?
 
-    /// Active waypoints for map overlay (empty for constant speed mode).
-    @Published var waypoints: [Waypoint] = []
-
     /// Target throttle for constant throttle planner. Adjustable from UI.
     @Published var targetThrottle: Float = 0.4
 

@@ -14,12 +14,12 @@ final class KeywordInterpreterTests: XCTestCase {
 
     func testForwardCommand() {
         let action = interpreter.interpret("/forward")
-        XCTAssertEqual(action, .move(direction: .forward, throttle: 0.4))
+        XCTAssertEqual(action, .move(direction: .forward, throttle: 0.6))
     }
 
     func testBackwardCommand() {
         let action = interpreter.interpret("/backward")
-        XCTAssertEqual(action, .move(direction: .backward, throttle: 0.4))
+        XCTAssertEqual(action, .move(direction: .backward, throttle: 0.6))
     }
 
     func testStopCommand() {
@@ -39,7 +39,7 @@ final class KeywordInterpreterTests: XCTestCase {
 
     func testCommandIsCaseInsensitive() {
         let action = interpreter.interpret("/FORWARD")
-        XCTAssertEqual(action, .move(direction: .forward, throttle: 0.4))
+        XCTAssertEqual(action, .move(direction: .forward, throttle: 0.6))
     }
 
     func testCommandWithLeadingTrailingWhitespace() {
@@ -49,12 +49,12 @@ final class KeywordInterpreterTests: XCTestCase {
 
     func testLeftCommand() {
         let action = interpreter.interpret("/left")
-        XCTAssertEqual(action, .move(direction: .left, throttle: 0.4))
+        XCTAssertEqual(action, .move(direction: .left, throttle: 0.6))
     }
 
     func testRightCommand() {
         let action = interpreter.interpret("/right")
-        XCTAssertEqual(action, .move(direction: .right, throttle: 0.4))
+        XCTAssertEqual(action, .move(direction: .right, throttle: 0.6))
     }
 
     func testFigureEightCommandBySlashAlias() {
@@ -96,7 +96,7 @@ final class KeywordInterpreterTests: XCTestCase {
 
     func testNormalButtonParsesAsSetSpeed() {
         let action = interpreter.interpret("🚗 Normal")
-        XCTAssertEqual(action, .setSpeed(throttle: 0.4))
+        XCTAssertEqual(action, .setSpeed(throttle: 0.6))
     }
 
     func testFastButtonParsesAsSetSpeed() {

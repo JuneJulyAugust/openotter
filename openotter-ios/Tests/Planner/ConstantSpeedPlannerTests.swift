@@ -21,6 +21,13 @@ final class ConstantSpeedPlannerTests: XCTestCase {
         XCTAssertEqual(cmd, .neutral, "ConstantSpeedPlanner should ignore followWaypoints goals")
     }
 
+    func testFollowFigureEightGoalIsIgnored() {
+        let planner = ConstantSpeedPlanner()
+        planner.setGoal(.followFigureEight(config: .init(), maxThrottle: 0.6))
+        let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 1.0))
+        XCTAssertEqual(cmd, .neutral, "ConstantSpeedPlanner should ignore figure-eight goals")
+    }
+
     func testConstantThrottleGoalActivatesPlanner() {
         let planner = ConstantSpeedPlanner()
         planner.setGoal(.constantThrottle(targetThrottle: 0.4))

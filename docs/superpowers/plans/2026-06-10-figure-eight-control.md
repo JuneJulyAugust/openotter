@@ -1,12 +1,12 @@
-# Figure-Eight Control Implementation Plan
+# Figure-Eight Waypoint Controller Rework Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a practical iOS-side figure-eight path tracker for basement driving, with firmware kept as the deterministic actuator/safety layer and optional drive-status telemetry for tuning.
+**Goal:** Rework the figure-eight milestone into a coherent waypoint-proportional controller that starts from the car's current pose, steers with the correct sign, moves at a useful default speed, and keeps looping until Park/Stop.
 
-**Architecture:** Add pure Swift trajectory and controller math under `openotter-ios/Sources/Planner/`, integrate it through `PlannerProtocol` and `PlannerOrchestrator`, and expose controls/telemetry in `SelfDrivingView`. Firmware does not own path tracking; it may add an FE42 status payload to report desired/applied PWM after arbitration.
+**Architecture:** Keep path tracking in iOS planner code. Telegram dispatch creates a `PlannerGoal.followFigureEight`; `WaypointPlanner` anchors the path on the first control tick because that is where `PlannerContext.pose` is available. Firmware remains unchanged and continues to own PWM clamping, watchdog behavior, and safety arbitration.
 
-**Tech Stack:** Swift, Combine, SwiftUI, XCTest for iOS planner/controller work; C11 and host tests for optional STM32 FE42 status telemetry.
+**Tech Stack:** Swift, XCTest, existing iOS planner/orchestrator/agent architecture.
 
 **Design:** `docs/superpowers/specs/2026-06-10-figure-eight-control-design.md`
 
@@ -14,568 +14,253 @@
 
 ## File Map
 
-### iOS - new
+### Modified iOS source
 
-- `openotter-ios/Sources/Planner/Trajectory/TrajectoryPoint.swift`
-  - `TrajectoryPoint`, `SampledTrajectory`, `PathTrackingDebugState`.
-- `openotter-ios/Sources/Planner/Trajectory/FigureEightTrajectory.swift`
-  - Generates anchored sampled figure-eight paths.
-- `openotter-ios/Sources/Planner/Trajectory/PathProjection.swift`
-  - Closest-point and lookahead-point helpers.
-- `openotter-ios/Sources/Planner/Planners/PathTrackingConfig.swift`
-  - Tunable controller defaults and clamps.
-- `openotter-ios/Sources/Planner/Planners/PathTrackingPlanner.swift`
-  - `PlannerProtocol` implementation using pure pursuit, speed PI, and trim.
-- `openotter-ios/Tests/Planner/FigureEightTrajectoryTests.swift`
-- `openotter-ios/Tests/Planner/PathProjectionTests.swift`
-- `openotter-ios/Tests/Planner/PathTrackingPlannerTests.swift`
-
-### iOS - modified
-
+- `openotter-ios/Sources/Util/RobotGeometry.swift`
+  - Add forward/right vector helpers and local-to-world transform.
 - `openotter-ios/Sources/Planner/PlannerProtocol.swift`
-  - Add trajectory goal.
+  - Add `PlannerGoal.followFigureEight(config:maxThrottle:)`.
+- `openotter-ios/Sources/Planner/FigureEightTrajectory.swift`
+  - Generate anchored, yaw-rotated figure-eight waypoints.
+- `openotter-ios/Sources/Planner/Planners/WaypointPlanner.swift`
+  - Fix steering sign, add closed-loop figure-eight materialization, avoid recursive advancement, add throttle floor.
+- `openotter-ios/Sources/Planner/Planners/ConstantSpeedPlanner.swift`
+  - Explicitly ignore figure-eight goals.
 - `openotter-ios/Sources/Planner/PlannerOrchestrator.swift`
-  - Expose latest path debug state when active planner provides it.
+  - Route figure-eight goals to `WaypointPlanner` and expose active waypoints.
+- `openotter-ios/Sources/Agent/KeywordInterpreter.swift`
+  - Raise default/normal throttle to `0.6`.
+- `openotter-ios/Sources/Agent/ActionDispatcher.swift`
+  - Dispatch `/figure8` as a figure-eight goal instead of precomputed global waypoints.
 - `openotter-ios/Sources/Capture/SelfDrivingViewModel.swift`
-  - Add figure-eight start/park entry point and path overlay state.
-- `openotter-ios/Sources/Views/PoseMapView.swift`
-  - Draw sampled trajectory.
+  - Remove stale waypoint state.
 - `openotter-ios/Sources/Views/SelfDrivingView.swift`
-  - Add compact Figure 8 controls and tracking metrics.
+  - Feed map overlay from orchestrator active waypoints.
+
+### Modified/additional tests
+
+- `openotter-ios/Tests/Planner/RobotGeometryTests.swift`
+- `openotter-ios/Tests/Planner/FigureEightTrajectoryTests.swift`
+- `openotter-ios/Tests/Planner/WaypointPlannerTests.swift`
 - `openotter-ios/Tests/Planner/PlannerOrchestratorTests.swift`
-  - Cover planner debug-state exposure.
-
-### Firmware - optional
-
-- `firmware/stm32-mcp/Core/Inc/ble_drive_status.h`
-- `firmware/stm32-mcp/Core/Src/ble_drive_status.c`
-- `firmware/stm32-mcp/tests/host/test_ble_drive_status.c`
-- `firmware/stm32-mcp/Core/Inc/ble_app.h`
-- `firmware/stm32-mcp/Core/Src/ble_app.c`
-- `openotter-ios/Sources/Capture/STM32DriveStatus.swift`
-- `openotter-ios/Tests/Capture/STM32DriveStatusTests.swift`
+- `openotter-ios/Tests/Planner/ConstantSpeedPlannerTests.swift`
+- `openotter-ios/Tests/Agent/KeywordInterpreterTests.swift`
+- `openotter-ios/Tests/Agent/ActionDispatcherTests.swift`
+- `openotter-ios/Tests/Agent/AgentRuntimeTests.swift`
 
 ---
 
-## Task 1: Lock the coordinate invariant with tests
+## Task 1: Lock Coordinate And Steering Sign
 
 **Files:**
-- Modify: `openotter-ios/Tests/Planner/PlannerTestFactory.swift`
-- Create: `openotter-ios/Tests/Planner/RobotGeometryTests.swift`
+- Modify: `openotter-ios/Sources/Util/RobotGeometry.swift`
+- Add: `openotter-ios/Tests/Planner/RobotGeometryTests.swift`
+- Modify: `openotter-ios/Tests/Planner/WaypointPlannerTests.swift`
 
-- [ ] **Step 1: Add tests for yaw and local axes**
+- [x] **Step 1: Add axis tests**
 
-Create tests proving:
+Verify yaw `0` means:
 
 ```swift
-// yaw 0 means forward is +x, right is +z.
+let forward = forwardVector(yaw: 0)
+let right = rightVector(yaw: 0)
+
 XCTAssertEqual(forward.x, 1, accuracy: 1e-5)
 XCTAssertEqual(forward.z, 0, accuracy: 1e-5)
 XCTAssertEqual(right.x, 0, accuracy: 1e-5)
 XCTAssertEqual(right.z, 1, accuracy: 1e-5)
 ```
 
-- [ ] **Step 2: Add a helper for test poses**
+- [x] **Step 2: Add steering sign tests**
+
+Verify:
+
+```swift
+Waypoint(x: 0.5, z: 0.5)  // robot-right -> steering > 0
+Waypoint(x: 0.5, z: -0.5) // robot-left  -> steering < 0
+```
+
+- [x] **Step 3: Implement helpers and steering sign**
 
 Use:
 
 ```swift
-static func pose(x: Float, z: Float, yaw: Float, timestamp: TimeInterval = 0) -> PoseEntry {
-    PoseEntry(timestamp: timestamp, x: x, y: 0, z: z, yaw: yaw, confidence: 1)
-}
-```
-
-- [ ] **Step 3: Run the failing test**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-```
-
-Expected: new tests compile and expose any mismatch in current heading math.
-
-- [ ] **Step 4: Implement minimal geometry helpers if needed**
-
-Add pure helpers near `RobotGeometry.swift` only if tests require them:
-
-```swift
-struct GroundVector: Equatable {
-    let x: Float
-    let z: Float
-}
-
-func forwardVector(yaw: Float) -> GroundVector {
-    GroundVector(x: cosf(yaw), z: -sinf(yaw))
-}
-
-func rightVector(yaw: Float) -> GroundVector {
-    GroundVector(x: sinf(yaw), z: cosf(yaw))
-}
-```
-
-- [ ] **Step 5: Run tests and commit**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Util/RobotGeometry.swift openotter-ios/Tests/Planner/RobotGeometryTests.swift openotter-ios/Tests/Planner/PlannerTestFactory.swift
-git commit -m "test: lock ground-plane coordinate geometry"
+forward_world = (cos(yaw), -sin(yaw))
+right_world = (sin(yaw), cos(yaw))
+steering = clamp(-gain * yawError, -1, 1)
 ```
 
 ---
 
-## Task 2: Add sampled trajectory value types
+## Task 2: Anchor Figure-Eight Waypoints To Live Pose
 
 **Files:**
-- Create: `openotter-ios/Sources/Planner/Trajectory/TrajectoryPoint.swift`
-- Create: `openotter-ios/Tests/Planner/FigureEightTrajectoryTests.swift`
-
-- [ ] **Step 1: Write failing value-type tests**
-
-Tests should verify a sampled trajectory rejects empty paths and stores total
-arc length:
-
-```swift
-func testSampledTrajectoryStoresClosedPathMetadata() {
-    let points = [
-        TrajectoryPoint(x: 0, z: 0, yaw: 0, curvature: 0, arcLength: 0),
-        TrajectoryPoint(x: 1, z: 0, yaw: 0, curvature: 0, arcLength: 1)
-    ]
-    let trajectory = SampledTrajectory(points: points, isClosed: true)
-    XCTAssertEqual(trajectory.totalLength, 1, accuracy: 1e-5)
-    XCTAssertTrue(trajectory.isClosed)
-}
-```
-
-- [ ] **Step 2: Implement the types**
-
-Add:
-
-```swift
-struct TrajectoryPoint: Equatable {
-    let x: Float
-    let z: Float
-    let yaw: Float
-    let curvature: Float
-    let arcLength: Float
-}
-
-struct SampledTrajectory: Equatable {
-    let points: [TrajectoryPoint]
-    let isClosed: Bool
-
-    var totalLength: Float {
-        points.last?.arcLength ?? 0
-    }
-}
-
-struct PathTrackingDebugState: Equatable {
-    let closestIndex: Int
-    let lookaheadIndex: Int
-    let crossTrackErrorM: Float
-    let headingErrorRad: Float
-    let curvatureCommand: Float
-    let targetSpeedMps: Float
-    let measuredSpeedMps: Float?
-    let steeringTrim: Float
-}
-```
-
-- [ ] **Step 3: Run tests and commit**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Planner/Trajectory/TrajectoryPoint.swift openotter-ios/Tests/Planner/FigureEightTrajectoryTests.swift
-git commit -m "planner: add sampled trajectory value types"
-```
-
----
-
-## Task 3: Generate an anchored figure-eight trajectory
-
-**Files:**
-- Create: `openotter-ios/Sources/Planner/Trajectory/FigureEightTrajectory.swift`
+- Modify: `openotter-ios/Sources/Planner/FigureEightTrajectory.swift`
 - Modify: `openotter-ios/Tests/Planner/FigureEightTrajectoryTests.swift`
 
-- [ ] **Step 1: Add generator tests**
+- [x] **Step 1: Add anchored path tests**
 
-Cover:
+Verify:
 
-- generated point count equals requested sample count,
-- path stays inside `length_m` and `width_m`,
-- first point equals anchor position,
-- first tangent aligns with anchor yaw,
-- final point is close to first point for a closed loop.
+- first waypoint equals anchor pose,
+- first segment is mostly forward,
+- path rotates with anchor yaw,
+- generated path stays in the rotated envelope,
+- final sample is close enough to first sample for a closed loop.
 
-- [ ] **Step 2: Implement config and generator**
+- [x] **Step 2: Implement anchored generator**
 
-Use:
-
-```swift
-struct FigureEightConfig: Equatable {
-    var lengthM: Float = 3.0
-    var widthM: Float = 1.8
-    var sampleCount: Int = 240
-    var laps: Int = 1
-}
-
-enum FigureEightTrajectory {
-    static func make(config: FigureEightConfig, anchor: PoseEntry) -> SampledTrajectory {
-        // Generate local points:
-        // x = length/2 * sin(t)
-        // z = width/2 * sin(2t)
-        // Rotate so the t=0 tangent matches anchor.yaw.
-        // Translate by anchor.x/anchor.z.
-    }
-}
-```
-
-- [ ] **Step 3: Estimate yaw, curvature, and arc length**
-
-Use neighboring samples:
+Generate a Gerono curve:
 
 ```swift
-let yaw = atan2f(-dz, dx)
-let curvature = signedCurvature(previous, current, next)
+curveX = length / 2 * sin(t)
+curveZ = width / 2 * sin(2 * t)
 ```
 
-Clamp non-finite curvature to zero.
-
-- [ ] **Step 4: Run tests and commit**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Planner/Trajectory/FigureEightTrajectory.swift openotter-ios/Tests/Planner/FigureEightTrajectoryTests.swift
-git commit -m "planner: generate anchored figure-eight trajectory"
-```
+Then rotate the local curve so its initial tangent points forward and transform
+each point through `worldPoint(localX:localZ:anchor:)`.
 
 ---
 
-## Task 4: Add path projection and lookahead
+## Task 3: Add Figure-Eight Planner Goal
 
 **Files:**
-- Create: `openotter-ios/Sources/Planner/Trajectory/PathProjection.swift`
-- Create: `openotter-ios/Tests/Planner/PathProjectionTests.swift`
-
-- [ ] **Step 1: Add projection tests**
-
-Cover:
-
-- closest point near pose is returned,
-- search starts near previous index,
-- closed path wraps at end,
-- lookahead advances by arc length,
-- lookahead wraps on a closed path.
-
-- [ ] **Step 2: Implement projection**
-
-Use a local search window to avoid jumping to the other branch of the figure
-eight at the crossover:
-
-```swift
-struct PathProjection {
-    let closestIndex: Int
-    let lookaheadIndex: Int
-    let crossTrackErrorM: Float
-    let headingErrorRad: Float
-}
-```
-
-Search around the previous closest index first. If the planner has no previous
-index, do a full search for initialization.
-
-- [ ] **Step 3: Run tests and commit**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Planner/Trajectory/PathProjection.swift openotter-ios/Tests/Planner/PathProjectionTests.swift
-git commit -m "planner: add trajectory projection and lookahead"
-```
-
----
-
-## Task 5: Add the path-tracking planner
-
-**Files:**
-- Create: `openotter-ios/Sources/Planner/Planners/PathTrackingConfig.swift`
-- Create: `openotter-ios/Sources/Planner/Planners/PathTrackingPlanner.swift`
-- Create: `openotter-ios/Tests/Planner/PathTrackingPlannerTests.swift`
 - Modify: `openotter-ios/Sources/Planner/PlannerProtocol.swift`
+- Modify: `openotter-ios/Sources/Planner/Planners/WaypointPlanner.swift`
+- Modify: `openotter-ios/Sources/Planner/Planners/ConstantSpeedPlanner.swift`
+- Modify: `openotter-ios/Tests/Planner/WaypointPlannerTests.swift`
+- Modify: `openotter-ios/Tests/Planner/ConstantSpeedPlannerTests.swift`
 
-- [ ] **Step 1: Extend planner goal**
-
-Add:
-
-```swift
-case followTrajectory(SampledTrajectory, config: PathTrackingConfig)
-```
-
-- [ ] **Step 2: Add steering tests**
-
-Cover:
-
-- inactive planner returns `.neutral`,
-- target straight ahead gives near-zero steering,
-- target to right gives positive steering,
-- target to left gives negative steering,
-- output is clamped to `[-1, +1]`,
-- stale timestamp does not jump trim or throttle.
-
-- [ ] **Step 3: Implement pure pursuit steering**
-
-Core formula:
+- [x] **Step 1: Add goal**
 
 ```swift
-let curvature = 2 * rightOffset / max(lookaheadDistance * lookaheadDistance, 0.01)
-let steeringAngle = atan(config.wheelbaseM * curvature)
-let steering = clamp(steeringAngle / config.maxSteeringAngleRad + steeringTrim, -1, 1)
+case followFigureEight(config: FigureEightTrajectory.Config, maxThrottle: Float)
 ```
 
-- [ ] **Step 4: Add speed target tests**
+- [x] **Step 2: Materialize on first control tick**
 
-Cover:
+`WaypointPlanner.setGoal` stores the config. `WaypointPlanner.plan(context:)`
+generates anchored waypoints from `context.pose` when the first control tick
+arrives.
 
-- high curvature lowers target speed,
-- low curvature uses cruise speed,
-- missing speed falls back to conservative throttle,
-- PI throttle increases when measured speed is below target.
+- [x] **Step 3: Keep figure-eight looping**
 
-- [ ] **Step 5: Implement speed PI and throttle rate limit**
+For `followFigureEight`, wrap `currentIndex` to `0` after the last waypoint.
+Finite `followWaypoints` goals still end with `.neutral`.
 
-Use the same timing guard shape as `ConstantSpeedPlanner`:
+- [x] **Step 4: Avoid recursive waypoint advancement**
 
-```swift
-guard dt > 0, dt < 1 else { return previousOutput }
-```
-
-Clamp integral and throttle output.
-
-- [ ] **Step 6: Add steering trim tests**
-
-Cover:
-
-- persistent positive cross-track error changes trim in correcting direction,
-- trim is clamped,
-- reset clears trim.
-
-- [ ] **Step 7: Run tests and commit**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Planner/PlannerProtocol.swift openotter-ios/Sources/Planner/Planners/PathTrackingConfig.swift openotter-ios/Sources/Planner/Planners/PathTrackingPlanner.swift openotter-ios/Tests/Planner/PathTrackingPlannerTests.swift
-git commit -m "planner: add pure pursuit path tracker"
-```
+Replace recursive `plan(context:)` calls with bounded advancement over reached
+waypoints. This avoids deep recursion when dense figure-eight samples are
+inside the acceptance radius.
 
 ---
 
-## Task 6: Integrate figure-eight mode into the orchestrator and view model
+## Task 4: Make Startup Faster But Still Bounded
 
 **Files:**
+- Modify: `openotter-ios/Sources/Agent/KeywordInterpreter.swift`
+- Modify: `openotter-ios/Sources/Agent/ActionDispatcher.swift`
+- Modify: `openotter-ios/Sources/Planner/Planners/WaypointPlanner.swift`
+- Modify: related tests
+
+- [x] **Step 1: Raise default/normal throttle**
+
+Default and `normal` become `0.6`. `slow`, `fast`, and `speed <value>` remain
+available.
+
+- [x] **Step 2: Add waypoint throttle floor**
+
+Use a floor during ordinary turns:
+
+```swift
+throttle = maxThrottle * max(0.35, 1 - abs(yawError) / pi)
+```
+
+Hold throttle at zero only when the target is nearly behind the car.
+
+---
+
+## Task 5: Wire Agent, Orchestrator, And Map Overlay
+
+**Files:**
+- Modify: `openotter-ios/Sources/Agent/ActionDispatcher.swift`
 - Modify: `openotter-ios/Sources/Planner/PlannerOrchestrator.swift`
 - Modify: `openotter-ios/Sources/Capture/SelfDrivingViewModel.swift`
-- Modify: `openotter-ios/Tests/Planner/PlannerOrchestratorTests.swift`
+- Modify: `openotter-ios/Sources/Views/SelfDrivingView.swift`
+- Modify: related tests
 
-- [ ] **Step 1: Add debug-state protocol**
+- [x] **Step 1: Dispatch figure-eight as a planner goal**
 
-Add:
+`/figure8` now dispatches:
 
 ```swift
-protocol PathTrackingDebugProviding: AnyObject {
-    var debugState: PathTrackingDebugState? { get }
-}
+.followFigureEight(
+    config: .init(segmentCount: 120, length: 1.5, width: 1.0, acceptanceRadius: 0.22),
+    maxThrottle: interpreter.currentThrottle
+)
 ```
 
-Have `PathTrackingPlanner` conform.
+- [x] **Step 2: Route figure-eight to WaypointPlanner**
 
-- [ ] **Step 2: Expose debug state through orchestrator**
+`PlannerOrchestrator.ensurePlanner(for:)` treats `.followFigureEight` like
+`.followWaypoints`.
 
-When active planner conforms to `PathTrackingDebugProviding`, publish the last
-debug state after each tick.
+- [x] **Step 3: Publish active waypoints**
 
-- [ ] **Step 3: Add `startFigureEight(config:)`**
+`WaypointPlanner` conforms to `WaypointDebugProviding`; `PlannerOrchestrator`
+publishes `activeWaypoints`.
 
-In `SelfDrivingViewModel`, create the trajectory from `poseModel.currentPose`,
-swap to `PathTrackingPlanner`, publish the path overlay, and call
-`orchestrator.setGoal`.
+- [x] **Step 4: Use real planner waypoints in the map**
 
-- [ ] **Step 4: Run tests and commit**
-
-Run:
-
-```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Planner/PlannerOrchestrator.swift openotter-ios/Sources/Capture/SelfDrivingViewModel.swift openotter-ios/Tests/Planner/PlannerOrchestratorTests.swift
-git commit -m "planner: wire figure-eight tracker into orchestrator"
-```
+`SelfDrivingView` passes `viewModel.orchestrator.activeWaypoints` to
+`PoseMapView`.
 
 ---
 
-## Task 7: Add UI controls and map overlay
+## Task 6: Verification
 
 **Files:**
-- Modify: `openotter-ios/Sources/Views/PoseMapView.swift`
-- Modify: `openotter-ios/Sources/Views/SelfDrivingView.swift`
-- Add/modify view tests if current snapshot/unit patterns support it.
+- All files above
 
-- [ ] **Step 1: Draw sampled trajectory**
-
-Add a `trajectory: SampledTrajectory?` parameter to `PoseMapView` and draw it
-as a continuous line separate from recorded pose history.
-
-- [ ] **Step 2: Add Figure 8 controls**
-
-Add compact controls for:
-
-- length,
-- width,
-- cruise speed,
-- laps,
-- start,
-- park.
-
-Keep controls in the existing landscape HUD style.
-
-- [ ] **Step 3: Add tracking metrics**
-
-Display:
-
-- cross-track error,
-- heading error,
-- target speed,
-- measured speed,
-- steering trim.
-
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 1: Build for testing**
 
 Run:
 
 ```bash
-bash openotter-ios/build.sh test
-git add openotter-ios/Sources/Views/PoseMapView.swift openotter-ios/Sources/Views/SelfDrivingView.swift
-git commit -m "ios: add figure-eight controls and trajectory overlay"
+cd openotter-ios
+APP_VERSION=$(cat VERSION) xcodegen generate
+xcodebuild build-for-testing \
+  -project openotter.xcodeproj \
+  -scheme openotter \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath .build/DerivedData \
+  CODE_SIGNING_ALLOWED=NO
 ```
+
+Expected: `** TEST BUILD SUCCEEDED **`.
+
+- [x] **Step 2: Run full tests**
+
+The default simulator got stuck in `Busy` preflight state, so pin a clean
+available simulator:
+
+```bash
+SIMULATOR_UDID=40B418BA-9B70-4B34-9D13-81E3A3F281A9 bash openotter-ios/build.sh test
+```
+
+Expected: `259 tests, 0 failures`.
 
 ---
 
-## Task 8: Optional firmware drive-status telemetry
+## Later Milestone: Pure Pursuit
 
-**Files:**
-- Create: `firmware/stm32-mcp/Core/Inc/ble_drive_status.h`
-- Create: `firmware/stm32-mcp/Core/Src/ble_drive_status.c`
-- Create: `firmware/stm32-mcp/tests/host/test_ble_drive_status.c`
-- Modify: `firmware/stm32-mcp/tests/host/Makefile`
-- Modify: `firmware/stm32-mcp/Core/Inc/ble_app.h`
-- Modify: `firmware/stm32-mcp/Core/Src/ble_app.c`
-- Create: `openotter-ios/Sources/Capture/STM32DriveStatus.swift`
-- Create: `openotter-ios/Tests/Capture/STM32DriveStatusTests.swift`
+Do not mix this into the waypoint-controller PR. After a basement run produces
+logs, add a separate pure-pursuit controller with:
 
-- [ ] **Step 1: Add C codec tests**
-
-Verify payload size and field encoding for:
-
-- desired PWM,
-- applied PWM,
-- mode,
-- watchdog flag,
-- safety flag.
-
-- [ ] **Step 2: Implement the HAL-free codec**
-
-Keep byte packing outside BlueNRG calls so host tests cover it.
-
-- [ ] **Step 3: Publish FE42 status**
-
-Update FE42 from `BLE_App_Process` at a low fixed rate, for example 5 Hz, after
-PWM arbitration.
-
-- [ ] **Step 4: Parse in iOS**
-
-Add a Swift model and parser tests mirroring the C payload.
-
-- [ ] **Step 5: Run firmware and iOS tests**
-
-Run:
-
-```bash
-make -C firmware/stm32-mcp/tests/host test
-bash openotter-ios/build.sh test
-```
-
-- [ ] **Step 6: Commit**
-
-Run:
-
-```bash
-git add firmware/stm32-mcp/Core/Inc/ble_drive_status.h firmware/stm32-mcp/Core/Src/ble_drive_status.c firmware/stm32-mcp/tests/host/test_ble_drive_status.c firmware/stm32-mcp/tests/host/Makefile firmware/stm32-mcp/Core/Inc/ble_app.h firmware/stm32-mcp/Core/Src/ble_app.c openotter-ios/Sources/Capture/STM32DriveStatus.swift openotter-ios/Tests/Capture/STM32DriveStatusTests.swift
-git commit -m "firmware: publish drive actuator status"
-```
-
----
-
-## Task 9: Field tuning checklist
-
-**Files:**
-- Create: `docs/superpowers/specs/2026-06-10-figure-eight-field-tuning.md`
-
-- [ ] **Step 1: Document preflight**
-
-Include:
-
-- wheels off ground,
-- verify steering sign,
-- verify Park forces neutral throttle,
-- verify safety overlay/alarm still works,
-- verify trajectory overlay aligns with map.
-
-- [ ] **Step 2: Document first-run sequence**
-
-Use:
-
-```text
-length=1.5 m
-width=1.0 m
-cruise_speed=0.25 m/s
-laps=1
-```
-
-Increase only after cross-track error and safety behavior look stable.
-
-- [ ] **Step 3: Commit**
-
-Run:
-
-```bash
-git add docs/superpowers/specs/2026-06-10-figure-eight-field-tuning.md
-git commit -m "docs: add figure-eight field tuning checklist"
-```
-
----
-
-## Verification Commands
-
-Run before opening a PR:
-
-```bash
-make -C firmware/stm32-mcp/tests/host test
-bash openotter-ios/build.sh test
-```
-
-Optional hardware validation:
-
-```bash
-bash firmware/stm32-mcp/build.sh build
-bash firmware/stm32-mcp/build.sh flash
-bash openotter-ios/build.sh --release deploy
-```
-
-The flash/deploy commands require the physical STM32/iPhone and host approval.
+- trajectory point yaw/curvature,
+- closest-path projection,
+- arc-length lookahead,
+- curvature-to-steering conversion,
+- speed PI control,
+- slow steering trim.

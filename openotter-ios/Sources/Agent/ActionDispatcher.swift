@@ -57,15 +57,15 @@ final class ActionDispatcher: ActionDispatching {
             return ActionResult(success: true, message: status)
 
         case .figureEight:
-            let waypoints = FigureEightTrajectory.waypoints(
+            goalReceiver?.setGoal(.followFigureEight(
                 config: .init(
-                    segmentCount: 72,
-                    length: 0.8,
-                    width: 0.5,
-                    acceptanceRadius: 0.15
-                )
-            )
-            goalReceiver?.setGoal(.followWaypoints(waypoints, maxThrottle: interpreter.currentThrottle))
+                    segmentCount: 120,
+                    length: 1.5,
+                    width: 1.0,
+                    acceptanceRadius: 0.22
+                ),
+                maxThrottle: interpreter.currentThrottle
+            ))
             return ActionResult(success: true, message: "Starting figure-8 mission")
 
         case .setSpeed(let throttle):
@@ -99,7 +99,7 @@ final class ActionDispatcher: ActionDispatching {
 
         Speed presets:
           🐢 slow            — 20%
-          🚗 normal           — 40% (default)
+          🚗 normal           — 60% (default)
           🐇 fast             — 80%
           speed <0.1–1.0>    — Set exact speed
 
