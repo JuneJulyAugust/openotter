@@ -91,14 +91,14 @@ Intuition:
 The current command defaults are:
 
 ```text
-segmentCount      = 160
-length            = 2.4 m
-width             = 1.2 m
-acceptanceRadius  = 0.20 m
+segmentCount      = 240
+length            = 4.0 m
+width             = 2.0 m
+acceptanceRadius  = 0.25 m
 maxThrottle       = current Telegram speed, default 0.6
 ```
 
-`segmentCount` turns the smooth curve into a list of waypoints. With 160
+`segmentCount` turns the smooth curve into a list of waypoints. With 240
 segments, neighboring waypoints are close enough for smooth steering, but not
 so dense that the controller spends all its time advancing tiny steps.
 
@@ -244,14 +244,14 @@ The gain is configured as:
 ```text
 steeringFractionAt90Deg = 0.4
 steeringGain = steeringFractionAt90Deg / (pi / 2)
-maxSteeringFraction = 0.55
+maxSteeringFraction = 0.50
 ```
 
 That means:
 
 ```text
 90 degree heading error -> raw steering command about 0.4
-larger errors -> steering capped to +/-0.55
+larger errors -> steering capped to +/-0.50
 ```
 
 This is a practical choice:
@@ -350,10 +350,10 @@ onTelegramMessage(text):
 
     if action == figureEight:
         config = FigureEightConfig(
-            segmentCount = 160,
-            length = 2.4,
-            width = 1.2,
-            acceptanceRadius = 0.20
+            segmentCount = 240,
+            length = 4.0,
+            width = 2.0,
+            acceptanceRadius = 0.25
         )
 
         goal = FollowFigureEight(
@@ -555,10 +555,10 @@ controller could then map curvature to steering after calibration.
 That upgrade should wait until the waypoint baseline has real basement data:
 
 - Does ARKit yaw drift too much?
-- Is 0.20 m acceptance radius too loose or too tight?
+- Is 0.25 m acceptance radius too loose or too tight?
 - Does 0.6 throttle plus a 0.35 floor move reliably?
 - Does the car understeer or oversteer on carpet?
-- Is the 0.55 steering cap low enough to avoid end-stop chatter but high
+- Is the 0.50 steering cap low enough to avoid end-stop chatter but high
   enough to complete both lobes?
 - Does servo center need a trim offset?
 

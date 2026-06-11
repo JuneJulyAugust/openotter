@@ -4,6 +4,7 @@
 **Date:** 2026-06-10
 **Branch/worktree:** `control-figure-eight-design` at `.worktrees/control-figure-eight-design`
 **Technical note:** `docs/superpowers/specs/2026-06-10-figure-eight-path-following-technical.md`
+**Trajectory plot:** `docs/superpowers/specs/2026-06-10-figure-eight-trajectory-plot.svg`
 
 ## 1. Goal
 
@@ -149,15 +150,44 @@ That means:
 - the figure eight is closed enough to loop smoothly without duplicating the
   first waypoint.
 
+### Starting Point And Direction
+
+The mission starts at the center crossing of the figure eight:
+
+```text
+t = 0
+local_x = 0
+local_z = 0
+waypoint index = 0
+```
+
+This local point is transformed into world coordinates using the car pose from
+the first control tick. In other words, `/figure8` treats the car's current
+pose as the crossing point of the track.
+
+The first segment moves into the forward/right branch:
+
+```text
+waypoint 1:
+  local_x > 0   # forward
+  local_z > 0   # right
+```
+
+At `segmentCount / 2`, the path crosses the same center point again, then
+enters the opposite lobe. The plot below is generated from the same local
+trajectory formula and default dimensions:
+
+![Figure-eight trajectory plot](2026-06-10-figure-eight-trajectory-plot.svg)
+
 Current default command parameters:
 
 ```text
-segmentCount      = 160
-length            = 2.4 m
-width             = 1.2 m
-acceptanceRadius  = 0.20 m
+segmentCount      = 240
+length            = 4.0 m
+width             = 2.0 m
+acceptanceRadius  = 0.25 m
 default throttle  = 0.6
-max steering      = 0.55
+max steering      = 0.50
 ```
 
 `length` and `width` are generator scale parameters. The larger default path

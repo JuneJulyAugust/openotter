@@ -9,7 +9,7 @@ struct WaypointPlannerConfig {
 
     /// Hard cap for steering output. Keep below the mechanical stop range so
     /// the servo does not sit against its end stop and chatter.
-    var maxSteeringFraction: Float = 0.55
+    var maxSteeringFraction: Float = 0.50
 
     /// Keep enough throttle through normal turns that the car does not stall
     /// while the heading loop is still converging.
@@ -21,10 +21,10 @@ struct WaypointPlannerConfig {
 
     /// Closed-loop paths use a forward progress search so a missed waypoint
     /// does not trap the car into orbiting around one lobe.
-    var closedLoopProgressSearchCount: Int = 24
+    var closedLoopProgressSearchCount: Int = 48
 
     /// Closed-loop paths aim a few waypoints ahead for smoother steering.
-    var closedLoopLookaheadCount: Int = 6
+    var closedLoopLookaheadCount: Int = 10
 
     /// Derived gain: maps heading error (rad) → steering fraction.
     var steeringGain: Float { steeringFractionAt90Deg / (.pi / 2) }

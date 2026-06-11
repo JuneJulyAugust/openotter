@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" role="img" aria-labelledby="title desc">
+  <title id="title">OpenOtter 4 m by 2 m figure-eight trajectory</title>
+  <desc id="desc">Local car-frame figure-eight trajectory. X axis is forward, Z axis is right. Start is at the center crossing. Waypoint 1 enters the forward-right branch. The path crosses the center again halfway through the loop.</desc>
+  <rect width="1000" height="640" fill="#fbfbfd"/>
+  <g stroke="#d8dbe2" stroke-width="1">
+    <line x1="140" y1="320" x2="860" y2="320"/>
+    <line x1="500" y1="115" x2="500" y2="525"/>
+    <line x1="160" y1="115" x2="160" y2="525" opacity="0.45"/>
+    <line x1="840" y1="115" x2="840" y2="525" opacity="0.45"/>
+    <line x1="140" y1="150" x2="860" y2="150" opacity="0.45"/>
+    <line x1="140" y1="490" x2="860" y2="490" opacity="0.45"/>
+  </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" fill="#30343b">
+    <text x="865" y="314">+x forward</text>
+    <text x="512" y="124">+z right</text>
+    <text x="98" y="314">-x</text>
+    <text x="512" y="514">-z</text>
+  </g>
+  <polyline points="500.0,320.0 535.5,284.7 570.7,250.9 605.1,220.1 638.3,193.7 670.0,172.8 699.8,158.3 727.5,150.9 752.7,150.9 775.1,158.3 794.4,172.8 810.6,193.7 823.4,220.1 832.6,250.9 838.1,284.7 840.0,320.0 838.1,355.3 832.6,389.1 823.4,419.9 810.6,446.3 794.4,467.2 775.1,481.7 752.7,489.1 727.5,489.1 699.8,481.7 670.0,467.2 638.3,446.3 605.1,419.9 570.7,389.1 535.5,355.3 500.0,320.0 464.5,284.7 429.3,250.9 394.9,220.1 361.7,193.7 330.0,172.8 300.2,158.3 272.5,150.9 247.3,150.9 224.9,158.3 205.6,172.8 189.4,193.7 176.6,220.1 167.4,250.9 161.9,284.7 160.0,320.0 161.9,355.3 167.4,389.1 176.6,419.9 189.4,446.3 205.6,467.2 224.9,481.7 247.3,489.1 272.5,489.1 300.2,481.7 330.0,467.2 361.7,446.3 394.9,419.9 429.3,389.1 464.5,355.3 500.0,320.0" fill="none" stroke="#087ea4" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="500.0,320.0 535.5,284.7 570.7,250.9 605.1,220.1 638.3,193.7 670.0,172.8 699.8,158.3 727.5,150.9 752.7,150.9 775.1,158.3 794.4,172.8 810.6,193.7 823.4,220.1 832.6,250.9 838.1,284.7 840.0,320.0 838.1,355.3 832.6,389.1 823.4,419.9 810.6,446.3 794.4,467.2 775.1,481.7 752.7,489.1 727.5,489.1 699.8,481.7 670.0,467.2 638.3,446.3 605.1,419.9 570.7,389.1 535.5,355.3 500.0,320.0 464.5,284.7 429.3,250.9 394.9,220.1 361.7,193.7 330.0,172.8 300.2,158.3 272.5,150.9 247.3,150.9 224.9,158.3 205.6,172.8 189.4,193.7 176.6,220.1 167.4,250.9 161.9,284.7 160.0,320.0 161.9,355.3 167.4,389.1 176.6,419.9 189.4,446.3 205.6,467.2 224.9,481.7 247.3,489.1 272.5,489.1 300.2,481.7 330.0,467.2 361.7,446.3 394.9,419.9 429.3,389.1 464.5,355.3 500.0,320.0" fill="none" stroke="#e6f7ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="18 15"/>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#087ea4"/>
+    </marker>
+  </defs>
+  <path d="M 500 320 C 570 215, 760 125, 840 320" fill="none" stroke="#087ea4" stroke-width="4" marker-end="url(#arrow)" opacity="0.9"/>
+  <circle cx="500" cy="320" r="18" fill="none" stroke="#f59e0b" stroke-width="6"/>
+  <circle cx="500" cy="320" r="11" fill="#2ca24d" stroke="#fff" stroke-width="4"/>
+  <circle cx="508.9" cy="311.1" r="8" fill="#68c779" stroke="#fff" stroke-width="3"/>
+  <circle cx="840" cy="320" r="10" fill="#ef4444" stroke="#fff" stroke-width="3"/>
+  <circle cx="160" cy="320" r="10" fill="#7c3aed" stroke="#fff" stroke-width="3"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" fill="#111827">
+    <text x="520" y="352">green: start at center crossing, i=0, local (0, 0)</text>
+    <text x="520" y="294">small green: i=1, first movement into forward/right branch</text>
+    <text x="660" y="310">red: +x lobe peak, i=60</text>
+    <text x="520" y="388">orange ring: second center crossing, i=120</text>
+    <text x="60" y="310">purple: -x lobe peak, i=180</text>
+  </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" fill="#4b5563">
+    <text x="30" y="36">Formula: local_x = 2.0 sin(t), local_z = 1.0 sin(2t). Controller uses 240 waypoints.</text>
+    <text x="30" y="60">Track envelope: 4.0 m long by 2.0 m wide. Plot axes use local car frame: +x forward, +z right.</text>
+    <text x="30" y="84">World path = this curve rotated by mission-start yaw and translated to mission-start pose.</text>
+  </g>
+</svg>

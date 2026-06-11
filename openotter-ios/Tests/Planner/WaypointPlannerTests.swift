@@ -53,7 +53,7 @@ final class WaypointPlannerTests: XCTestCase {
         let anchor = PoseEntry(timestamp: 2.0, x: 2.0, y: 0, z: -1.0, yaw: 0, confidence: 1)
         let planner = WaypointPlanner()
         planner.setGoal(.followFigureEight(
-            config: .init(segmentCount: 160, length: 2.4, width: 1.2, acceptanceRadius: 0.2),
+            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
             maxThrottle: 0.6
         ))
 
@@ -62,7 +62,7 @@ final class WaypointPlannerTests: XCTestCase {
         XCTAssertEqual(planner.activeWaypoints.first?.x ?? -1, anchor.x, accuracy: 0.001)
         XCTAssertEqual(planner.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)
         XCTAssertGreaterThan(cmd.steering, 0, "Startup should enter the first right lobe of the horizontal figure eight")
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.55, "Figure-eight steering should stay below servo-stop saturation")
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.50, "Figure-eight steering should stay below servo-stop saturation")
         XCTAssertGreaterThan(cmd.throttle, 0.4)
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
     }
@@ -73,26 +73,26 @@ final class WaypointPlannerTests: XCTestCase {
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
 
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.55)
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.50)
     }
 
     func testClosedLoopPlannerSkipsAheadWhenCarMissesCurrentWaypoint() {
         let anchor = PoseEntry(timestamp: 0, x: 0, y: 0, z: 0, yaw: 0, confidence: 1)
         let planner = WaypointPlanner()
         planner.setGoal(.followFigureEight(
-            config: .init(segmentCount: 160, length: 2.4, width: 1.2, acceptanceRadius: 0.12),
+            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.18),
             maxThrottle: 0.6
         ))
         _ = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: anchor))
 
-        let skippedAheadPose = planner.activeWaypoints[18]
+        let skippedAheadPose = planner.activeWaypoints[28]
         let cmd = planner.plan(context: PlannerTestFactory.context(
             timestamp: 1.0,
             pose: PoseEntry(timestamp: 1.0, x: skippedAheadPose.x, y: 0, z: skippedAheadPose.z, yaw: 0, confidence: 1)
         ))
 
-        XCTAssertGreaterThanOrEqual(planner.currentWaypointIndex, 18)
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.55)
+        XCTAssertGreaterThanOrEqual(planner.currentWaypointIndex, 28)
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.50)
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
     }
 

@@ -7,18 +7,13 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let config = FigureEightTrajectory.Config()
         let waypoints = FigureEightTrajectory.waypoints(config: config)
 
-        XCTAssertEqual(waypoints.count, 160)
-        XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.20, accuracy: 0.001)
-        XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.20, accuracy: 0.001)
+        XCTAssertEqual(waypoints.count, 240)
+        XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.25, accuracy: 0.001)
+        XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.25, accuracy: 0.001)
     }
 
     func testWaypointsStayWithinConfiguredHorizontalInfinityDimensions() {
-        let config = FigureEightTrajectory.Config(
-            segmentCount: 720,
-            length: 2.4,
-            width: 1.2,
-            acceptanceRadius: 0.12
-        )
+        let config = FigureEightTrajectory.Config(segmentCount: 720)
         let waypoints = FigureEightTrajectory.waypoints(config: config)
 
         let maxAbsX = waypoints.map { abs($0.x) }.max() ?? 0
@@ -39,10 +34,10 @@ final class FigureEightTrajectoryTests: XCTestCase {
     func testAnchoredPathStartsAtCenterCrossingAndFirstSegmentEntersRightLobe() {
         let anchor = PoseEntry(timestamp: 0, x: 4, y: 0, z: -2, yaw: 0, confidence: 1)
         let config = FigureEightTrajectory.Config(
-            segmentCount: 160,
-            length: 2.4,
-            width: 1.2,
-            acceptanceRadius: 0.2
+            segmentCount: 240,
+            length: 4.0,
+            width: 2.0,
+            acceptanceRadius: 0.25
         )
 
         let waypoints = FigureEightTrajectory.waypoints(config: config, anchor: anchor)
@@ -57,9 +52,9 @@ final class FigureEightTrajectoryTests: XCTestCase {
 
     func testPathCrossesAnchorAgainHalfwayThroughLoop() {
         let anchor = PoseEntry(timestamp: 0, x: 4, y: 0, z: -2, yaw: 0, confidence: 1)
-        let segmentCount = 160
+        let segmentCount = 240
         let waypoints = FigureEightTrajectory.waypoints(
-            config: .init(segmentCount: segmentCount, length: 2.4, width: 1.2, acceptanceRadius: 0.2),
+            config: .init(segmentCount: segmentCount, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
             anchor: anchor
         )
         let halfway = waypoints[segmentCount / 2]
@@ -71,7 +66,7 @@ final class FigureEightTrajectoryTests: XCTestCase {
     func testAnchoredPathRotatesWithAnchorYaw() {
         let anchor = PoseEntry(timestamp: 0, x: 1, y: 0, z: 1, yaw: .pi / 2, confidence: 1)
         let waypoints = FigureEightTrajectory.waypoints(
-            config: .init(segmentCount: 160, length: 2.4, width: 1.2, acceptanceRadius: 0.2),
+            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
             anchor: anchor
         )
 
@@ -82,7 +77,7 @@ final class FigureEightTrajectoryTests: XCTestCase {
     }
 
     func testPathFormsContinuousLoop() {
-        let config = FigureEightTrajectory.Config(segmentCount: 160, length: 2.4, width: 1.2)
+        let config = FigureEightTrajectory.Config(segmentCount: 240, length: 4.0, width: 2.0)
         let waypoints = FigureEightTrajectory.waypoints(config: config)
         let first = waypoints.first!
         let last = waypoints.last!

@@ -196,7 +196,7 @@ Hold throttle at zero only when the target is nearly behind the car.
 
 - [x] **Step 3: Cap steering below servo end stops**
 
-Use `steeringFractionAt90Deg = 0.4` and `maxSteeringFraction = 0.55` so the
+Use `steeringFractionAt90Deg = 0.4` and `maxSteeringFraction = 0.50` so the
 controller still turns decisively but does not command full servo travel during
 large heading errors.
 
@@ -217,7 +217,7 @@ large heading errors.
 
 ```swift
 .followFigureEight(
-    config: .init(segmentCount: 160, length: 2.4, width: 1.2, acceptanceRadius: 0.20),
+    config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
     maxThrottle: interpreter.currentThrottle
 )
 ```

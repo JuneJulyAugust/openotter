@@ -77,10 +77,10 @@ final class ActionDispatcherTests: XCTestCase {
 
         if case .followFigureEight(let config, let maxThrottle) = goalReceiver.lastGoal {
             XCTAssertEqual(maxThrottle, 0.6, accuracy: 0.001)
-            XCTAssertEqual(config.segmentCount, 160)
-            XCTAssertEqual(config.length, 2.4, accuracy: 0.001)
-            XCTAssertEqual(config.width, 1.2, accuracy: 0.001)
-            XCTAssertEqual(config.acceptanceRadius, 0.20, accuracy: 0.001)
+            XCTAssertEqual(config.segmentCount, 240)
+            XCTAssertEqual(config.length, 4.0, accuracy: 0.001)
+            XCTAssertEqual(config.width, 2.0, accuracy: 0.001)
+            XCTAssertEqual(config.acceptanceRadius, 0.25, accuracy: 0.001)
         } else {
             XCTFail("Expected followFigureEight goal")
         }
