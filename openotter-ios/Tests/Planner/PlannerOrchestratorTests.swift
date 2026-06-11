@@ -258,6 +258,45 @@ final class PlannerOrchestratorTests: XCTestCase {
         let cmd2 = orchestrator.tick(context: PlannerTestFactory.context(timestamp: 1.1, forwardDepth: 10.0))
         XCTAssertGreaterThan(cmd2.throttle, 0, "After goal set and ramp, throttle should be positive")
     }
+
+    // MARK: - Planner Routing
+
+    func testSetGoalFollowWaypointsSwitchesToWaypointPlanner() {
+        let constantPlanner = ConstantSpeedPlanner()
+        let orchestrator = PlannerOrchestrator(planner: constantPlanner)
+
+        XCTAssertTrue(orchestrator.activePlanner is ConstantSpeedPlanner)
+
+        orchestrator.setGoal(.followWaypoints(
+            [Waypoint(x: 0.4, z: 0.0, acceptanceRadius: 0.2)],
+            maxThrottle: 0.4
+        ))
+        XCTAssertTrue(orchestrator.activePlanner is WaypointPlanner)
+
+        let cmd = orchestrator.tick(
+            context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0)
+        )
+        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertGreaterThan(cmd.throttle, 0.39)
+    }
+
+    func testSetGoalConstantThrottleSwitchesBackToConstantPlanner() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+
+        orchestrator.setGoal(.followWaypoints(
+            [Waypoint(x: 0.4, z: 0.0, acceptanceRadius: 0.2)],
+            maxThrottle: 0.4
+        ))
+        let _ = orchestrator.tick(context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0))
+
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.3))
+        XCTAssertTrue(orchestrator.activePlanner is ConstantSpeedPlanner)
+
+        let cmd = orchestrator.tick(
+            context: PlannerTestFactory.context(timestamp: 0.2, forwardDepth: 10.0)
+        )
+        XCTAssertEqual(cmd.source, .planner("ConstantThrottlePlanner"))
+    }
 }
 
 // MARK: - Integration: Full Pipeline Tests

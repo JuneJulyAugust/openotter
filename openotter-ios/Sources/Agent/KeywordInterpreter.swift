@@ -37,6 +37,7 @@ final class KeywordInterpreter: CommandInterpreter {
         let stop     = AgentAction.stop
         let status   = AgentAction.queryStatus
         let help     = AgentAction.help
+        let figure8  = AgentAction.figureEight
 
         return [
             // Slash commands
@@ -48,6 +49,8 @@ final class KeywordInterpreter: CommandInterpreter {
             "/d": forward,        "/r": backward,
             "/l": left,           "/p": stop,
             "/s": status,         "/h": help,
+            "/figure8": figure8,  "/fig8": figure8,
+            "/8": figure8,
 
             // Bare words
             "forward": forward,   "backward": backward,
@@ -63,6 +66,8 @@ final class KeywordInterpreter: CommandInterpreter {
             "d": forward,         "r": backward,
             "l": left,            "p": stop,
             "s": status,          "h": help,
+            "figure8": figure8,    "fig8": figure8,
+            "8": figure8,
 
             // Speed preset buttons (emoji stripped by interpret())
             "slow": .setSpeed(throttle: 0.2),

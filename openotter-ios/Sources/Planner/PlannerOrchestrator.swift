@@ -16,6 +16,8 @@ final class PlannerOrchestrator: ObservableObject {
     private(set) var activePlanner: any PlannerProtocol
     private let supervisor = SafetySupervisor()
     private weak var modeReceiver: (any OperatingModeReceiving)?
+    private var constantSpeedPlanner: ConstantSpeedPlanner
+    private var waypointPlanner: WaypointPlanner
 
     // MARK: - Published State
 
@@ -44,6 +46,8 @@ final class PlannerOrchestrator: ObservableObject {
          modeReceiver: (any OperatingModeReceiving)? = nil) {
         self.activePlanner = planner
         self.modeReceiver = modeReceiver
+        self.constantSpeedPlanner = planner as? ConstantSpeedPlanner ?? ConstantSpeedPlanner()
+        self.waypointPlanner = planner as? WaypointPlanner ?? WaypointPlanner()
         modeReceiver?.setOperatingMode(.park)
     }
 
@@ -51,6 +55,7 @@ final class PlannerOrchestrator: ObservableObject {
 
     func swapPlanner(_ newPlanner: any PlannerProtocol) {
         activePlanner.reset()
+        cachePlannerReference(newPlanner)
         activePlanner = newPlanner
     }
 
@@ -94,6 +99,8 @@ final class PlannerOrchestrator: ObservableObject {
     /// brake latch; clear that latch before the planner's ramp limiter emits
     /// its first zero-throttle tick.
     func setGoal(_ goal: PlannerGoal) {
+        ensurePlanner(for: goal)
+
         if goal.requestsReverseEscape {
             clearForwardSafetyState()
         }
@@ -130,6 +137,28 @@ final class PlannerOrchestrator: ObservableObject {
             operatingMode = mode
         }
         modeReceiver?.setOperatingMode(mode)
+    }
+
+    private func ensurePlanner(for goal: PlannerGoal) {
+        switch goal {
+        case .followWaypoints:
+            if !(activePlanner is WaypointPlanner) {
+                activePlanner = waypointPlanner
+            }
+        case .constantThrottle, .idle:
+            if !(activePlanner is ConstantSpeedPlanner) {
+                activePlanner = constantSpeedPlanner
+            }
+        }
+    }
+
+    private func cachePlannerReference(_ planner: any PlannerProtocol) {
+        if let speedPlanner = planner as? ConstantSpeedPlanner {
+            constantSpeedPlanner = speedPlanner
+        }
+        if let wpPlanner = planner as? WaypointPlanner {
+            waypointPlanner = wpPlanner
+        }
     }
 }
 

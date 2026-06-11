@@ -57,6 +57,16 @@ final class KeywordInterpreterTests: XCTestCase {
         XCTAssertEqual(action, .move(direction: .right, throttle: 0.4))
     }
 
+    func testFigureEightCommandBySlashAlias() {
+        let action = interpreter.interpret("/figure8")
+        XCTAssertEqual(action, .figureEight)
+    }
+
+    func testFigureEightCommandByShortAlias() {
+        let action = interpreter.interpret("fig8")
+        XCTAssertEqual(action, .figureEight)
+    }
+
     // MARK: - Speed commands
 
     func testSpeedCommand() {

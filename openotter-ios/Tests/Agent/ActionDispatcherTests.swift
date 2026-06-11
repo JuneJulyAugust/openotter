@@ -69,6 +69,23 @@ final class ActionDispatcherTests: XCTestCase {
         XCTAssertFalse(result.success)
     }
 
+    func testFigureEightDispatchesWaypointMission() {
+        interpreter.setThrottle(0.6)
+        let result = dispatcher.dispatch(.figureEight)
+
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "Starting figure-8 mission")
+
+        if case .followWaypoints(let waypoints, let maxThrottle) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.6, accuracy: 0.001)
+            XCTAssertEqual(waypoints.count, 72)
+            XCTAssertNotNil(waypoints.first)
+            XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.15, accuracy: 0.001)
+        } else {
+            XCTFail("Expected followWaypoints goal")
+        }
+    }
+
     // MARK: - Set Speed
 
     func testSetSpeedUpdatesInterpreterThrottle() {

@@ -59,6 +59,18 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertTrue(response.contains("1.2 m/s"))
     }
 
+    func testFigureEightCommandDispatchesWaypointGoal() {
+        let response = runtime.handleMessage("/figure8")
+        XCTAssertEqual(response, "Starting figure-8 mission")
+
+        if case .followWaypoints(let waypoints, let maxThrottle) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
+            XCTAssertEqual(waypoints.count, 72)
+        } else {
+            XCTFail("Expected followWaypoints goal")
+        }
+    }
+
     func testUnknownCommandReturnHelp() {
         let response = runtime.handleMessage("dance")
         XCTAssertTrue(response.lowercased().contains("unrecognized"))

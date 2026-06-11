@@ -17,6 +17,12 @@ final class ResponseBuilderTests: XCTestCase {
         XCTAssertEqual(text, "Reverse")
     }
 
+    func testFigureEightStart() {
+        let result = ActionResult(success: true, message: "Starting figure-8 mission")
+        let text = builder.build(action: .figureEight, result: result)
+        XCTAssertEqual(text, "Starting figure-8 mission")
+    }
+
     func testMoveBlocked() {
         let result = ActionResult(success: false, message: "Obstacle detected ahead")
         let text = builder.build(action: .move(direction: .forward, throttle: 0.4), result: result)

@@ -239,6 +239,7 @@ struct AgentDebugView: View {
         case .move(let dir, let t): return "move(\(dir.rawValue), \(t))"
         case .stop: return "stop"
         case .queryStatus: return "queryStatus"
+        case .figureEight: return "figure8"
         case .setSpeed(let t): return "setSpeed(\(t))"
         case .help: return "help"
         case .unknown(let raw): return "unknown(\(raw))"
@@ -269,4 +270,3 @@ private struct StubCarStatusProvider: StatusProviding {
         "Debug mode — no hardware connected"
     }
 }
-

@@ -79,7 +79,7 @@ final class WaypointPlanner: PlannerProtocol {
     private func headingError(to target: Waypoint, from pose: PoseEntry) -> Float {
         let dx = target.x - pose.x
         let dz = target.z - pose.z
-        let desired = atan2f(dx, -dz)
+        let desired = atan2f(-dz, dx)
         return (desired - pose.yaw).wrapToPi()
     }
 

@@ -21,6 +21,8 @@ struct ResponseBuilder: ResponseBuilding {
             return "Park"
         case .queryStatus:
             return result.message
+        case .figureEight:
+            return result.message
         case .setSpeed:
             return result.message
         case .help:
