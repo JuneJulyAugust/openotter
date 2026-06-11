@@ -14,7 +14,8 @@ proportional controller, not pure pursuit or MPC.
 The target behavior is:
 
 - `/figure8` starts a closed figure-eight mission from the car's current pose.
-- The first target segment points mostly forward, not hard-left or hard-right.
+- The first target segment enters the first lobe with bounded steering, not
+  hard-left or hard-right.
 - Steering sign matches the firmware PWM convention.
 - The car keeps looping until the operator sends `/stop`.
 - The map overlay shows the active planned waypoints.
@@ -41,6 +42,16 @@ Root causes in the first implementation:
    neutral. From the operator seat, that looks like the mission died.
 4. **The map overlay used stale state.** `SelfDrivingViewModel.waypoints` was
    never populated, so the UI was not showing the actual active path.
+
+Second field review after the waypoint baseline:
+
+- The requested trajectory is a horizontal infinity-track figure eight, not a
+  rotated/diagonal center-crossing convenience curve.
+- The car's map trace collapsed into one lobe, which is consistent with a
+  waypoint follower chasing a missed waypoint instead of advancing along the
+  closed path.
+- The front wheel servo made end-stop chatter, so steering authority must be
+  capped below full travel until the mechanical range is calibrated.
 
 The fix is not to jump to a more advanced controller yet. The fix is to make
 the simple controller coherent and testable.
@@ -92,7 +103,7 @@ heading_error = wrap_to_pi(desired_yaw - pose.yaw)
 4. Convert heading error to steering:
 
 ```text
-steering = clamp(-K * heading_error, -1, +1)
+steering = clamp(-K * heading_error, -maxSteering, +maxSteering)
 ```
 
 The minus sign matters because, in this coordinate convention, a target to the
@@ -110,6 +121,10 @@ throttle = maxThrottle * max(minimumThrottleFraction, fade)
 If the target is nearly behind the car, throttle is held at zero instead of
 forcing a powered U-turn.
 
+For closed-loop figure-eight missions, the planner also scans a short window
+of future waypoints and advances to the closest one. This prevents the car from
+orbiting around a waypoint it physically missed.
+
 ## 5. Figure-Eight Path
 
 The path is a Gerono-style figure eight:
@@ -119,14 +134,17 @@ curve_x(t) = (length / 2) * sin(t)
 curve_z(t) = (width  / 2) * sin(2t)
 ```
 
-The generator then rotates the local curve so the initial tangent points
-forward in the robot frame. Finally, it transforms local `(x, z)` into ARKit
-world coordinates using the mission anchor pose.
+This is the literal horizontal infinity shape: the long axis is robot-forward
+and the side-to-side axis is robot-left/right. The generator does not rotate
+the local curve to hide the diagonal center crossing. It transforms local
+`(x, z)` directly into ARKit world coordinates using the mission anchor pose.
 
 That means:
 
-- waypoint 0 is exactly the car pose at mission start,
-- waypoint 1 is mostly forward,
+- waypoint 0 is exactly the center crossing at the car pose when the mission
+  starts,
+- waypoint 1 enters the first right lobe,
+- waypoint `segmentCount / 2` crosses the anchor again into the other lobe,
 - the path rotates with car yaw,
 - the figure eight is closed enough to loop smoothly without duplicating the
   first waypoint.
@@ -134,17 +152,18 @@ That means:
 Current default command parameters:
 
 ```text
-segmentCount      = 120
-length            = 1.5 m
-width             = 1.0 m
-acceptanceRadius  = 0.22 m
+segmentCount      = 160
+length            = 2.4 m
+width             = 1.2 m
+acceptanceRadius  = 0.20 m
 default throttle  = 0.6
+max steering      = 0.55
 ```
 
-`length` and `width` are generator scale parameters. Because the path is
-rotated to make the first tangent forward, the final world-frame envelope is
-slightly larger than the raw axis-aligned half-spans. The tests verify the path
-stays inside the rotated envelope and forms a continuous loop.
+`length` and `width` are generator scale parameters. The larger default path
+reduces demanded curvature compared with the earlier tight path. The tests
+verify the path stays inside the configured horizontal infinity dimensions,
+crosses the anchor halfway through the loop, and forms a continuous loop.
 
 ## 6. Runtime Flow
 
@@ -192,10 +211,11 @@ No firmware changes are required for this waypoint-controller baseline.
 The implementation is covered by:
 
 - `RobotGeometryTests` for forward/right axis invariants.
-- `FigureEightTrajectoryTests` for defaults, bounds, anchoring, yaw rotation,
-  and loop continuity.
+- `FigureEightTrajectoryTests` for defaults, horizontal infinity bounds,
+  anchoring, yaw rotation, center crossing, and loop continuity.
 - `WaypointPlannerTests` for steering sign, anchored figure-eight startup,
-  finite waypoint completion, and closed figure-eight looping.
+  steering cap, missed-waypoint skip-ahead, finite waypoint completion, and
+  closed figure-eight looping.
 - `PlannerOrchestratorTests` for routing and active waypoint publication.
 - `ActionDispatcherTests` and `AgentRuntimeTests` for `/figure8` command flow.
 - Existing safety tests still cover forward/reverse braking behavior.

@@ -91,25 +91,32 @@ Intuition:
 The current command defaults are:
 
 ```text
-segmentCount      = 120
-length            = 1.5 m
-width             = 1.0 m
-acceptanceRadius  = 0.22 m
+segmentCount      = 160
+length            = 2.4 m
+width             = 1.2 m
+acceptanceRadius  = 0.20 m
 maxThrottle       = current Telegram speed, default 0.6
 ```
 
-`segmentCount` turns the smooth curve into a list of waypoints. With 120
+`segmentCount` turns the smooth curve into a list of waypoints. With 160
 segments, neighboring waypoints are close enough for smooth steering, but not
 so dense that the controller spends all its time advancing tiny steps.
 
-## 4. Starting The Path Forward
+## 4. Horizontal Infinity Shape And Start
 
-A raw Gerono curve starts at `(0, 0)`, but its first tangent points diagonally.
-If the first target is diagonal, the car may begin by steering hard instead of
-driving forward into the maneuver.
+The requested shape is a horizontal infinity track: two side-by-side lobes
+that cross in the center, like the reference image. The current generator keeps
+that literal shape in the robot frame:
 
-To avoid that, the path is rotated in the car-local frame so its initial
-tangent points forward.
+```text
++x = long axis of the figure eight
++z = right side of the figure eight
+```
+
+Waypoint `0` is the center crossing at the car's pose when `/figure8` starts.
+The first few waypoints move forward and right into the first lobe. Halfway
+through the waypoint list, the path returns to the center crossing and enters
+the other lobe.
 
 At `t = 0`:
 
@@ -118,38 +125,20 @@ d/dt curve_x(t) = (length / 2) * cos(t)
 d/dt curve_z(t) = width * cos(2t)
 ```
 
-So the initial tangent is:
+So the initial tangent is diagonal:
 
 ```text
 tangent = (length / 2, width)
 ```
 
-The tangent angle is:
+With the new steering cap and larger path, that diagonal start is acceptable.
+It also preserves the requested visual shape. The earlier implementation
+rotated the curve to make this tangent point forward; that made the math tidy
+but made the plotted path less like the requested horizontal track.
 
-```text
-initialTangentAngle = atan2(width, length / 2)
-```
-
-The implementation computes the same value as:
-
-```text
-initialTangentAngle = atan2(2 * zScale, xScale)
-```
-
-where:
-
-```text
-xScale = length / 2
-zScale = width / 2
-```
-
-Then it rotates every local curve point by `-initialTangentAngle`. After that
-rotation:
-
-- waypoint 0 is exactly the car's start pose,
-- waypoint 1 is mostly forward,
-- the path still forms a figure eight,
-- the whole path rotates with the car's yaw.
+The whole local path is still transformed through the car's yaw, so the
+horizontal infinity is horizontal relative to the car's starting heading, not
+hard-coded to an arbitrary ARKit world axis.
 
 ## 5. Waypoint Advancement
 
@@ -171,6 +160,13 @@ reached = distance < target.acceptanceRadius
 
 If reached, the controller advances to the next waypoint.
 
+For a closed-loop figure eight, the controller also searches a short window of
+future waypoints and advances to the closest one. This matters in real driving:
+if the car misses a waypoint by more than the acceptance radius, a naive
+controller keeps turning back toward that stale waypoint. On a tight lobe that
+looks exactly like the map screenshot: the car circles one loop and never
+commits to the crossing.
+
 For normal finite waypoint missions:
 
 ```text
@@ -181,6 +177,7 @@ For figure-eight missions:
 
 ```text
 after final waypoint -> wrap back to waypoint 0
+if a future waypoint in the progress window is closer -> skip ahead to it
 ```
 
 That makes `/figure8` continue until the operator sends Stop/Park.
@@ -224,7 +221,8 @@ opposite commands.
 The steering command is:
 
 ```text
-steering = clamp(-steeringGain * yawError, -1, +1)
+rawSteering = -steeringGain * yawError
+steering = clamp(rawSteering, -maxSteeringFraction, +maxSteeringFraction)
 ```
 
 The minus sign is deliberate. The firmware and iOS PWM mapping define:
@@ -244,22 +242,26 @@ positive steering command, which maps to right steering PWM.
 The gain is configured as:
 
 ```text
-steeringFractionAt90Deg = 0.6
+steeringFractionAt90Deg = 0.4
 steeringGain = steeringFractionAt90Deg / (pi / 2)
+maxSteeringFraction = 0.55
 ```
 
 That means:
 
 ```text
-90 degree heading error -> steering command about 0.6
+90 degree heading error -> raw steering command about 0.4
+larger errors -> steering capped to +/-0.55
 ```
 
 This is a practical choice:
 
 - small errors give small steering corrections,
 - moderate errors give useful turning authority,
-- very large errors saturate at `-1` or `+1`,
-- the servo command remains bounded even if ARKit pose jumps.
+- very large errors do not command the servo to its mechanical end stops,
+- the servo command remains bounded even if ARKit pose jumps,
+- the front wheel should stop making end-stop chatter unless the mechanical
+  linkage itself is binding.
 
 The controller is not trying to model tire slip, steering linkage geometry, or
 Ackermann dynamics. It is using pose feedback to correct the car's observed
@@ -348,10 +350,10 @@ onTelegramMessage(text):
 
     if action == figureEight:
         config = FigureEightConfig(
-            segmentCount = 120,
-            length = 1.5,
-            width = 1.0,
-            acceptanceRadius = 0.22
+            segmentCount = 160,
+            length = 2.4,
+            width = 1.2,
+            acceptanceRadius = 0.20
         )
 
         goal = FollowFigureEight(
@@ -370,21 +372,13 @@ generateFigureEight(config, anchorPose):
     zScale = config.width / 2
     dt = 2 * pi / config.segmentCount
 
-    initialTangentAngle = atan2(2 * zScale, xScale)
-
     waypoints = []
 
     for i in 0 ..< config.segmentCount:
         t = i * dt
 
-        curveX = xScale * sin(t)
-        curveZ = zScale * sin(2 * t)
-
-        localX =  curveX * cos(-initialTangentAngle)
-                - curveZ * sin(-initialTangentAngle)
-
-        localZ =  curveX * sin(-initialTangentAngle)
-                + curveZ * cos(-initialTangentAngle)
+        localX = xScale * sin(t)
+        localZ = zScale * sin(2 * t)
 
         world = localToWorld(localX, localZ, anchorPose)
 
@@ -430,7 +424,11 @@ plan(context):
     if currentWaypointIndex is past final waypoint:
         return neutral
 
-    target = waypoints[currentWaypointIndex]
+    if isClosedLoop:
+        targetIndex = (currentWaypointIndex + closedLoopLookaheadCount) mod waypoints.count
+        target = waypoints[targetIndex]
+    else:
+        target = waypoints[currentWaypointIndex]
 
     dx = target.x - context.pose.x
     dz = target.z - context.pose.z
@@ -438,7 +436,8 @@ plan(context):
     desiredYaw = atan2(-dz, dx)
     yawError = wrapToPi(desiredYaw - context.pose.yaw)
 
-    steering = clamp(-steeringGain * yawError, -1, +1)
+    rawSteering = -steeringGain * yawError
+    steering = clamp(rawSteering, -maxSteeringFraction, +maxSteeringFraction)
     throttle = throttleForHeadingError(yawError)
 
     return ControlCommand(
@@ -469,6 +468,27 @@ advanceReachedWaypoints(pose):
 
     if not isClosedLoop and all waypoints were reached:
         currentWaypointIndex = waypoints.count
+
+    if isClosedLoop:
+        advanceToClosestForwardWaypoint(pose)
+```
+
+### Closed-Loop Progress Recovery
+
+```text
+advanceToClosestForwardWaypoint(pose):
+    bestIndex = currentWaypointIndex
+    bestDistance = distance(pose, waypoints[currentWaypointIndex])
+
+    for offset in 1 ... closedLoopProgressSearchCount:
+        candidateIndex = (currentWaypointIndex + offset) mod waypoints.count
+        candidateDistance = distance(pose, waypoints[candidateIndex])
+
+        if candidateDistance < bestDistance:
+            bestDistance = candidateDistance
+            bestIndex = candidateIndex
+
+    currentWaypointIndex = bestIndex
 ```
 
 ### Throttle Shaping
@@ -535,9 +555,11 @@ controller could then map curvature to steering after calibration.
 That upgrade should wait until the waypoint baseline has real basement data:
 
 - Does ARKit yaw drift too much?
-- Is 0.22 m acceptance radius too loose or too tight?
+- Is 0.20 m acceptance radius too loose or too tight?
 - Does 0.6 throttle plus a 0.35 floor move reliably?
 - Does the car understeer or oversteer on carpet?
+- Is the 0.55 steering cap low enough to avoid end-stop chatter but high
+  enough to complete both lobes?
 - Does servo center need a trim offset?
 
 Those answers should tune the next controller instead of guessing.

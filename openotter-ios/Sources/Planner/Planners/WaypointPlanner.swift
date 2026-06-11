@@ -4,8 +4,12 @@ import Foundation
 
 struct WaypointPlannerConfig {
     /// Steering fraction applied at a 90° heading error (0–1).
-    /// Full deflection would be 1.0; 0.6 gives smoother response.
-    var steeringFractionAt90Deg: Float = 0.6
+    /// Full deflection would be 1.0; 0.4 avoids over-driving the servo.
+    var steeringFractionAt90Deg: Float = 0.4
+
+    /// Hard cap for steering output. Keep below the mechanical stop range so
+    /// the servo does not sit against its end stop and chatter.
+    var maxSteeringFraction: Float = 0.55
 
     /// Keep enough throttle through normal turns that the car does not stall
     /// while the heading loop is still converging.
@@ -14,6 +18,13 @@ struct WaypointPlannerConfig {
     /// If the target is almost behind the car, hold throttle at zero instead
     /// of pushing forward into a U-turn.
     var maxPoweredHeadingError: Float = 5 * .pi / 6
+
+    /// Closed-loop paths use a forward progress search so a missed waypoint
+    /// does not trap the car into orbiting around one lobe.
+    var closedLoopProgressSearchCount: Int = 24
+
+    /// Closed-loop paths aim a few waypoints ahead for smoother steering.
+    var closedLoopLookaheadCount: Int = 6
 
     /// Derived gain: maps heading error (rad) → steering fraction.
     var steeringGain: Float { steeringFractionAt90Deg / (.pi / 2) }
@@ -76,7 +87,7 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
         advanceReachedWaypoints(from: context.pose)
         guard currentIndex < waypoints.count else { return .neutral }
 
-        let target = waypoints[currentIndex]
+        let target = waypoints[targetIndex()]
 
         let yawError = headingError(to: target, from: context.pose)
         return ControlCommand(
@@ -122,10 +133,43 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
            hasReached(target: waypoints[currentIndex], pose: pose) {
             currentIndex = waypoints.count
         }
+
+        advanceToClosestForwardWaypoint(from: pose)
+    }
+
+    private func advanceToClosestForwardWaypoint(from pose: PoseEntry) {
+        guard isClosedLoop, !waypoints.isEmpty else { return }
+
+        let maxOffset = min(config.closedLoopProgressSearchCount, waypoints.count - 1)
+        guard maxOffset > 0 else { return }
+
+        var bestIndex = currentIndex
+        var bestDistance = distance(to: waypoints[currentIndex], from: pose)
+
+        for offset in 1...maxOffset {
+            let index = (currentIndex + offset) % waypoints.count
+            let candidateDistance = distance(to: waypoints[index], from: pose)
+            if candidateDistance < bestDistance {
+                bestDistance = candidateDistance
+                bestIndex = index
+            }
+        }
+
+        currentIndex = bestIndex
+    }
+
+    private func targetIndex() -> Int {
+        guard isClosedLoop, !waypoints.isEmpty else { return currentIndex }
+        let offset = min(config.closedLoopLookaheadCount, waypoints.count - 1)
+        return (currentIndex + offset) % waypoints.count
     }
 
     private func hasReached(target: Waypoint, pose: PoseEntry) -> Bool {
-        groundDistance(ax: pose.x, az: pose.z, bx: target.x, bz: target.z) < target.acceptanceRadius
+        distance(to: target, from: pose) < target.acceptanceRadius
+    }
+
+    private func distance(to target: Waypoint, from pose: PoseEntry) -> Float {
+        groundDistance(ax: pose.x, az: pose.z, bx: target.x, bz: target.z)
     }
 
     private func headingError(to target: Waypoint, from pose: PoseEntry) -> Float {
@@ -136,7 +180,8 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
     }
 
     private func steeringOutput(for yawError: Float) -> Float {
-        max(-1, min(1, -config.steeringGain * yawError))
+        let limit = max(0, min(1, config.maxSteeringFraction))
+        return max(-limit, min(limit, -config.steeringGain * yawError))
     }
 
     /// Throttle fades as heading error grows, but keeps a small floor through

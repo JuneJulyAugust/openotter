@@ -59,10 +59,10 @@ final class ActionDispatcher: ActionDispatching {
         case .figureEight:
             goalReceiver?.setGoal(.followFigureEight(
                 config: .init(
-                    segmentCount: 120,
-                    length: 1.5,
-                    width: 1.0,
-                    acceptanceRadius: 0.22
+                    segmentCount: 160,
+                    length: 2.4,
+                    width: 1.2,
+                    acceptanceRadius: 0.20
                 ),
                 maxThrottle: interpreter.currentThrottle
             ))

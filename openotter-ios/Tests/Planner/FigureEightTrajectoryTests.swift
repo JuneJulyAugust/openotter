@@ -7,16 +7,16 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let config = FigureEightTrajectory.Config()
         let waypoints = FigureEightTrajectory.waypoints(config: config)
 
-        XCTAssertEqual(waypoints.count, 120)
-        XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.22, accuracy: 0.001)
-        XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.22, accuracy: 0.001)
+        XCTAssertEqual(waypoints.count, 160)
+        XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.20, accuracy: 0.001)
+        XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.20, accuracy: 0.001)
     }
 
-    func testWaypointsStayWithinConfiguredEnvelope() {
+    func testWaypointsStayWithinConfiguredHorizontalInfinityDimensions() {
         let config = FigureEightTrajectory.Config(
             segmentCount: 720,
-            length: 1.2,
-            width: 0.8,
+            length: 2.4,
+            width: 1.2,
             acceptanceRadius: 0.12
         )
         let waypoints = FigureEightTrajectory.waypoints(config: config)
@@ -27,22 +27,21 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let hasRight = waypoints.contains(where: { $0.x > 0 })
         let hasTop = waypoints.contains(where: { $0.z > 0 })
         let hasBottom = waypoints.contains(where: { $0.z < 0 })
-        let envelopeRadius = hypotf(config.length / 2, config.width / 2)
 
-        XCTAssertLessThanOrEqual(maxAbsX, envelopeRadius + 0.02)
-        XCTAssertLessThanOrEqual(maxAbsZ, envelopeRadius + 0.02)
+        XCTAssertEqual(maxAbsX, config.length / 2, accuracy: 0.02)
+        XCTAssertEqual(maxAbsZ, config.width / 2, accuracy: 0.02)
         XCTAssertTrue(hasLeft)
         XCTAssertTrue(hasRight)
         XCTAssertTrue(hasTop)
         XCTAssertTrue(hasBottom)
     }
 
-    func testAnchoredPathStartsAtAnchorAndInitialSegmentIsForward() {
+    func testAnchoredPathStartsAtCenterCrossingAndFirstSegmentEntersRightLobe() {
         let anchor = PoseEntry(timestamp: 0, x: 4, y: 0, z: -2, yaw: 0, confidence: 1)
         let config = FigureEightTrajectory.Config(
-            segmentCount: 120,
-            length: 1.5,
-            width: 1.0,
+            segmentCount: 160,
+            length: 2.4,
+            width: 1.2,
             acceptanceRadius: 0.2
         )
 
@@ -53,24 +52,37 @@ final class FigureEightTrajectoryTests: XCTestCase {
 
         let next = waypoints[1]
         XCTAssertGreaterThan(next.x, anchor.x)
-        XCTAssertLessThan(abs(next.z - anchor.z), 0.02)
+        XCTAssertGreaterThan(next.z, anchor.z)
+    }
+
+    func testPathCrossesAnchorAgainHalfwayThroughLoop() {
+        let anchor = PoseEntry(timestamp: 0, x: 4, y: 0, z: -2, yaw: 0, confidence: 1)
+        let segmentCount = 160
+        let waypoints = FigureEightTrajectory.waypoints(
+            config: .init(segmentCount: segmentCount, length: 2.4, width: 1.2, acceptanceRadius: 0.2),
+            anchor: anchor
+        )
+        let halfway = waypoints[segmentCount / 2]
+
+        XCTAssertEqual(halfway.x, anchor.x, accuracy: 0.001)
+        XCTAssertEqual(halfway.z, anchor.z, accuracy: 0.001)
     }
 
     func testAnchoredPathRotatesWithAnchorYaw() {
         let anchor = PoseEntry(timestamp: 0, x: 1, y: 0, z: 1, yaw: .pi / 2, confidence: 1)
         let waypoints = FigureEightTrajectory.waypoints(
-            config: .init(segmentCount: 120, length: 1.5, width: 1.0, acceptanceRadius: 0.2),
+            config: .init(segmentCount: 160, length: 2.4, width: 1.2, acceptanceRadius: 0.2),
             anchor: anchor
         )
 
         let next = waypoints[1]
 
         XCTAssertLessThan(next.z, anchor.z)
-        XCTAssertLessThan(abs(next.x - anchor.x), 0.02)
+        XCTAssertGreaterThan(next.x, anchor.x)
     }
 
     func testPathFormsContinuousLoop() {
-        let config = FigureEightTrajectory.Config(segmentCount: 144, length: 1.5, width: 1.0)
+        let config = FigureEightTrajectory.Config(segmentCount: 160, length: 2.4, width: 1.2)
         let waypoints = FigureEightTrajectory.waypoints(config: config)
         let first = waypoints.first!
         let last = waypoints.last!

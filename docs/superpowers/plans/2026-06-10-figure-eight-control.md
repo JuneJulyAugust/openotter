@@ -28,7 +28,7 @@
 - `openotter-ios/Sources/Planner/PlannerProtocol.swift`
   - Add `PlannerGoal.followFigureEight(config:maxThrottle:)`.
 - `openotter-ios/Sources/Planner/FigureEightTrajectory.swift`
-  - Generate anchored, yaw-rotated figure-eight waypoints.
+  - Generate anchored, yaw-aligned horizontal infinity waypoints.
 - `openotter-ios/Sources/Planner/Planners/WaypointPlanner.swift`
   - Fix steering sign, add closed-loop figure-eight materialization, avoid recursive advancement, add throttle floor.
 - `openotter-ios/Sources/Planner/Planners/ConstantSpeedPlanner.swift`
@@ -110,9 +110,10 @@ steering = clamp(-gain * yawError, -1, 1)
 Verify:
 
 - first waypoint equals anchor pose,
-- first segment is mostly forward,
+- first segment enters the first right lobe,
+- halfway sample crosses the anchor again,
 - path rotates with anchor yaw,
-- generated path stays in the rotated envelope,
+- generated path stays inside configured horizontal infinity dimensions,
 - final sample is close enough to first sample for a closed loop.
 
 - [x] **Step 2: Implement anchored generator**
@@ -124,8 +125,9 @@ curveX = length / 2 * sin(t)
 curveZ = width / 2 * sin(2 * t)
 ```
 
-Then rotate the local curve so its initial tangent points forward and transform
-each point through `worldPoint(localX:localZ:anchor:)`.
+Transform each local point directly through
+`worldPoint(localX:localZ:anchor:)` so the requested horizontal infinity shape
+is preserved in the car frame.
 
 ---
 
@@ -161,6 +163,12 @@ Replace recursive `plan(context:)` calls with bounded advancement over reached
 waypoints. This avoids deep recursion when dense figure-eight samples are
 inside the acceptance radius.
 
+- [x] **Step 5: Recover from missed closed-loop waypoints**
+
+For figure-eight missions, scan a short forward window and advance to the
+closest future waypoint. This prevents the car from orbiting a stale waypoint
+after it physically misses the acceptance radius.
+
 ---
 
 ## Task 4: Make Startup Faster But Still Bounded
@@ -186,6 +194,12 @@ throttle = maxThrottle * max(0.35, 1 - abs(yawError) / pi)
 
 Hold throttle at zero only when the target is nearly behind the car.
 
+- [x] **Step 3: Cap steering below servo end stops**
+
+Use `steeringFractionAt90Deg = 0.4` and `maxSteeringFraction = 0.55` so the
+controller still turns decisively but does not command full servo travel during
+large heading errors.
+
 ---
 
 ## Task 5: Wire Agent, Orchestrator, And Map Overlay
@@ -203,7 +217,7 @@ Hold throttle at zero only when the target is nearly behind the car.
 
 ```swift
 .followFigureEight(
-    config: .init(segmentCount: 120, length: 1.5, width: 1.0, acceptanceRadius: 0.22),
+    config: .init(segmentCount: 160, length: 2.4, width: 1.2, acceptanceRadius: 0.20),
     maxThrottle: interpreter.currentThrottle
 )
 ```

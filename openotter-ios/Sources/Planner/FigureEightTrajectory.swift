@@ -8,10 +8,10 @@ enum FigureEightTrajectory {
         let width: Float
         let acceptanceRadius: Float
 
-        init(segmentCount: Int = 120,
-             length: Float = 1.5,
-             width: Float = 1.0,
-             acceptanceRadius: Float = 0.22) {
+        init(segmentCount: Int = 160,
+             length: Float = 2.4,
+             width: Float = 1.2,
+             acceptanceRadius: Float = 0.20) {
             self.segmentCount = max(12, segmentCount)
             self.length = max(0.05, length)
             self.width = max(0.05, width)
@@ -27,16 +27,11 @@ enum FigureEightTrajectory {
         let xScale = config.length / 2
         let zScale = config.width / 2
         let dt = Float.pi * 2 / Float(config.segmentCount)
-        let initialTangentAngle = atan2f(2 * zScale, xScale)
-        let cosA = cosf(-initialTangentAngle)
-        let sinA = sinf(-initialTangentAngle)
 
         return (0..<config.segmentCount).map { i in
             let t = Float(i) * dt
-            let curveX = xScale * sinf(t)
-            let curveZ = zScale * sinf(2 * t)
-            let localX = curveX * cosA - curveZ * sinA
-            let localZ = curveX * sinA + curveZ * cosA
+            let localX = xScale * sinf(t)
+            let localZ = zScale * sinf(2 * t)
             let world = worldPoint(localX: localX, localZ: localZ, anchor: anchor)
             return Waypoint(
                 x: world.x,
