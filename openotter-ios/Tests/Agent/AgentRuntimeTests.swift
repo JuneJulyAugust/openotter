@@ -64,7 +64,7 @@ final class AgentRuntimeTests: XCTestCase {
         XCTAssertEqual(response, "Starting figure-8 mission")
 
         if case .followFigureEight(let config, let maxThrottle) = goalReceiver.lastGoal {
-            XCTAssertEqual(maxThrottle, 0.6, accuracy: 0.001)
+            XCTAssertEqual(maxThrottle, 1.0, accuracy: 0.001)
             XCTAssertEqual(config.segmentCount, 240)
         } else {
             XCTFail("Expected followFigureEight goal")

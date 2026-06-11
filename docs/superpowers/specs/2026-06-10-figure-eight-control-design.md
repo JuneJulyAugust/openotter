@@ -128,17 +128,19 @@ orbiting around a waypoint it physically missed.
 
 ## 5. Figure-Eight Path
 
-The path is a Gerono-style figure eight:
+The path is a smoother Bernoulli-style lemniscate, then resampled by arc length
+into evenly spaced controller waypoints:
 
 ```text
-curve_x(t) = (length / 2) * sin(t)
-curve_z(t) = (width  / 2) * sin(2t)
+theta = t + pi / 2
+raw_x = -cos(theta) / (1 + sin(theta)^2)
+raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
 ```
 
-This is the literal horizontal infinity shape: the long axis is robot-forward
-and the side-to-side axis is robot-left/right. The generator does not rotate
-the local curve to hide the diagonal center crossing. It transforms local
-`(x, z)` directly into ARKit world coordinates using the mission anchor pose.
+The raw curve is normalized to the requested 4.0 m by 2.0 m envelope. This
+keeps the literal horizontal infinity shape, but reduces tight corner-like
+curvature and makes fixed-index lookahead behave more like fixed-distance
+lookahead.
 
 That means:
 
@@ -174,8 +176,8 @@ waypoint 1:
 ```
 
 At `segmentCount / 2`, the path crosses the same center point again, then
-enters the opposite lobe. The plot below is generated from the same local
-trajectory formula and default dimensions:
+enters the opposite lobe. The plot below is generated from the same 240
+waypoint samples that the controller follows:
 
 ![Figure-eight trajectory plot](2026-06-10-figure-eight-trajectory-plot.svg)
 
@@ -186,14 +188,17 @@ segmentCount      = 240
 length            = 4.0 m
 width             = 2.0 m
 acceptanceRadius  = 0.25 m
-default throttle  = 0.6
+figure8 throttle  = min(current Telegram speed * 2, 1.0)
+default /figure8  = 1.0
 max steering      = 0.50
 ```
 
 `length` and `width` are generator scale parameters. The larger default path
-reduces demanded curvature compared with the earlier tight path. The tests
-verify the path stays inside the configured horizontal infinity dimensions,
-crosses the anchor halfway through the loop, and forms a continuous loop.
+and smoother arc-length-spaced curve reduce demanded curvature compared with
+the earlier tight path. The tests verify the path stays inside the configured
+horizontal infinity dimensions, crosses the anchor halfway through the loop,
+forms a continuous loop, keeps adjacent waypoint spacing even, and avoids the
+old tight corner-like curvature.
 
 ## 6. Runtime Flow
 

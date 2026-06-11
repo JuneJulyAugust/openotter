@@ -118,14 +118,9 @@ Verify:
 
 - [x] **Step 2: Implement anchored generator**
 
-Generate a Gerono curve:
-
-```swift
-curveX = length / 2 * sin(t)
-curveZ = width / 2 * sin(2 * t)
-```
-
-Transform each local point directly through
+Generate a smoother Bernoulli-style lemniscate, normalize it to the configured
+4.0 m by 2.0 m envelope, and resample by arc length so the 240 controller
+waypoints are evenly spaced. Transform each local point directly through
 `worldPoint(localX:localZ:anchor:)` so the requested horizontal infinity shape
 is preserved in the car frame.
 
@@ -179,10 +174,12 @@ after it physically misses the acceptance radius.
 - Modify: `openotter-ios/Sources/Planner/Planners/WaypointPlanner.swift`
 - Modify: related tests
 
-- [x] **Step 1: Raise default/normal throttle**
+- [x] **Step 1: Raise figure-eight throttle**
 
-Default and `normal` become `0.6`. `slow`, `fast`, and `speed <value>` remain
-available.
+Default and `normal` remain `0.6` for ordinary movement. `/figure8` boosts the
+current Telegram speed by 2x and caps it at `1.0`, so the default figure-eight
+mission runs at full normalized throttle while lower explicit test speeds still
+work.
 
 - [x] **Step 2: Add waypoint throttle floor**
 
@@ -218,7 +215,7 @@ large heading errors.
 ```swift
 .followFigureEight(
     config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
-    maxThrottle: interpreter.currentThrottle
+    maxThrottle: min(interpreter.currentThrottle * 2, 1.0)
 )
 ```
 

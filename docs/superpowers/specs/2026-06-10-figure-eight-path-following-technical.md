@@ -73,20 +73,26 @@ The Telegram command does not know the current pose, but the planner does.
 
 ## 3. Figure-Eight Path Shape
 
-The path generator uses a Gerono figure eight:
+The path generator uses a smoother Bernoulli-style figure eight:
 
 ```text
-curve_x(t) = (length / 2) * sin(t)
-curve_z(t) = (width  / 2) * sin(2t)
+theta = t + pi / 2
+raw_x = -cos(theta) / (1 + sin(theta)^2)
+raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
 ```
 
-where `t` moves from `0` to almost `2 * pi`.
+where `t` moves from `0` to `2 * pi`. The `pi / 2` shift makes `t = 0`
+the center crossing, and the negative signs make the first segment move
+forward/right. The raw curve is normalized to the configured length and width,
+then resampled by arc length so neighboring controller waypoints are nearly
+evenly spaced.
 
 Intuition:
 
-- `sin(t)` moves smoothly forward and backward once per loop.
-- `sin(2t)` moves left and right twice per loop.
-- Combining them forms a sideways "8" shape.
+- The curve still forms the requested sideways "8".
+- The lobes are rounder than the earlier Gerono curve.
+- Arc-length spacing makes fixed waypoint lookahead closer to fixed-distance
+  lookahead, which is easier for the steering controller.
 
 The current command defaults are:
 
@@ -95,7 +101,8 @@ segmentCount      = 240
 length            = 4.0 m
 width             = 2.0 m
 acceptanceRadius  = 0.25 m
-maxThrottle       = current Telegram speed, default 0.6
+maxThrottle       = min(current Telegram speed * 2, 1.0)
+default /figure8  = 1.0
 ```
 
 `segmentCount` turns the smooth curve into a list of waypoints. With 240
@@ -118,21 +125,15 @@ The first few waypoints move forward and right into the first lobe. Halfway
 through the waypoint list, the path returns to the center crossing and enters
 the other lobe.
 
-At `t = 0`:
+The initial tangent is diagonal:
 
 ```text
-d/dt curve_x(t) = (length / 2) * cos(t)
-d/dt curve_z(t) = width * cos(2t)
+tangent points forward and right
 ```
 
-So the initial tangent is diagonal:
-
-```text
-tangent = (length / 2, width)
-```
-
-With the new steering cap and larger path, that diagonal start is acceptable.
-It also preserves the requested visual shape. The earlier implementation
+With the steering cap, smoother curve, larger path, and arc-length spacing,
+that diagonal start is practical. It also preserves the requested visual shape.
+The earlier implementation
 rotated the curve to make this tangent point forward; that made the math tidy
 but made the plotted path less like the requested horizontal track.
 
@@ -302,16 +303,16 @@ What this does:
 - For ordinary turns, keep a throttle floor so the car does not creep and then
   stall.
 
-With the default Telegram speed:
+With the default Telegram speed and the `/figure8` 2x boost:
 
 ```text
-maxThrottle = 0.6
-minimum moving throttle = 0.6 * 0.35 = 0.21
+maxThrottle = min(0.6 * 2, 1.0) = 1.0
+minimum moving throttle = 1.0 * 0.35 = 0.35
 ```
 
-That is intentionally faster than the earlier `0.4` default with no practical
-floor. The safety supervisor still has final authority over forward and
-reverse braking.
+That is intentionally faster than the earlier unboosted figure-eight command.
+The safety supervisor still has final authority over forward and reverse
+braking.
 
 ## 9. Safety Supervisor Interaction
 
@@ -358,7 +359,7 @@ onTelegramMessage(text):
 
         goal = FollowFigureEight(
             config = config,
-            maxThrottle = interpreter.currentThrottle
+            maxThrottle = min(interpreter.currentThrottle * 2, 1.0)
         )
 
         PlannerOrchestrator.setGoal(goal)
@@ -368,17 +369,25 @@ onTelegramMessage(text):
 
 ```text
 generateFigureEight(config, anchorPose):
-    xScale = config.length / 2
-    zScale = config.width / 2
-    dt = 2 * pi / config.segmentCount
+    dense = []
+
+    for i in 0 ... denseCount:
+        t = 2 * pi * i / denseCount
+        theta = t + pi / 2
+        denominator = 1 + sin(theta)^2
+
+        rawX = -cos(theta) / denominator
+        rawZ = -sin(theta) * cos(theta) / denominator
+
+        dense.append(normalizeToConfiguredEnvelope(rawX, rawZ, config))
+
+    cumulativeLength = cumulativeGroundDistance(dense)
+    totalLength = cumulativeLength.last
 
     waypoints = []
-
     for i in 0 ..< config.segmentCount:
-        t = i * dt
-
-        localX = xScale * sin(t)
-        localZ = zScale * sin(2 * t)
+        targetDistance = totalLength * i / config.segmentCount
+        localX, localZ = interpolateDensePointAtDistance(dense, cumulativeLength, targetDistance)
 
         world = localToWorld(localX, localZ, anchorPose)
 
@@ -556,7 +565,7 @@ That upgrade should wait until the waypoint baseline has real basement data:
 
 - Does ARKit yaw drift too much?
 - Is 0.25 m acceptance radius too loose or too tight?
-- Does 0.6 throttle plus a 0.35 floor move reliably?
+- Does boosted 1.0 figure-eight throttle plus a 0.35 floor move reliably?
 - Does the car understeer or oversteer on carpet?
 - Is the 0.50 steering cap low enough to avoid end-stop chatter but high
   enough to complete both lobes?

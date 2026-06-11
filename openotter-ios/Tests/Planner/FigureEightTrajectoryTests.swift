@@ -86,6 +86,23 @@ final class FigureEightTrajectoryTests: XCTestCase {
         XCTAssertLessThanOrEqual(abs(last.z - first.z), 0.06)
     }
 
+    func testDefaultPathUsesEvenWaypointSpacingForSmoothLookahead() {
+        let waypoints = FigureEightTrajectory.waypoints(config: .init())
+        let distances = adjacentDistances(waypoints)
+
+        let minDistance = distances.min() ?? 0
+        let maxDistance = distances.max() ?? 0
+
+        XCTAssertGreaterThan(minDistance, 0.04)
+        XCTAssertLessThanOrEqual(maxDistance / minDistance, 1.10)
+    }
+
+    func testDefaultPathAvoidsTightCornerLikeCurvature() {
+        let waypoints = FigureEightTrajectory.waypoints(config: .init())
+
+        XCTAssertLessThanOrEqual(maxDiscreteCurvature(waypoints), 1.8)
+    }
+
     func testConfigClampMinimumValues() {
         let config = FigureEightTrajectory.Config(
             segmentCount: 2,
@@ -104,4 +121,44 @@ final class FigureEightTrajectoryTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(waypoint.acceptanceRadius, 0.05)
         }
     }
+}
+
+private func adjacentDistances(_ waypoints: [Waypoint]) -> [Float] {
+    guard waypoints.count > 1 else { return [] }
+
+    return waypoints.indices.map { index in
+        let next = waypoints[(index + 1) % waypoints.count]
+        let current = waypoints[index]
+        let dx = next.x - current.x
+        let dz = next.z - current.z
+        return sqrtf(dx * dx + dz * dz)
+    }
+}
+
+private func maxDiscreteCurvature(_ waypoints: [Waypoint]) -> Float {
+    guard waypoints.count > 2 else { return 0 }
+
+    var maxCurvature: Float = 0
+    for index in waypoints.indices {
+        let previous = waypoints[(index - 1 + waypoints.count) % waypoints.count]
+        let current = waypoints[index]
+        let next = waypoints[(index + 1) % waypoints.count]
+
+        let a = groundDistance(previous, current)
+        let b = groundDistance(current, next)
+        let c = groundDistance(previous, next)
+        guard a > 0, b > 0, c > 0 else { continue }
+
+        let twiceArea = abs((current.x - previous.x) * (next.z - previous.z) -
+                            (current.z - previous.z) * (next.x - previous.x))
+        let curvature = 2 * twiceArea / (a * b * c)
+        maxCurvature = max(maxCurvature, curvature)
+    }
+    return maxCurvature
+}
+
+private func groundDistance(_ lhs: Waypoint, _ rhs: Waypoint) -> Float {
+    let dx = rhs.x - lhs.x
+    let dz = rhs.z - lhs.z
+    return sqrtf(dx * dx + dz * dz)
 }
