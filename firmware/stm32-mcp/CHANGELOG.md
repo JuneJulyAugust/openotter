@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Steering actuator policy tests**: Added host-tested PWM ramp and watchdog
+  policy coverage so full-range steering commands are bounded, and command
+  timeout neutralizes both steering and throttle.
 - **Adaptive VL53L8 safety slots**: Firmware now supports rear and front VL53L8 runtime slots. A single rear sensor still enables reverse ToF safety, a single front sensor can enable forward ToF safety, and two sensors can run independently when both are available.
 - **Directional safety projection tests**: Added host coverage for mapping front-sensor forward motion into the existing reverse-safety model without changing the core stopping-distance invariant.
 - **VL53L8 debug role metadata**: FE61 now accepts a front/rear debug role byte, FE63 reports selected role plus available-slot mask, and host tests cover the packed status metadata.
@@ -27,6 +30,14 @@ All notable changes to this project will be documented in this file.
 - **Startup heartbeat semantics**: LD2/PB14 is now a true main-loop heartbeat. ToF frame health remains available through FE63, the STM32 diagnostic UI, and UART ToF logs.
 
 ### Fixed
+- **Fast steering sweep robustness**: BLE steering output now clamps to the
+  safe PWM range and slews steering changes before writing TIM3_CH4. Delayed
+  main-loop iterations no longer catch up with one large servo jump, reducing
+  reset/brownout risk when the debug UI or planner moves rapidly across the
+  full normalized steering range.
+- **Command timeout steering neutral**: A stale FE41 command timeout now clears
+  desired steering and throttle to neutral instead of continuing to hold or
+  chase the last steering target after command loss.
 - **VIN startup recovery**: Hardened noisy RC-battery startup by starting the independent watchdog before BLE bringup, bounding the BlueNRG reset and HCI wait paths, fail-closing required GATT service registration, and panic-resetting on fatal init (`PANIC:I`) or BlueNRG SPI busy lockup (`PANIC:P`) instead of freezing until a full vehicle power cycle.
 - **BLE advertising startup/reconnect**: Moved advertising start out of blocking boot init and into a main-loop retry policy with 100 ms initial delay, 1-5 s backoff, `BLE adv_start` UART logs, and a shorter 3 s HCI command timeout so a failed advertising command no longer makes LD2 and app reconnects appear dead for 10-15 s.
 - **BLE reset discovery diagnostics**: Advertising now includes both FE40 control and FE60 ToF service UUIDs, emits a passive `BLE adv_active` UART heartbeat while disconnected, and treats a BlueNRG HCI timeout during advertising start as `PANIC:C` instead of silently leaving the iOS app in `Scanning`.

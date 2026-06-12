@@ -35,6 +35,7 @@
 #include "tof_l8.h"
 #include "ble_tof.h"
 #include "ble_adv_policy.h"
+#include "ble_actuator_policy.h"
 #include "ble_command.h"
 #include "ble_connection_policy.h"
 #include "ble_drive_policy.h"
@@ -46,6 +47,9 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#define BLE_STEERING_SLEW_US_PER_MS 5u
+#define BLE_STEERING_SLEW_MAX_ELAPSED_MS 20u
 
 extern UART_HandleTypeDef huart1;
 
@@ -83,6 +87,7 @@ typedef struct {
   volatile uint8_t  safetyTriggered;
   int16_t currentSteering;
   int16_t currentThrottle;
+  uint32_t steeringSlewTick;
 
   /* From the most recent 0xFE41 write. */
   int16_t desiredSteeringUs;
@@ -114,6 +119,7 @@ static void BLE_RefreshAdvertising(uint32_t now_ms);
 static void BLE_ServiceAdvertising(uint32_t now_ms);
 static void BLE_ServiceConnectionHandshake(uint32_t now_ms);
 static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us);
+static void BLE_ApplyPWMImmediate(int16_t steering_us, int16_t throttle_us);
 static SVCCTL_EvtAckStatus_t BLE_EventHandler(void *event);
 
 static void BLE_InitRTC(void);
@@ -140,14 +146,16 @@ static uint32_t s_safety_payload_seq = 0;
 
 int BLE_App_Init(TIM_HandleTypeDef *htim) {
   memset(&bleCtx, 0, sizeof(bleCtx));
+  uint32_t now = HAL_GetTick();
   bleCtx.htim              = htim;
   bleCtx.currentSteering   = PWM_NEUTRAL_US;
   bleCtx.currentThrottle   = PWM_NEUTRAL_US;
+  bleCtx.lastCommandTick   = now;
+  bleCtx.steeringSlewTick  = now;
   bleCtx.desiredSteeringUs = PWM_NEUTRAL_US;
   bleCtx.desiredThrottleUs = PWM_NEUTRAL_US;
   bleCtx.reportedVelocityMmPerS = 0;
   bleCtx.mode              = OPENOTTER_MODE_DRIVE;
-  bleCtx.lastCommandTick   = HAL_GetTick();
 
   RevSafetyConfig_t rscfg;
   RevSafety_GetDefaultConfig(&rscfg);
@@ -174,7 +182,7 @@ int BLE_App_Init(TIM_HandleTypeDef *htim) {
   if (gatt_status != 0) {
     return gatt_status;
   }
-  BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
+  BLE_ApplyPWMImmediate(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
   FwWatchdog_Refresh();
 
   return 0;
@@ -333,8 +341,22 @@ void BLE_App_Process(void) {
   }
 
   if (watchdog_trip) {
-    throttle_us = neutral;
     bleCtx.safetyTriggered = 1;
+  }
+
+  BleActuatorCommand_t actuator = {
+      .steering_us = steering_us,
+      .throttle_us = throttle_us,
+  };
+  actuator = BLE_ActuatorPolicy_ApplyWatchdog(
+      actuator,
+      neutral,
+      watchdog_trip ? 1 : 0);
+  steering_us = actuator.steering_us;
+  throttle_us = actuator.throttle_us;
+  if (watchdog_trip) {
+    bleCtx.desiredSteeringUs = neutral;
+    bleCtx.desiredThrottleUs = neutral;
   }
 
   BLE_ApplyPWM(steering_us, throttle_us);
@@ -698,7 +720,9 @@ void SVCCTL_App_Notification(void *pckt) {
     bleCtx.connectionHandle = 0;
     BleAdvPolicy_OnDisconnected(&bleCtx.adv, HAL_GetTick());
     BleConnectionPolicy_OnDisconnected(&bleCtx.connection_policy);
-    BLE_ApplyPWM(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
+    bleCtx.desiredSteeringUs = PWM_NEUTRAL_US;
+    bleCtx.desiredThrottleUs = PWM_NEUTRAL_US;
+    BLE_ApplyPWMImmediate(PWM_NEUTRAL_US, PWM_NEUTRAL_US);
     bleCtx.mode = OPENOTTER_MODE_DRIVE;
     BLE_Tof_RequestSafetyConfig();
     disarm_all_safety();
@@ -746,15 +770,38 @@ static void BLE_ApplyPWM(int16_t steering_us, int16_t throttle_us) {
   if (!bleCtx.htim)
     return;
 
+  uint32_t now = HAL_GetTick();
+  uint32_t elapsed_ms = now - bleCtx.steeringSlewTick;
+  int16_t s = PwmControl_TimedSlewToward(
+      bleCtx.currentSteering,
+      steering_us,
+      elapsed_ms,
+      BLE_STEERING_SLEW_US_PER_MS,
+      BLE_STEERING_SLEW_MAX_ELAPSED_MS);
+  int16_t t = PwmControl_ClampPulse(throttle_us);
+
+  bleCtx.currentSteering = s;
+  bleCtx.currentThrottle = t;
+  bleCtx.steeringSlewTick = now;
+
+  /* TIM3_CH4 = PB1 = steering servo */
+  __HAL_TIM_SET_COMPARE(bleCtx.htim, TIM_CHANNEL_4, (uint32_t)s);
+  /* TIM3_CH1 = PB4 = throttle ESC */
+  __HAL_TIM_SET_COMPARE(bleCtx.htim, TIM_CHANNEL_1, (uint32_t)t);
+}
+
+static void BLE_ApplyPWMImmediate(int16_t steering_us, int16_t throttle_us) {
+  if (!bleCtx.htim)
+    return;
+
   int16_t s = PwmControl_ClampPulse(steering_us);
   int16_t t = PwmControl_ClampPulse(throttle_us);
 
   bleCtx.currentSteering = s;
   bleCtx.currentThrottle = t;
+  bleCtx.steeringSlewTick = HAL_GetTick();
 
-  /* TIM3_CH4 = PB1 = steering servo */
   __HAL_TIM_SET_COMPARE(bleCtx.htim, TIM_CHANNEL_4, (uint32_t)s);
-  /* TIM3_CH1 = PB4 = throttle ESC */
   __HAL_TIM_SET_COMPARE(bleCtx.htim, TIM_CHANNEL_1, (uint32_t)t);
 }
 

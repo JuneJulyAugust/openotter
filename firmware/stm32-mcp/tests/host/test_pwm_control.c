@@ -34,10 +34,39 @@ static void test_clamp_extremes(void) {
   expect_eq("negative",    PwmControl_ClampPulse(-500),      PWM_MIN_US);
 }
 
+static void test_slew_toward_target_without_overshoot(void) {
+  expect_eq("slew up", PwmControl_SlewToward(1500, 2000, 80), 1580);
+  expect_eq("slew down", PwmControl_SlewToward(1500, 1000, 80), 1420);
+  expect_eq("slew reaches close target", PwmControl_SlewToward(1500, 1530, 80), 1530);
+  expect_eq("slew zero holds", PwmControl_SlewToward(1500, 2000, 0), 1500);
+}
+
+static void test_slew_clamps_target_and_current(void) {
+  expect_eq("target above max", PwmControl_SlewToward(1500, 2500, 600), 2000);
+  expect_eq("target below min", PwmControl_SlewToward(1500, 500, 600), 1000);
+  expect_eq("current above max", PwmControl_SlewToward(2500, 1000, 50), 1950);
+  expect_eq("current below min", PwmControl_SlewToward(500, 2000, 50), 1050);
+}
+
+static void test_timed_slew_caps_stalled_loop_catchup(void) {
+  expect_eq("normal 20ms frame",
+            PwmControl_TimedSlewToward(1500, 2000, 20, 5, 20),
+            1600);
+  expect_eq("stalled loop still one capped step",
+            PwmControl_TimedSlewToward(1500, 2000, 200, 5, 20),
+            1600);
+  expect_eq("zero elapsed holds",
+            PwmControl_TimedSlewToward(1500, 2000, 0, 5, 20),
+            1500);
+}
+
 int main(void) {
   test_in_range_unchanged();
   test_clamp_bounds();
   test_clamp_extremes();
+  test_slew_toward_target_without_overshoot();
+  test_slew_clamps_target_and_current();
+  test_timed_slew_caps_stalled_loop_catchup();
   if (g_fails == 0) {
     printf("pwm_control tests: OK\n");
     return 0;

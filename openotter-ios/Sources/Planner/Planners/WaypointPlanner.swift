@@ -8,9 +8,10 @@ struct WaypointPlannerConfig {
     /// while the output cap below still protects the mechanical end stop.
     var steeringFractionAt90Deg: Float = 0.7
 
-    /// Hard cap for steering output. Keep below the mechanical stop range so
-    /// the servo does not sit against its end stop and chatter.
-    var maxSteeringFraction: Float = 0.45
+    /// Hard cap for steering output. The firmware clamps normalized full range
+    /// to 1000...2000 us and slews steering PWM so rapid full-range requests
+    /// do not become instantaneous servo jumps.
+    var maxSteeringFraction: Float = 1.0
 
     /// Keep enough throttle through normal turns that the car does not stall
     /// while the heading loop is still converging.
@@ -54,6 +55,11 @@ struct WaypointPlannerConfig {
     /// When the car is far from the centerline and steering is loaded, reduce
     /// speed enough for the yaw loop to catch up.
     var steeringThrottleScaleAtLimit: Float = 0.45
+
+    /// Steering command magnitude that counts as fully loaded for throttle
+    /// shaping. This stays independent from `maxSteeringFraction`: the planner
+    /// may command full steering, but moderate steering already means slow down.
+    var steeringThrottleFullLoadFraction: Float = 0.45
 
     /// Lateral error where steering-load throttle shaping reaches full effect.
     var lateralThrottleSlowdownDistance: Float = 0.2
@@ -329,8 +335,8 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
             )
         }
 
-        let steeringLimit = max(0.001, min(1, config.maxSteeringFraction))
-        let steeringLoad = min(1, abs(steering) / steeringLimit)
+        let steeringLoadScale = max(0.001, min(1, config.steeringThrottleFullLoadFraction))
+        let steeringLoad = min(1, abs(steering) / steeringLoadScale)
         let lateralLoad = min(1, lateralError / max(0.001, config.lateralThrottleSlowdownDistance))
         let scaleAtLimit = max(0, min(1, config.steeringThrottleScaleAtLimit))
         let scale = 1 - (1 - scaleAtLimit) * steeringLoad * lateralLoad

@@ -134,8 +134,9 @@ The initial tangent is diagonal:
 tangent points forward and right
 ```
 
-With the steering cap, smoother curve, larger path, and arc-length spacing,
-that diagonal start is practical. It also preserves the requested visual shape.
+With full normalized steering authority, firmware-side PWM clamping/slew,
+smoother curve, smaller path, and arc-length spacing, that diagonal start is
+practical. It also preserves the requested visual shape.
 The earlier implementation
 rotated the curve to make this tangent point forward; that made the math tidy
 but made the plotted path less like the requested horizontal track.
@@ -281,7 +282,8 @@ Current constants:
 ```text
 steeringFractionAt90Deg = 0.7
 steeringGain = steeringFractionAt90Deg / (pi / 2)
-maxSteeringFraction = 0.45
+maxSteeringFraction = 1.0
+steeringThrottleFullLoadFraction = 0.45
 crossTrackHeadingGain = 2.2
 crossTrackSofteningDistance = 0.18 m
 headingIntegralGain = 0.0
@@ -295,17 +297,18 @@ That means:
 
 ```text
 90 degree heading error -> raw feedback about 0.7
-larger errors -> steering capped to +/-0.45
+larger errors plus feedforward -> steering capped to +/-1.0
 ```
 
 This is a practical choice:
 
 - small errors give small steering corrections,
 - moderate errors give visible turning authority,
-- very large errors do not command the servo to its mechanical end stops,
-- the servo command remains bounded even if ARKit pose jumps,
-- the front wheel should stop making end-stop chatter unless the mechanical
-  linkage itself is binding.
+- very large errors can use the available normalized command range,
+- the firmware clamps the servo PWM to `1000...2000 us` even if ARKit pose jumps,
+- firmware steering slew limiting turns rapid full-range sweeps into a short
+  ramp, which should reduce reset/brownout risk and audible end-stop chatter
+  unless the mechanical linkage itself is binding.
 
 The integral term is intentionally configured to zero for the first fieldable
 version. Integral is useful for steady steering bias, but it can also wind up
@@ -348,7 +351,7 @@ else:
     fade = 1 - absError / pi
     baseThrottle = maxThrottle * max(minimumThrottleFraction, fade)
 
-    steeringLoad = abs(steering) / maxSteeringFraction
+    steeringLoad = abs(steering) / steeringThrottleFullLoadFraction
     lateralLoad = abs(crossTrackError) / lateralThrottleSlowdownDistance
     slowdown = steeringLoad * lateralLoad
     scale = 1 - (1 - steeringThrottleScaleAtLimit) * clamp(slowdown, 0, 1)
@@ -667,7 +670,7 @@ throttleForGuidance(throttleYawError, steering, lateralError, measuredSpeed):
     if lateralError is none:
         return antiStallAdjustedThrottle(base, throttleYawError, measuredSpeed)
 
-    steeringLoad = clamp(abs(steering) / maxSteeringFraction, 0, 1)
+    steeringLoad = clamp(abs(steering) / steeringThrottleFullLoadFraction, 0, 1)
     lateralLoad = clamp(lateralError / lateralThrottleSlowdownDistance, 0, 1)
     scale = 1 - (1 - steeringThrottleScaleAtLimit) * steeringLoad * lateralLoad
 
@@ -757,8 +760,8 @@ That upgrade should wait until the tangent-heading baseline has real basement da
 - Does default 0.4 figure-eight throttle plus steering-load slowdown move
   reliably?
 - Does the car understeer or oversteer on carpet?
-- Is the 0.45 steering cap low enough to avoid end-stop chatter but high
-  enough to complete both lobes?
+- Does the full normalized steering range, with firmware PWM slew limiting,
+  complete both lobes without servo chatter or board resets?
 - Does servo center need a trim offset?
 
 Those answers should tune the next controller instead of guessing.

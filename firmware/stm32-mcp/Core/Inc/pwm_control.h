@@ -33,6 +33,29 @@ extern "C" {
  */
 int16_t PwmControl_ClampPulse(int16_t pulse_us);
 
+/*
+ * Move current pulse toward target by at most max_step_us.
+ *
+ * Both current and target are first clamped into the safe PWM range. This is
+ * intended for steering servos: full-range commands remain allowed, but fast
+ * command sweeps become a bounded ramp instead of an instantaneous jump.
+ */
+int16_t PwmControl_SlewToward(int16_t current_us,
+                              int16_t target_us,
+                              uint16_t max_step_us);
+
+/*
+ * Time-based steering slew helper with a capped elapsed-time window.
+ *
+ * The elapsed cap intentionally prevents a delayed main-loop iteration from
+ * "catching up" with one large servo jump after the MCU was busy elsewhere.
+ */
+int16_t PwmControl_TimedSlewToward(int16_t current_us,
+                                   int16_t target_us,
+                                   uint32_t elapsed_ms,
+                                   uint16_t us_per_ms,
+                                   uint16_t max_elapsed_ms);
+
 #ifdef __cplusplus
 }
 #endif

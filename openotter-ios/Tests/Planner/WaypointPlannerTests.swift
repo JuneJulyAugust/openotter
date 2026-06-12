@@ -63,20 +63,21 @@ final class WaypointPlannerTests: XCTestCase {
         XCTAssertEqual(planner.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)
         XCTAssertGreaterThan(cmd.steering, 0, "Startup should enter the first right lobe of the horizontal figure eight")
         XCTAssertGreaterThan(cmd.steering, 0.35, "Startup steering should overcome linkage deadband")
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.45, "Figure-eight steering should stay below servo-stop saturation")
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 1.0, "Figure-eight steering must stay inside normalized safe range")
         XCTAssertLessThanOrEqual(planner.currentWaypointIndex, 3, "Startup should not skip over the early turning cue")
         XCTAssertGreaterThan(cmd.throttle, 0.25)
         XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
     }
 
-    func testSteeringOutputIsLimitedBelowServoStop() {
+    func testSteeringOutputAllowsFullSafeRange() {
         let planner = WaypointPlanner()
         planner.setGoal(.followWaypoints([Waypoint(x: 0, z: 1, acceptanceRadius: 0.1)], maxThrottle: 0.6))
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
 
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.45)
+        XCTAssertGreaterThan(abs(cmd.steering), 0.45)
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 1.0)
     }
 
     func testClosedLoopPlannerSkipsAheadWhenCarMissesCurrentWaypoint() {
@@ -95,7 +96,7 @@ final class WaypointPlannerTests: XCTestCase {
         ))
 
         XCTAssertGreaterThanOrEqual(planner.currentWaypointIndex, 28)
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.45)
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 1.0)
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
     }
 
@@ -198,6 +199,7 @@ final class WaypointPlannerTests: XCTestCase {
         let command = figureEightCommand(offsetAt: 30, lateralOffset: 0.2, arkitSpeedMps: 0.2)
 
         XCTAssertLessThan(command.steering, -0.1)
+        XCTAssertLessThanOrEqual(abs(command.steering), 1.0)
         XCTAssertLessThan(
             command.throttle,
             0.25,

@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Final one-rear-SATEL E2E evidence**: Documented the successful 2026-06-09 end-to-end app/firmware validation after STM32 reset/reconnect hardening.
 
 ### Changed
+- **Figure-eight steering authority**: The waypoint controller can now command
+  the full normalized steering range for tighter basement lobes; firmware is
+  responsible for safe PWM clamping and slew limiting.
 - **ToF debug config payload**: FE61 writes now include the selected role byte so the firmware can stream one chosen VL53L8 depth map at a time while keeping both sensors online for safety.
 - **VL53L8 debug cell classification**: STM32 Control now mirrors the firmware's 3.8 m trusted safety band: only valid-status far ranges render as `CLR`, and non-OK statuses such as `2`, `4`, or `255` stay invalid even when their range field looks plausible.
 - **v1.2.0 validation scope**: The release candidate is scoped to one physically verified rear SATEL-VL53L8; front/two-sensor support remains code-ready and documented, but physical second-sensor validation is deferred.

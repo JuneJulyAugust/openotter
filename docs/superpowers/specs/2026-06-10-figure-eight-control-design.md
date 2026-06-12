@@ -52,8 +52,10 @@ Second field review after the waypoint baseline:
 - The car's map trace collapsed into one lobe, which is consistent with a
   waypoint follower chasing a missed waypoint instead of advancing along the
   closed path.
-- The front wheel servo made end-stop chatter, so steering authority must be
-  capped below full travel until the mechanical range is calibrated.
+- The front wheel servo made end-stop chatter during abrupt command changes.
+  The revised policy is to allow full normalized steering authority in the
+  app, clamp PWM to the safe firmware range, and slew steering PWM changes in
+  firmware so full-range requests do not become instantaneous servo jumps.
 
 Third field review after raising mission speed:
 
@@ -159,7 +161,8 @@ because the recovery heading is aggressive.
 Current defaults:
 
 ```text
-maxSteeringFraction = 0.45
+maxSteeringFraction = 1.0
+steeringThrottleFullLoadFraction = 0.45
 crossTrackGain = 2.2
 crossTrackSofteningDistance = 0.18 m
 curvatureFeedforwardGain = 0.10 m
@@ -179,6 +182,7 @@ car is stuck or nearly stuck:
 
 ```text
 base = maxThrottle * max(0.35, 1 - abs(pathHeadingError) / pi)
+steeringLoad = abs(steering) / steeringThrottleFullLoadFraction
 scale = 1 - (1 - 0.45) * steeringLoad * lateralLoad
 throttle = base * scale
 
@@ -254,7 +258,7 @@ width             = 1.6 m
 acceptanceRadius  = 0.12 m
 figure8 throttle  = current Telegram speed, with no hidden boost
 default /figure8  = 0.4
-max steering      = 0.45
+max steering      = 1.0
 progress search   = 32 future samples
 ```
 
@@ -263,8 +267,9 @@ progress search   = 32 future samples
 basement wall margin while preserving the same horizontal infinity shape. The
 tighter acceptance radius keeps the startup waypoints from being consumed too
 aggressively at the center crossing. The tangent-heading controller makes the
-front wheel visibly turn for the first lobe, while the `0.45` cap avoids
-intentionally sitting on the servo end stop. The tests verify the path stays
+front wheel visibly turn for the first lobe, while firmware clamps and slews
+the PWM command so full-range steering remains bounded and less abrupt. The
+tests verify the path stays
 inside the configured horizontal infinity dimensions, crosses the anchor
 halfway through the loop, forms a continuous loop, keeps adjacent waypoint
 spacing even, avoids the old tight corner-like curvature, and tracks the path

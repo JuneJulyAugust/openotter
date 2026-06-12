@@ -190,11 +190,12 @@ throttle = maxThrottle * max(0.35, 1 - abs(yawError) / pi)
 
 Hold throttle at zero only when the target is nearly behind the car.
 
-- [x] **Step 3: Cap steering below servo end stops**
+- [x] **Step 3: Bound steering through firmware-safe full range**
 
-Use `steeringFractionAt90Deg = 0.7` and `maxSteeringFraction = 0.45` so the
-controller gives a visibly stronger initial turn while still avoiding full
-servo travel during large heading errors.
+Use `steeringFractionAt90Deg = 0.7` and `maxSteeringFraction = 1.0` so the
+controller gives a visibly stronger initial turn. Firmware clamps the PWM
+range and slews command changes so full normalized steering requests do not
+become abrupt servo jumps.
 
 ---
 
