@@ -52,11 +52,18 @@ struct WaypointPlannerConfig {
     var headingIntegralLimit: Float = 0.5
 
     /// When the car is far from the centerline and steering is loaded, reduce
-    /// speed enough for the yaw loop to catch up without stopping the mission.
+    /// speed enough for the yaw loop to catch up.
     var steeringThrottleScaleAtLimit: Float = 0.45
 
     /// Lateral error where steering-load throttle shaping reaches full effect.
     var lateralThrottleSlowdownDistance: Float = 0.2
+
+    /// If speed feedback says the car is stuck or almost stuck, keep at least
+    /// this fraction of requested throttle so steering load cannot stall it.
+    var antiStallThrottleFraction: Float = 0.75
+
+    /// Speed below which the planner blends in anti-stall throttle.
+    var antiStallSpeedThresholdMps: Double = 0.12
 
     /// Derived gain: maps heading error (rad) → steering fraction.
     var steeringGain: Float { steeringFractionAt90Deg / (.pi / 2) }
@@ -126,19 +133,20 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
         let steering: Float
         if guidance.usesPathController {
             steering = pathSteeringOutput(
-                for: guidance.yawError,
+                for: guidance.steeringYawError,
                 feedforward: guidance.steeringFeedforward,
                 timestamp: context.timestamp
             )
         } else {
-            steering = proportionalSteeringOutput(for: guidance.yawError)
+            steering = proportionalSteeringOutput(for: guidance.steeringYawError)
         }
         return ControlCommand(
             steering: steering,
             throttle: throttleOutput(
-                for: guidance.yawError,
+                for: guidance.throttleYawError,
                 steering: steering,
-                lateralError: guidance.lateralError
+                lateralError: guidance.lateralError,
+                measuredSpeedMps: measuredSpeedMps(from: context)
             ),
             source: .planner(name)
         )
@@ -156,7 +164,8 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
     // MARK: - Private
 
     private struct GuidanceCommand {
-        let yawError: Float
+        let steeringYawError: Float
+        let throttleYawError: Float
         let steeringFeedforward: Float
         let lateralError: Float?
         let usesPathController: Bool
@@ -216,8 +225,10 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
     private func guidanceCommand(from pose: PoseEntry) -> GuidanceCommand {
         guard isClosedLoop else {
             let target = waypoints[currentIndex]
+            let yawError = headingError(to: target, from: pose)
             return GuidanceCommand(
-                yawError: headingError(to: target, from: pose),
+                steeringYawError: yawError,
+                throttleYawError: yawError,
                 steeringFeedforward: 0,
                 lateralError: nil,
                 usesPathController: false
@@ -226,7 +237,8 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
 
         let reference = closedLoopPathReference(from: pose)
         return GuidanceCommand(
-            yawError: reference.yawError,
+            steeringYawError: reference.steeringYawError,
+            throttleYawError: reference.throttleYawError,
             steeringFeedforward: reference.steeringFeedforward,
             lateralError: abs(reference.crossTrackError),
             usesPathController: true
@@ -239,7 +251,8 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
     }
 
     private struct ClosedLoopPathReference {
-        let yawError: Float
+        let steeringYawError: Float
+        let throttleYawError: Float
         let crossTrackError: Float
         let steeringFeedforward: Float
     }
@@ -260,7 +273,8 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
         let curvature = signedCurvature(at: referenceIndex)
 
         return ClosedLoopPathReference(
-            yawError: (desiredYaw - pose.yaw).wrapToPi(),
+            steeringYawError: (desiredYaw - pose.yaw).wrapToPi(),
+            throttleYawError: (segment.tangentYaw - pose.yaw).wrapToPi(),
             crossTrackError: crossTrackError,
             steeringFeedforward: curvatureFeedforward(for: curvature)
         )
@@ -297,21 +311,57 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
         return clamp(feedforward - pidCorrection, min: -limit, max: limit)
     }
 
-    /// Throttle fades as heading error grows, but keeps a small floor through
-    /// normal turns so high-friction starts do not stall the mission.
-    private func throttleOutput(for yawError: Float, steering: Float, lateralError: Float?) -> Float {
-        let absError = abs(yawError)
+    /// Throttle fades as path-heading error grows, slows loaded steering once
+    /// moving, and blends in breakaway throttle when speed feedback is near zero.
+    private func throttleOutput(for throttleYawError: Float,
+                                steering: Float,
+                                lateralError: Float?,
+                                measuredSpeedMps: Double?) -> Float {
+        let absError = abs(throttleYawError)
         guard absError <= config.maxPoweredHeadingError else { return 0 }
         let fade = 1.0 - absError / .pi
         let baseThrottle = maxThrottle * max(config.minimumThrottleFraction, fade)
-        guard let lateralError else { return baseThrottle }
+        guard let lateralError else {
+            return antiStallAdjustedThrottle(
+                baseThrottle,
+                throttleYawError: throttleYawError,
+                measuredSpeedMps: measuredSpeedMps
+            )
+        }
 
         let steeringLimit = max(0.001, min(1, config.maxSteeringFraction))
         let steeringLoad = min(1, abs(steering) / steeringLimit)
         let lateralLoad = min(1, lateralError / max(0.001, config.lateralThrottleSlowdownDistance))
         let scaleAtLimit = max(0, min(1, config.steeringThrottleScaleAtLimit))
         let scale = 1 - (1 - scaleAtLimit) * steeringLoad * lateralLoad
-        return baseThrottle * scale
+        return antiStallAdjustedThrottle(
+            baseThrottle * scale,
+            throttleYawError: throttleYawError,
+            measuredSpeedMps: measuredSpeedMps
+        )
+    }
+
+    private func antiStallAdjustedThrottle(_ throttle: Float,
+                                           throttleYawError: Float,
+                                           measuredSpeedMps: Double?) -> Float {
+        guard throttle > 0, abs(throttleYawError) < .pi / 2 else { return throttle }
+
+        let threshold = max(0.001, config.antiStallSpeedThresholdMps)
+        let speed = max(0, measuredSpeedMps ?? 0)
+        guard speed < threshold else { return throttle }
+
+        let breakawayThrottle = maxThrottle * max(0, min(1, config.antiStallThrottleFraction))
+        guard breakawayThrottle > throttle else { return throttle }
+
+        let blend = Float(1.0 - speed / threshold)
+        return throttle + (breakawayThrottle - throttle) * blend
+    }
+
+    private func measuredSpeedMps(from context: PlannerContext) -> Double? {
+        [context.motorSpeedMps, context.arkitSpeedMps]
+            .compactMap { $0 }
+            .filter { $0.isFinite && $0 >= 0 }
+            .max()
     }
 
     private func updateControllerState(yawError: Float, timestamp: TimeInterval) -> Float {

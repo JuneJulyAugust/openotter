@@ -233,12 +233,24 @@ the desired yaw left:
 crossTrackCorrection = atan2(crossTrackHeadingGain * crossTrackError,
                              crossTrackSofteningDistance)
 desiredYaw = wrapToPi(referenceYaw + crossTrackCorrection)
-yawError = wrapToPi(desiredYaw - pose.yaw)
+steeringYawError = wrapToPi(desiredYaw - pose.yaw)
+pathHeadingError = wrapToPi(referenceYaw - pose.yaw)
 ```
 
 The `atan2` correction has a useful property: small side errors behave almost
 linearly, but large side errors saturate smoothly instead of demanding an
 impossible instant turn.
+
+The controller intentionally keeps both heading errors:
+
+- `steeringYawError` includes the cross-track correction and drives steering.
+- `pathHeadingError` is just the tangent direction and drives throttle.
+
+The screenshot/video failure showed why this matters. The car could be pointed
+mostly along the red path while sitting 20 cm off the centerline. In that case
+the steering controller should ask for a strong recovery turn, but the throttle
+controller should not interpret that recovery turn as "the path is behind me;
+almost stop."
 
 ## 7. PID Feedback And Feedforward
 
@@ -247,9 +259,9 @@ feedforward term:
 
 ```text
 pidCorrection =
-    steeringGain * yawError
-  + headingIntegralGain * integral(yawError)
-  + headingDerivativeGain * derivative(yawError)
+    steeringGain * steeringYawError
+  + headingIntegralGain * integral(steeringYawError)
+  + headingDerivativeGain * derivative(steeringYawError)
 
 steering = clamp(curvatureFeedforward - pidCorrection,
                  -maxSteeringFraction,
@@ -259,8 +271,8 @@ steering = clamp(curvatureFeedforward - pidCorrection,
 The sign is deliberate:
 
 ```text
-positive yawError       -> path heading is left of car -> negative steering
-negative yawError       -> path heading is right of car -> positive steering
+positive steeringYawError -> path heading is left of car -> negative steering
+negative steeringYawError -> path heading is right of car -> positive steering
 positive path curvature -> path turns left          -> negative feedforward
 ```
 
@@ -318,14 +330,17 @@ current missing-front-wheel-angle hardware state.
 
 ## 8. Speed Control
 
-The current implementation controls speed in an open-loop way: it chooses a
-throttle command from heading error, steering load, and lateral path error, but
-it does not yet close the loop on measured vehicle speed.
+The current implementation is not a full velocity PID loop yet. It still starts
+from the operator's requested Telegram throttle, but it now uses measured speed
+as low-speed anti-stall feedback. That is the practical middle ground for the
+field symptom: if the car is already moving, tight turns may slow down; if the
+car is stuck at 0.00-0.01 m/s while steering is loaded, the controller commands
+enough throttle to break static friction.
 
 The throttle law is:
 
 ```text
-absError = abs(yawError)
+absError = abs(pathHeadingError)
 
 if absError > maxPoweredHeadingError:
     throttle = 0
@@ -339,6 +354,14 @@ else:
     scale = 1 - (1 - steeringThrottleScaleAtLimit) * clamp(slowdown, 0, 1)
 
     throttle = baseThrottle * scale
+
+    if throttle > 0
+       and abs(pathHeadingError) < pi / 2
+       and measuredSpeed < antiStallSpeedThresholdMps:
+
+        breakawayThrottle = maxThrottle * antiStallThrottleFraction
+        blend = 1 - measuredSpeed / antiStallSpeedThresholdMps
+        throttle = throttle + (breakawayThrottle - throttle) * blend
 ```
 
 Current constants:
@@ -348,6 +371,8 @@ minimumThrottleFraction = 0.35
 maxPoweredHeadingError  = 5 * pi / 6   # 150 degrees
 steeringThrottleScaleAtLimit = 0.45
 lateralThrottleSlowdownDistance = 0.20 m
+antiStallThrottleFraction = 0.75
+antiStallSpeedThresholdMps = 0.12
 ```
 
 What this does:
@@ -360,12 +385,15 @@ What this does:
   curved.
 - If the car is off the centerline and steering is near the cap, slow down so
   yaw can catch up before the car balloons outside the lobe.
+- If the car is almost stopped, blend back toward useful breakaway throttle so
+  static friction and loaded steering do not make it sit in place.
 
 With the default Telegram speed:
 
 ```text
 maxThrottle = 0.4
 minimum moving throttle = 0.4 * 0.35 = 0.14
+anti-stall breakaway throttle = 0.4 * 0.75 = 0.30
 ```
 
 There is no hidden `/figure8` throttle multiplier. If the operator wants to
@@ -494,25 +522,28 @@ plan(context):
 
     if isClosedLoop:
         reference = closedLoopPathReference(context.pose)
-        yawError = reference.yawError
+        steeringYawError = reference.steeringYawError
+        throttleYawError = reference.throttleYawError
         feedforward = reference.steeringFeedforward
         lateralError = abs(reference.crossTrackError)
     else:
         target = waypoints[currentWaypointIndex]
-        yawError = headingErrorToWaypoint(target, context.pose)
+        steeringYawError = headingErrorToWaypoint(target, context.pose)
+        throttleYawError = steeringYawError
         feedforward = 0
         lateralError = none
 
     steering = steeringFromPIDAndFeedforward(
-        yawError,
+        steeringYawError,
         feedforward,
         context.timestamp
     )
 
     throttle = throttleForGuidance(
-        yawError,
+        throttleYawError,
         steering,
-        lateralError
+        lateralError,
+        measuredSpeed(context)
     )
 
     return ControlCommand(
@@ -540,34 +571,35 @@ closedLoopPathReference(pose):
     correction = atan2(crossTrackHeadingGain * crossTrackError,
                        crossTrackSofteningDistance)
     desiredYaw = wrapToPi(referenceYaw + correction)
-    yawError = wrapToPi(desiredYaw - pose.yaw)
+    steeringYawError = wrapToPi(desiredYaw - pose.yaw)
+    throttleYawError = wrapToPi(referenceYaw - pose.yaw)
 
     curvature = signedCurvature(currentWaypointIndex)
     feedforward = clamp(-curvatureFeedforwardGain * curvature,
                         -maxSteeringFraction,
                         +maxSteeringFraction)
 
-    return yawError, crossTrackError, feedforward
+    return steeringYawError, throttleYawError, crossTrackError, feedforward
 ```
 
 ### Steering PID And Feedforward
 
 ```text
-steeringFromPIDAndFeedforward(yawError, feedforward, timestamp):
+steeringFromPIDAndFeedforward(steeringYawError, feedforward, timestamp):
     dt = clamp(timestamp - previousTimestamp, 0, 0.25)
 
     if dt > 0:
-        integral = clamp(integral + yawError * dt,
+        integral = clamp(integral + steeringYawError * dt,
                          -headingIntegralLimit,
                          +headingIntegralLimit)
-        derivative = wrapToPi(yawError - previousYawError) / dt
+        derivative = wrapToPi(steeringYawError - previousYawError) / dt
     else:
         derivative = 0
 
-    previousYawError = yawError
+    previousYawError = steeringYawError
     previousTimestamp = timestamp
 
-    pid = steeringGain * yawError
+    pid = steeringGain * steeringYawError
         + headingIntegralGain * integral
         + headingDerivativeGain * derivative
 
@@ -623,8 +655,8 @@ advanceToClosestForwardWaypoint(pose):
 ### Throttle Shaping
 
 ```text
-throttleForGuidance(yawError, steering, lateralError):
-    absError = abs(yawError)
+throttleForGuidance(throttleYawError, steering, lateralError, measuredSpeed):
+    absError = abs(throttleYawError)
 
     if absError > maxPoweredHeadingError:
         return 0
@@ -633,13 +665,39 @@ throttleForGuidance(yawError, steering, lateralError):
     base = maxThrottle * max(minimumThrottleFraction, fade)
 
     if lateralError is none:
-        return base
+        return antiStallAdjustedThrottle(base, throttleYawError, measuredSpeed)
 
     steeringLoad = clamp(abs(steering) / maxSteeringFraction, 0, 1)
     lateralLoad = clamp(lateralError / lateralThrottleSlowdownDistance, 0, 1)
     scale = 1 - (1 - steeringThrottleScaleAtLimit) * steeringLoad * lateralLoad
 
-    return base * scale
+    return antiStallAdjustedThrottle(
+        base * scale,
+        throttleYawError,
+        measuredSpeed
+    )
+```
+
+### Low-Speed Anti-Stall
+
+```text
+antiStallAdjustedThrottle(throttle, throttleYawError, measuredSpeed):
+    if throttle <= 0:
+        return throttle
+
+    if abs(throttleYawError) >= pi / 2:
+        return throttle
+
+    speed = measuredSpeed or 0
+    if speed >= antiStallSpeedThresholdMps:
+        return throttle
+
+    breakaway = maxThrottle * antiStallThrottleFraction
+    if breakaway <= throttle:
+        return throttle
+
+    blend = 1 - speed / antiStallSpeedThresholdMps
+    return throttle + (breakaway - throttle) * blend
 ```
 
 ### Orchestrator Safety Pass

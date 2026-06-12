@@ -131,7 +131,8 @@ crossTrackError = dot(pose - referencePoint, pathRight(referenceYaw))
 
 desiredYaw = referenceYaw + atan2(crossTrackGain * crossTrackError,
                                   crossTrackSofteningDistance)
-yawError = wrapToPi(desiredYaw - pose.yaw)
+steeringYawError = wrapToPi(desiredYaw - pose.yaw)
+pathHeadingError = wrapToPi(referenceYaw - pose.yaw)
 ```
 
 Steering is PID-shaped heading feedback plus feedforward:
@@ -140,9 +141,20 @@ Steering is PID-shaped heading feedback plus feedforward:
 curvature = smoothed heading change over nearby path samples / arc length
 feedforward = -curvatureFeedforwardGain * curvature
 
-pid = Kp * yawError + Ki * integral(yawError) + Kd * derivative(yawError)
+pid = Kp * steeringYawError
+    + Ki * integral(steeringYawError)
+    + Kd * derivative(steeringYawError)
 steering = clamp(feedforward - pid, -maxSteering, +maxSteering)
 ```
+
+The controller deliberately keeps two heading errors:
+
+- `steeringYawError` includes cross-track correction and can be aggressive.
+- `pathHeadingError` is only the path tangent error and drives throttle.
+
+This prevents the field failure where the car is tangent-aligned but off the
+path: steering should work hard to recover, but throttle should not fade just
+because the recovery heading is aggressive.
 
 Current defaults:
 
@@ -160,13 +172,19 @@ The integral term is deliberately present but disabled by default. Without a
 front wheel angle sensor and with steering saturation possible, integral should
 only be enabled later from logs if there is a steady steering bias.
 
-Throttle still starts from the current Telegram speed, but now slows down when
-the car is both off the centerline and steering-loaded:
+Throttle still starts from the current Telegram speed. It fades from the plain
+path tangent error, slows when the car is both off the centerline and
+steering-loaded, and blends in anti-stall throttle when speed feedback says the
+car is stuck or nearly stuck:
 
 ```text
-base = maxThrottle * max(0.35, 1 - abs(yawError) / pi)
+base = maxThrottle * max(0.35, 1 - abs(pathHeadingError) / pi)
 scale = 1 - (1 - 0.45) * steeringLoad * lateralLoad
 throttle = base * scale
+
+if measuredSpeed < 0.12 m/s and abs(pathHeadingError) < 90 degrees:
+    breakaway = maxThrottle * 0.75
+    throttle = blend(throttle, breakaway, speed below threshold)
 ```
 
 For closed-loop figure-eight missions, the planner also scans a short window

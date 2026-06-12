@@ -144,6 +144,7 @@ final class WaypointPlannerTests: XCTestCase {
             stepCount: 320,
             yawGain: 0.6,
             throttleToMps: 0.65,
+            staticFrictionThrottleFloor: 0.28,
             length: 3.2,
             width: 1.6
         )
@@ -177,6 +178,30 @@ final class WaypointPlannerTests: XCTestCase {
             leftOfPath.steering,
             0.1,
             "When the car is left of a tangent-aligned path segment, steering should pull right"
+        )
+    }
+
+    func testFigureEightControllerKeepsUsefulThrottleDuringLateralCorrection() {
+        let rightOfPath = figureEightCommand(offsetAt: 30, lateralOffset: 0.2)
+        let leftOfPath = figureEightCommand(offsetAt: 30, lateralOffset: -0.2)
+
+        XCTAssertLessThan(rightOfPath.steering, -0.1)
+        XCTAssertGreaterThan(leftOfPath.steering, 0.1)
+        XCTAssertGreaterThanOrEqual(
+            min(rightOfPath.throttle, leftOfPath.throttle),
+            0.30,
+            "Tangent-aligned lateral correction should not crawl below useful basement throttle"
+        )
+    }
+
+    func testFigureEightControllerCanSlowLoadedSteeringOnceMoving() {
+        let command = figureEightCommand(offsetAt: 30, lateralOffset: 0.2, arkitSpeedMps: 0.2)
+
+        XCTAssertLessThan(command.steering, -0.1)
+        XCTAssertLessThan(
+            command.throttle,
+            0.25,
+            "Once speed feedback says the car is moving, loaded steering may slow down to protect the lobe shape"
         )
     }
 
@@ -229,17 +254,23 @@ final class WaypointPlannerTests: XCTestCase {
                                      stepCount: Int,
                                      yawGain: Float,
                                      throttleToMps: Float,
+                                     staticFrictionThrottleFloor: Float? = nil,
                                      length: Float,
                                      width: Float) -> FigureEightSimulationResult {
         let dt: TimeInterval = 0.1
         var pose = defaultPose
+        var measuredSpeedMps: Double? = 0
         var distances: [Float] = []
         var headingErrors: [Float] = []
         var envelopeOvershoots: [Float] = []
 
         for step in 0..<stepCount {
             let timestamp = TimeInterval(step) * dt
-            let context = PlannerTestFactory.context(timestamp: timestamp, pose: pose)
+            let context = PlannerTestFactory.context(
+                timestamp: timestamp,
+                arkitSpeedMps: measuredSpeedMps,
+                pose: pose
+            )
             let command = planner.plan(context: context)
 
             let pathMetrics = nearestSegmentMetrics(from: pose, to: planner.activeWaypoints)
@@ -249,7 +280,13 @@ final class WaypointPlannerTests: XCTestCase {
             }
             envelopeOvershoots.append(envelopeOvershoot(pose: pose, length: length, width: width))
 
-            let speed = command.throttle * throttleToMps
+            let speed: Float
+            if let staticFrictionThrottleFloor, command.throttle < staticFrictionThrottleFloor {
+                speed = 0
+            } else {
+                speed = command.throttle * throttleToMps
+            }
+            measuredSpeedMps = Double(speed)
             let yaw = (pose.yaw - command.steering * yawGain * Float(dt)).wrapToPi()
             pose = PoseEntry(
                 timestamp: timestamp + dt,
@@ -273,7 +310,9 @@ final class WaypointPlannerTests: XCTestCase {
         )
     }
 
-    private func figureEightCommand(offsetAt index: Int, lateralOffset: Float) -> ControlCommand {
+    private func figureEightCommand(offsetAt index: Int,
+                                    lateralOffset: Float,
+                                    arkitSpeedMps: Double? = nil) -> ControlCommand {
         var config = WaypointPlannerConfig()
         config.headingDerivativeGain = 0
         let planner = WaypointPlanner(config: config)
@@ -296,7 +335,11 @@ final class WaypointPlannerTests: XCTestCase {
             confidence: 1
         )
 
-        return planner.plan(context: PlannerTestFactory.context(timestamp: pose.timestamp, pose: pose))
+        return planner.plan(context: PlannerTestFactory.context(
+            timestamp: pose.timestamp,
+            arkitSpeedMps: arkitSpeedMps,
+            pose: pose
+        ))
     }
 
     private struct SegmentPathMetrics {
