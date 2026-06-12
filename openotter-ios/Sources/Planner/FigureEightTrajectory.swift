@@ -9,8 +9,8 @@ enum FigureEightTrajectory {
         let acceptanceRadius: Float
 
         init(segmentCount: Int = 240,
-             length: Float = 4.0,
-             width: Float = 2.0,
+             length: Float = 3.2,
+             width: Float = 1.6,
              acceptanceRadius: Float = 0.12) {
             self.segmentCount = max(12, segmentCount)
             self.length = max(0.05, length)

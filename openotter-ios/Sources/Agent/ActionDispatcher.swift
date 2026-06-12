@@ -60,8 +60,8 @@ final class ActionDispatcher: ActionDispatching {
             goalReceiver?.setGoal(.followFigureEight(
                 config: .init(
                     segmentCount: 240,
-                    length: 4.0,
-                    width: 2.0,
+                    length: 3.2,
+                    width: 1.6,
                     acceptanceRadius: 0.12
                 ),
                 maxThrottle: interpreter.currentThrottle

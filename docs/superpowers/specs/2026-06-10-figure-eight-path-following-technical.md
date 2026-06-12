@@ -98,8 +98,8 @@ The current command defaults are:
 
 ```text
 segmentCount      = 240
-length            = 4.0 m
-width             = 2.0 m
+length            = 3.2 m
+width             = 1.6 m
 acceptanceRadius  = 0.12 m
 maxThrottle       = current Telegram speed, with no hidden boost
 default /figure8  = 0.4
@@ -107,7 +107,9 @@ default /figure8  = 0.4
 
 `segmentCount` turns the smooth curve into a list of waypoints. With 240
 segments, neighboring waypoints are close enough for smooth steering, but not
-so dense that the controller spends all its time advancing tiny steps.
+so dense that the controller spends all its time advancing tiny steps. The
+`3.2 m x 1.6 m` envelope is 80% of the previous `4.0 m x 2.0 m` default, which
+preserves the reference shape while adding wall margin for real tracking lag.
 
 ## 4. Horizontal Infinity Shape And Start
 
@@ -353,8 +355,8 @@ onTelegramMessage(text):
     if action == figureEight:
         config = FigureEightConfig(
             segmentCount = 240,
-            length = 4.0,
-            width = 2.0,
+            length = 3.2,
+            width = 1.6,
             acceptanceRadius = 0.12
         )
 

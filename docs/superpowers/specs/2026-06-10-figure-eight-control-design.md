@@ -148,7 +148,7 @@ raw_x = -cos(theta) / (1 + sin(theta)^2)
 raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
 ```
 
-The raw curve is normalized to the requested 4.0 m by 2.0 m envelope. This
+The raw curve is normalized to the requested 3.2 m by 1.6 m envelope. This
 keeps the literal horizontal infinity shape, but reduces tight corner-like
 curvature and makes fixed-index lookahead behave more like fixed-distance
 lookahead.
@@ -196,24 +196,24 @@ Current default command parameters:
 
 ```text
 segmentCount      = 240
-length            = 4.0 m
-width             = 2.0 m
+length            = 3.2 m
+width             = 1.6 m
 acceptanceRadius  = 0.12 m
 figure8 throttle  = current Telegram speed, with no hidden boost
 default /figure8  = 0.4
 max steering      = 0.45
 ```
 
-`length` and `width` are generator scale parameters. The larger default path
-and smoother arc-length-spaced curve reduce demanded curvature compared with
-the earlier tight path. The tighter acceptance radius keeps the startup
-waypoints from being consumed too aggressively at the center crossing. The
-stronger proportional steering gain makes the front wheel visibly turn for the
-first lobe, while the `0.45` cap avoids intentionally sitting on the servo end
-stop. The tests verify the path stays inside the configured horizontal
-infinity dimensions, crosses the anchor halfway through the loop, forms a
-continuous loop, keeps adjacent waypoint spacing even, and avoids the old
-tight corner-like curvature.
+`length` and `width` are generator scale parameters. The current default is
+80% of the previous `4.0 m x 2.0 m` envelope, giving the controller more
+basement wall margin while preserving the same horizontal infinity shape. The
+tighter acceptance radius keeps the startup waypoints from being consumed too
+aggressively at the center crossing. The stronger proportional steering gain
+makes the front wheel visibly turn for the first lobe, while the `0.45` cap
+avoids intentionally sitting on the servo end stop. The tests verify the path
+stays inside the configured horizontal infinity dimensions, crosses the anchor
+halfway through the loop, forms a continuous loop, keeps adjacent waypoint
+spacing even, and avoids the old tight corner-like curvature.
 
 ## 6. Runtime Flow
 

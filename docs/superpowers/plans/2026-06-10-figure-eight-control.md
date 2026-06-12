@@ -119,7 +119,7 @@ Verify:
 - [x] **Step 2: Implement anchored generator**
 
 Generate a smoother Bernoulli-style lemniscate, normalize it to the configured
-4.0 m by 2.0 m envelope, and resample by arc length so the 240 controller
+3.2 m by 1.6 m default envelope, and resample by arc length so the 240 controller
 waypoints are evenly spaced. Transform each local point directly through
 `worldPoint(localX:localZ:anchor:)` so the requested horizontal infinity shape
 is preserved in the car frame.
@@ -213,7 +213,7 @@ servo travel during large heading errors.
 
 ```swift
 .followFigureEight(
-    config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.12),
+    config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
     maxThrottle: interpreter.currentThrottle
 )
 ```

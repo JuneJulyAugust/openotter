@@ -53,7 +53,7 @@ final class WaypointPlannerTests: XCTestCase {
         let anchor = PoseEntry(timestamp: 2.0, x: 2.0, y: 0, z: -1.0, yaw: 0, confidence: 1)
         let planner = WaypointPlanner()
         planner.setGoal(.followFigureEight(
-            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.12),
+            config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
             maxThrottle: 0.4
         ))
 

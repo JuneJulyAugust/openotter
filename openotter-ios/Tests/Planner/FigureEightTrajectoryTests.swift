@@ -8,6 +8,8 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let waypoints = FigureEightTrajectory.waypoints(config: config)
 
         XCTAssertEqual(waypoints.count, 240)
+        XCTAssertEqual(config.length, 3.2, accuracy: 0.001)
+        XCTAssertEqual(config.width, 1.6, accuracy: 0.001)
         XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.12, accuracy: 0.001)
         XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.12, accuracy: 0.001)
     }
@@ -100,7 +102,7 @@ final class FigureEightTrajectoryTests: XCTestCase {
     func testDefaultPathAvoidsTightCornerLikeCurvature() {
         let waypoints = FigureEightTrajectory.waypoints(config: .init())
 
-        XCTAssertLessThanOrEqual(maxDiscreteCurvature(waypoints), 1.8)
+        XCTAssertLessThanOrEqual(maxDiscreteCurvature(waypoints), 2.3)
     }
 
     func testConfigClampMinimumValues() {
