@@ -1,6 +1,6 @@
 # Figure-Eight Basement Control - Revised Design
 
-**Status:** Implemented waypoint-controller baseline for review
+**Status:** Implemented tangent-heading PID/feedforward baseline for review
 **Date:** 2026-06-10
 **Branch/worktree:** `control-figure-eight-design` at `.worktrees/control-figure-eight-design`
 **Technical note:** `docs/superpowers/specs/2026-06-10-figure-eight-path-following-technical.md`
@@ -9,8 +9,9 @@
 ## 1. Goal
 
 Make OpenOtter follow a repeatable figure-eight path indoors from a Telegram
-or iOS agent command. This milestone intentionally starts with a waypoint
-proportional controller, not pure pursuit or MPC.
+or iOS agent command. This milestone intentionally stays below pure pursuit or
+MPC complexity, but now uses path reference heading, PID-shaped feedback, and
+curvature feedforward.
 
 The target behavior is:
 
@@ -65,8 +66,17 @@ Third field review after raising mission speed:
   roughly `5 cm` waypoint spacing, so the controller could skip the first
   shaping waypoints at the center crossing.
 
-The fix is not to jump to a more advanced controller yet. The fix is to make
-the simple controller coherent and testable.
+Fourth field review after the smaller 3.2 m by 1.6 m path:
+
+- The reference figure-eight shape appeared correctly on the map.
+- The actual car trajectory still ballooned outside the lobes, and heading was
+  visibly not aligned with the reference path direction.
+- A deterministic slow-yaw simulation reproduced this behavior: the older
+  point follower made progress, but reached about `0.40 m` max path error.
+
+The fix is not to jump to MPC. The practical upgrade is to keep the waypoint
+path, but control against the path tangent, signed lateral error, and simple
+curvature feedforward.
 
 ## 3. Coordinate And PWM Invariants
 
@@ -98,12 +108,7 @@ locked by `WaypointPlannerTests`.
 
 ## 4. Controller Strategy
 
-The baseline controller is a waypoint proportional heading controller:
-
-1. Keep an ordered list of waypoints.
-2. If the current waypoint is inside its acceptance radius, advance to the
-   next waypoint.
-3. Compute the desired heading from current pose to target waypoint:
+The baseline finite-waypoint controller still points at the current waypoint:
 
 ```text
 dx = target.x - pose.x
@@ -112,26 +117,57 @@ desired_yaw = atan2(-dz, dx)
 heading_error = wrap_to_pi(desired_yaw - pose.yaw)
 ```
 
-4. Convert heading error to steering:
+For the closed-loop figure-eight, the controller now follows the current path
+segment instead of chasing a future point:
 
 ```text
-steering = clamp(-K * heading_error, -maxSteering, +maxSteering)
+P0 = waypoint[currentWaypointIndex]
+P1 = waypoint[currentWaypointIndex + 1]
+segment = P1 - P0
+
+referencePoint = projection of pose onto segment
+referenceYaw = atan2(-(P1.z - P0.z), P1.x - P0.x)
+crossTrackError = dot(pose - referencePoint, pathRight(referenceYaw))
+
+desiredYaw = referenceYaw + atan2(crossTrackGain * crossTrackError,
+                                  crossTrackSofteningDistance)
+yawError = wrapToPi(desiredYaw - pose.yaw)
 ```
 
-The minus sign matters because, in this coordinate convention, a target to the
-right has negative heading error, but the actuator expects positive steering
-for right.
-
-5. Throttle fades down during turns, but does not collapse to near-zero for
-ordinary curves:
+Steering is PID-shaped heading feedback plus feedforward:
 
 ```text
-fade = 1 - abs(heading_error) / pi
-throttle = maxThrottle * max(minimumThrottleFraction, fade)
+curvature = smoothed heading change over nearby path samples / arc length
+feedforward = -curvatureFeedforwardGain * curvature
+
+pid = Kp * yawError + Ki * integral(yawError) + Kd * derivative(yawError)
+steering = clamp(feedforward - pid, -maxSteering, +maxSteering)
 ```
 
-If the target is nearly behind the car, throttle is held at zero instead of
-forcing a powered U-turn.
+Current defaults:
+
+```text
+maxSteeringFraction = 0.45
+crossTrackGain = 2.2
+crossTrackSofteningDistance = 0.18 m
+curvatureFeedforwardGain = 0.10 m
+Kp = 0.7 / (pi / 2)
+Ki = 0.0
+Kd = 0.02
+```
+
+The integral term is deliberately present but disabled by default. Without a
+front wheel angle sensor and with steering saturation possible, integral should
+only be enabled later from logs if there is a steady steering bias.
+
+Throttle still starts from the current Telegram speed, but now slows down when
+the car is both off the centerline and steering-loaded:
+
+```text
+base = maxThrottle * max(0.35, 1 - abs(yawError) / pi)
+scale = 1 - (1 - 0.45) * steeringLoad * lateralLoad
+throttle = base * scale
+```
 
 For closed-loop figure-eight missions, the planner also scans a short window
 of future waypoints and advances to the closest one. This prevents the car from
@@ -150,8 +186,7 @@ raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
 
 The raw curve is normalized to the requested 3.2 m by 1.6 m envelope. This
 keeps the literal horizontal infinity shape, but reduces tight corner-like
-curvature and makes fixed-index lookahead behave more like fixed-distance
-lookahead.
+curvature and gives the segment-tangent controller a smooth reference heading.
 
 That means:
 
@@ -202,18 +237,20 @@ acceptanceRadius  = 0.12 m
 figure8 throttle  = current Telegram speed, with no hidden boost
 default /figure8  = 0.4
 max steering      = 0.45
+progress search   = 32 future samples
 ```
 
 `length` and `width` are generator scale parameters. The current default is
 80% of the previous `4.0 m x 2.0 m` envelope, giving the controller more
 basement wall margin while preserving the same horizontal infinity shape. The
 tighter acceptance radius keeps the startup waypoints from being consumed too
-aggressively at the center crossing. The stronger proportional steering gain
-makes the front wheel visibly turn for the first lobe, while the `0.45` cap
-avoids intentionally sitting on the servo end stop. The tests verify the path
-stays inside the configured horizontal infinity dimensions, crosses the anchor
+aggressively at the center crossing. The tangent-heading controller makes the
+front wheel visibly turn for the first lobe, while the `0.45` cap avoids
+intentionally sitting on the servo end stop. The tests verify the path stays
+inside the configured horizontal infinity dimensions, crosses the anchor
 halfway through the loop, forms a continuous loop, keeps adjacent waypoint
-spacing even, and avoids the old tight corner-like curvature.
+spacing even, avoids the old tight corner-like curvature, and tracks the path
+under a slow-yaw regression model.
 
 ## 6. Runtime Flow
 
@@ -238,8 +275,8 @@ not have pose. The planner does.
 
 - `FigureEightTrajectory` generates waypoint paths.
 - `RobotGeometry` owns yaw/local/world transformations.
-- `WaypointPlanner` owns waypoint advancement, steering, throttle shaping, and
-  figure-eight looping.
+- `WaypointPlanner` owns waypoint advancement, tangent-heading feedback,
+  curvature feedforward, throttle shaping, and figure-eight looping.
 - `PlannerOrchestrator` routes figure-eight goals to `WaypointPlanner` and
   publishes active waypoints for UI overlay.
 - `ActionDispatcher` maps `/figure8` to a figure-eight planner goal.
@@ -254,7 +291,7 @@ Firmware does not own figure-eight tracking. It continues to own:
 - Park/Drive arbitration,
 - forward and reverse safety supervision.
 
-No firmware changes are required for this waypoint-controller baseline.
+No firmware changes are required for this iOS path-following baseline.
 
 ## 8. Tests
 
@@ -264,8 +301,10 @@ The implementation is covered by:
 - `FigureEightTrajectoryTests` for defaults, horizontal infinity bounds,
   anchoring, yaw rotation, center crossing, and loop continuity.
 - `WaypointPlannerTests` for steering sign, anchored figure-eight startup,
-  steering cap, missed-waypoint skip-ahead, finite waypoint completion, and
-  closed figure-eight looping.
+  steering cap, missed-waypoint skip-ahead, lateral-error correction from a
+  path tangent, finite waypoint completion, closed figure-eight looping, and a
+  slow-yaw simulation that checks segment cross-track error, reference-heading
+  error, and envelope overshoot.
 - `PlannerOrchestratorTests` for routing and active waypoint publication.
 - `ActionDispatcherTests` and `AgentRuntimeTests` for `/figure8` command flow.
 - Existing safety tests still cover forward/reverse braking behavior.
@@ -278,8 +317,8 @@ SIMULATOR_UDID=40B418BA-9B70-4B34-9D13-81E3A3F281A9 bash openotter-ios/build.sh 
 
 ## 9. Future Controller Upgrade
 
-Pure pursuit is still the right next upgrade after waypoint proportional control
-has field data. It should add:
+Pure pursuit is still a useful later upgrade after tangent-heading control has
+field data. It should add:
 
 - closest-path projection,
 - lookahead target selection by arc length,

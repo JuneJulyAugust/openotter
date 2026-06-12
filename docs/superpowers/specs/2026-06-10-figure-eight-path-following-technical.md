@@ -1,6 +1,6 @@
 # Figure-Eight Path Following Technical Note
 
-**Status:** Companion technical document for the waypoint-controller baseline
+**Status:** Companion technical document for tangent-heading PID/feedforward control
 **Date:** 2026-06-10
 **Feature:** Telegram/iOS `/figure8` basement trajectory following
 
@@ -19,10 +19,11 @@ pose.yaw    heading angle, radians
 The controller's job is:
 
 1. Generate a figure-eight path near the car.
-2. Pick the next waypoint on that path.
-3. Measure the heading error between the car and that waypoint.
-4. Turn the steering servo proportionally to that heading error.
-5. Command enough throttle to keep moving, while slowing down for sharp turns.
+2. Pick the current segment on that path.
+3. Measure the path tangent heading and the car's side error from the segment.
+4. Turn with PID-shaped heading feedback plus curvature feedforward.
+5. Command enough throttle to keep moving, while slowing down when the car is
+   steering hard away from the centerline.
 6. Let the safety supervisor override the command if ToF depth says the car
    should brake.
 
@@ -91,8 +92,8 @@ Intuition:
 
 - The curve still forms the requested sideways "8".
 - The lobes are rounder than the earlier Gerono curve.
-- Arc-length spacing makes fixed waypoint lookahead closer to fixed-distance
-  lookahead, which is easier for the steering controller.
+- Arc-length spacing gives the tangent-heading controller a smooth reference
+  direction from segment to segment.
 
 The current command defaults are:
 
@@ -187,73 +188,101 @@ That makes `/figure8` continue until the operator sends Stop/Park.
 
 ## 6. Steering Control
 
-The steering controller is proportional heading control.
+Finite waypoint missions still use the original bearing-to-waypoint rule. The
+closed-loop figure-eight mission uses a path-reference controller instead,
+because the field trace showed that chasing a point can orbit outside a lobe
+when the car's yaw response is slow.
 
-First compute the vector from car to waypoint:
+For the active path segment:
 
 ```text
-dx = target.x - pose.x
-dz = target.z - pose.z
+P0 = waypoint[currentWaypointIndex]
+P1 = waypoint[currentWaypointIndex + 1]
+segment = P1 - P0
 ```
 
-The desired yaw angle is:
+The controller projects the car position onto this segment:
 
 ```text
-desiredYaw = atan2(-dz, dx)
+alpha = clamp(dot(pose - P0, segment) / dot(segment, segment), 0, 1)
+referencePoint = P0 + alpha * segment
 ```
 
-The negative sign is important. In this coordinate system, positive `z` means
-"to the robot's right", while positive yaw turns toward negative `z`.
-
-Then compute heading error:
+Then it derives the reference heading from the segment tangent:
 
 ```text
+referenceYaw = atan2(-(P1.z - P0.z), P1.x - P0.x)
+```
+
+This is the key upgrade. `referenceYaw` is the direction of the path, not the
+bearing from the car to a future dot. If the path is turning through the lobe,
+the controller knows the heading it should be trying to achieve.
+
+The signed side error is measured in the path's local right direction:
+
+```text
+pathRight = (sin(referenceYaw), cos(referenceYaw))
+crossTrackError = dot(pose - referencePoint, pathRight)
+```
+
+Positive `crossTrackError` means the car is right of the path. Positive yaw is
+left in OpenOtter's ground frame, so a positive cross-track error should bias
+the desired yaw left:
+
+```text
+crossTrackCorrection = atan2(crossTrackHeadingGain * crossTrackError,
+                             crossTrackSofteningDistance)
+desiredYaw = wrapToPi(referenceYaw + crossTrackCorrection)
 yawError = wrapToPi(desiredYaw - pose.yaw)
 ```
 
-`wrapToPi` keeps the angle in this range:
+The `atan2` correction has a useful property: small side errors behave almost
+linearly, but large side errors saturate smoothly instead of demanding an
+impossible instant turn.
+
+## 7. PID Feedback And Feedforward
+
+The steering output uses a PID-shaped heading controller plus a curvature
+feedforward term:
 
 ```text
--pi <= yawError <= pi
+pidCorrection =
+    steeringGain * yawError
+  + headingIntegralGain * integral(yawError)
+  + headingDerivativeGain * derivative(yawError)
+
+steering = clamp(curvatureFeedforward - pidCorrection,
+                 -maxSteeringFraction,
+                 +maxSteeringFraction)
 ```
 
-This prevents a small left error from being represented as a huge right error.
-For example, `-179 degrees` and `181 degrees` are almost the same heading, not
-opposite commands.
-
-The steering command is:
+The sign is deliberate:
 
 ```text
-rawSteering = -steeringGain * yawError
-steering = clamp(rawSteering, -maxSteeringFraction, +maxSteeringFraction)
+positive yawError       -> path heading is left of car -> negative steering
+negative yawError       -> path heading is right of car -> positive steering
+positive path curvature -> path turns left          -> negative feedforward
 ```
 
-The minus sign is deliberate. The firmware and iOS PWM mapping define:
-
-```text
-steering -1.0 -> 1000 us -> full left
-steering  0.0 -> 1500 us -> centered
-steering +1.0 -> 2000 us -> full right
-```
-
-With the planner's coordinate convention, a waypoint to the robot's right
-produces a negative `yawError`. Multiplying by `-steeringGain` makes that a
-positive steering command, which maps to right steering PWM.
-
-## 7. Steering Gain
-
-The gain is configured as:
+Current constants:
 
 ```text
 steeringFractionAt90Deg = 0.7
 steeringGain = steeringFractionAt90Deg / (pi / 2)
 maxSteeringFraction = 0.45
+crossTrackHeadingGain = 2.2
+crossTrackSofteningDistance = 0.18 m
+headingIntegralGain = 0.0
+headingDerivativeGain = 0.02
+headingIntegralLimit = 0.5 rad*s
+curvatureFeedforwardGain = 0.10 m
+curvatureSampleSpan = 3 waypoints each side
 ```
 
 That means:
 
 ```text
-90 degree heading error -> raw steering command about 0.7
+90 degree heading error -> raw feedback about 0.7
 larger errors -> steering capped to +/-0.45
 ```
 
@@ -266,6 +295,22 @@ This is a practical choice:
 - the front wheel should stop making end-stop chatter unless the mechanical
   linkage itself is binding.
 
+The integral term is intentionally configured to zero for the first fieldable
+version. Integral is useful for steady steering bias, but it can also wind up
+against the steering cap and fight the next lobe. The state and clamp are in
+place so a small integral gain can be enabled later from logs.
+
+Curvature feedforward is the control engineer's suggestion in simple form. The
+controller estimates path curvature from heading change over a short arc:
+
+```text
+curvature = wrapToPi(headingAfter - headingBefore) / arcLength
+curvatureFeedforward = -curvatureFeedforwardGain * curvature
+```
+
+This tells the car to start turning before pose error grows. It is not a
+vehicle model; it is a practical "we know the path bends here" steering bias.
+
 The controller is not trying to model tire slip, steering linkage geometry, or
 Ackermann dynamics. It is using pose feedback to correct the car's observed
 motion. That is simpler than a full vehicle model and appropriate for the
@@ -274,8 +319,8 @@ current missing-front-wheel-angle hardware state.
 ## 8. Speed Control
 
 The current implementation controls speed in an open-loop way: it chooses a
-throttle command from heading error, but it does not yet close the loop on
-measured vehicle speed.
+throttle command from heading error, steering load, and lateral path error, but
+it does not yet close the loop on measured vehicle speed.
 
 The throttle law is:
 
@@ -286,7 +331,14 @@ if absError > maxPoweredHeadingError:
     throttle = 0
 else:
     fade = 1 - absError / pi
-    throttle = maxThrottle * max(minimumThrottleFraction, fade)
+    baseThrottle = maxThrottle * max(minimumThrottleFraction, fade)
+
+    steeringLoad = abs(steering) / maxSteeringFraction
+    lateralLoad = abs(crossTrackError) / lateralThrottleSlowdownDistance
+    slowdown = steeringLoad * lateralLoad
+    scale = 1 - (1 - steeringThrottleScaleAtLimit) * clamp(slowdown, 0, 1)
+
+    throttle = baseThrottle * scale
 ```
 
 Current constants:
@@ -294,6 +346,8 @@ Current constants:
 ```text
 minimumThrottleFraction = 0.35
 maxPoweredHeadingError  = 5 * pi / 6   # 150 degrees
+steeringThrottleScaleAtLimit = 0.45
+lateralThrottleSlowdownDistance = 0.20 m
 ```
 
 What this does:
@@ -302,8 +356,10 @@ What this does:
 - If the waypoint requires a turn, reduce throttle as the turn sharpens.
 - If the waypoint is nearly behind the car, do not push forward into a bad
   U-turn.
-- For ordinary turns, keep a throttle floor so the car does not creep and then
-  stall.
+- If the car is on the centerline, do not slow just because the planned path is
+  curved.
+- If the car is off the centerline and steering is near the cap, slow down so
+  yaw can catch up before the car balloons outside the lobe.
 
 With the default Telegram speed:
 
@@ -437,26 +493,87 @@ plan(context):
         return neutral
 
     if isClosedLoop:
-        targetIndex = (currentWaypointIndex + closedLoopLookaheadCount) mod waypoints.count
-        target = waypoints[targetIndex]
+        reference = closedLoopPathReference(context.pose)
+        yawError = reference.yawError
+        feedforward = reference.steeringFeedforward
+        lateralError = abs(reference.crossTrackError)
     else:
         target = waypoints[currentWaypointIndex]
+        yawError = headingErrorToWaypoint(target, context.pose)
+        feedforward = 0
+        lateralError = none
 
-    dx = target.x - context.pose.x
-    dz = target.z - context.pose.z
+    steering = steeringFromPIDAndFeedforward(
+        yawError,
+        feedforward,
+        context.timestamp
+    )
 
-    desiredYaw = atan2(-dz, dx)
-    yawError = wrapToPi(desiredYaw - context.pose.yaw)
-
-    rawSteering = -steeringGain * yawError
-    steering = clamp(rawSteering, -maxSteeringFraction, +maxSteeringFraction)
-    throttle = throttleForHeadingError(yawError)
+    throttle = throttleForGuidance(
+        yawError,
+        steering,
+        lateralError
+    )
 
     return ControlCommand(
         steering = steering,
         throttle = throttle,
         source = "WaypointPlanner"
     )
+```
+
+### Closed-Loop Path Reference
+
+```text
+closedLoopPathReference(pose):
+    P0 = waypoints[currentWaypointIndex]
+    P1 = waypoints[(currentWaypointIndex + 1) mod waypoints.count]
+
+    segment = P1 - P0
+    alpha = clamp(dot(pose - P0, segment) / dot(segment, segment), 0, 1)
+    referencePoint = P0 + alpha * segment
+
+    referenceYaw = atan2(-(P1.z - P0.z), P1.x - P0.x)
+    pathRight = (sin(referenceYaw), cos(referenceYaw))
+    crossTrackError = dot(pose - referencePoint, pathRight)
+
+    correction = atan2(crossTrackHeadingGain * crossTrackError,
+                       crossTrackSofteningDistance)
+    desiredYaw = wrapToPi(referenceYaw + correction)
+    yawError = wrapToPi(desiredYaw - pose.yaw)
+
+    curvature = signedCurvature(currentWaypointIndex)
+    feedforward = clamp(-curvatureFeedforwardGain * curvature,
+                        -maxSteeringFraction,
+                        +maxSteeringFraction)
+
+    return yawError, crossTrackError, feedforward
+```
+
+### Steering PID And Feedforward
+
+```text
+steeringFromPIDAndFeedforward(yawError, feedforward, timestamp):
+    dt = clamp(timestamp - previousTimestamp, 0, 0.25)
+
+    if dt > 0:
+        integral = clamp(integral + yawError * dt,
+                         -headingIntegralLimit,
+                         +headingIntegralLimit)
+        derivative = wrapToPi(yawError - previousYawError) / dt
+    else:
+        derivative = 0
+
+    previousYawError = yawError
+    previousTimestamp = timestamp
+
+    pid = steeringGain * yawError
+        + headingIntegralGain * integral
+        + headingDerivativeGain * derivative
+
+    return clamp(feedforward - pid,
+                 -maxSteeringFraction,
+                 +maxSteeringFraction)
 ```
 
 ### Waypoint Advancement
@@ -506,16 +623,23 @@ advanceToClosestForwardWaypoint(pose):
 ### Throttle Shaping
 
 ```text
-throttleForHeadingError(yawError):
+throttleForGuidance(yawError, steering, lateralError):
     absError = abs(yawError)
 
     if absError > maxPoweredHeadingError:
         return 0
 
     fade = 1 - absError / pi
-    fraction = max(minimumThrottleFraction, fade)
+    base = maxThrottle * max(minimumThrottleFraction, fade)
 
-    return maxThrottle * fraction
+    if lateralError is none:
+        return base
+
+    steeringLoad = clamp(abs(steering) / maxSteeringFraction, 0, 1)
+    lateralLoad = clamp(lateralError / lateralThrottleSlowdownDistance, 0, 1)
+    scale = 1 - (1 - steeringThrottleScaleAtLimit) * steeringLoad * lateralLoad
+
+    return base * scale
 ```
 
 ### Orchestrator Safety Pass
@@ -540,8 +664,11 @@ This controller is intentionally simple, but it has the right control shape:
 - It has bounded steering and throttle outputs.
 - It starts the path from the car's actual pose.
 - It keeps moving through reasonable turns.
+- It aligns heading to the path tangent instead of only pointing at a waypoint.
+- It uses curvature feedforward so turning begins before pose error grows.
 - It delegates obstacle safety to the existing supervisor.
-- It has direct tests for the sign convention that caused the field failure.
+- It has direct tests for steering sign, lateral-error correction, and a
+  slow-yaw simulation that reproduces the outside-lobe failure.
 
 The main limitation is that the speed command is not yet true speed feedback.
 If the floor is slippery, carpet is high-friction, or battery voltage changes,
@@ -550,9 +677,10 @@ should add speed PI control and pure pursuit curvature tracking.
 
 ## 12. Future Pure Pursuit Upgrade
 
-The waypoint proportional controller chooses one waypoint and points at it.
-Pure pursuit improves this by choosing a lookahead point along the path, then
-turning according to the curvature needed to reach that lookahead point.
+The current figure-eight controller follows the tangent of the current path
+segment and adds cross-track correction. Pure pursuit would improve this by
+choosing a lookahead point along the path, then turning according to the
+curvature needed to reach that lookahead point.
 
 The usual pure pursuit steering concept is:
 
@@ -564,11 +692,12 @@ In OpenOtter's ground frame, `localLookaheadY` would correspond to the
 left/right offset of the lookahead point in robot-local coordinates. The
 controller could then map curvature to steering after calibration.
 
-That upgrade should wait until the waypoint baseline has real basement data:
+That upgrade should wait until the tangent-heading baseline has real basement data:
 
 - Does ARKit yaw drift too much?
 - Is 0.12 m acceptance radius too loose or too tight?
-- Does default 0.4 figure-eight throttle plus a 0.35 floor move reliably?
+- Does default 0.4 figure-eight throttle plus steering-load slowdown move
+  reliably?
 - Does the car understeer or oversteer on carpet?
 - Is the 0.45 steering cap low enough to avoid end-stop chatter but high
   enough to complete both lobes?
