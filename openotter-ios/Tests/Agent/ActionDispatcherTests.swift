@@ -76,22 +76,22 @@ final class ActionDispatcherTests: XCTestCase {
         XCTAssertEqual(result.message, "Starting figure-8 mission")
 
         if case .followFigureEight(let config, let maxThrottle) = goalReceiver.lastGoal {
-            XCTAssertEqual(maxThrottle, 1.0, accuracy: 0.001)
+            XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
             XCTAssertEqual(config.segmentCount, 240)
             XCTAssertEqual(config.length, 4.0, accuracy: 0.001)
             XCTAssertEqual(config.width, 2.0, accuracy: 0.001)
-            XCTAssertEqual(config.acceptanceRadius, 0.25, accuracy: 0.001)
+            XCTAssertEqual(config.acceptanceRadius, 0.12, accuracy: 0.001)
         } else {
             XCTFail("Expected followFigureEight goal")
         }
     }
 
-    func testFigureEightBoostsCustomSpeedByTwoWithCap() {
+    func testFigureEightUsesCurrentSpeedWithoutBoost() {
         _ = dispatcher.dispatch(.setSpeed(throttle: 0.3))
         _ = dispatcher.dispatch(.figureEight)
 
         if case .followFigureEight(_, let maxThrottle) = goalReceiver.lastGoal {
-            XCTAssertEqual(maxThrottle, 0.6, accuracy: 0.001)
+            XCTAssertEqual(maxThrottle, 0.3, accuracy: 0.001)
         } else {
             XCTFail("Expected followFigureEight goal")
         }
@@ -100,7 +100,7 @@ final class ActionDispatcherTests: XCTestCase {
         _ = dispatcher.dispatch(.figureEight)
 
         if case .followFigureEight(_, let maxThrottle) = goalReceiver.lastGoal {
-            XCTAssertEqual(maxThrottle, 1.0, accuracy: 0.001)
+            XCTAssertEqual(maxThrottle, 0.8, accuracy: 0.001)
         } else {
             XCTFail("Expected followFigureEight goal")
         }

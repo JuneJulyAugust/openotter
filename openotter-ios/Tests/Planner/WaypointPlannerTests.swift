@@ -53,8 +53,8 @@ final class WaypointPlannerTests: XCTestCase {
         let anchor = PoseEntry(timestamp: 2.0, x: 2.0, y: 0, z: -1.0, yaw: 0, confidence: 1)
         let planner = WaypointPlanner()
         planner.setGoal(.followFigureEight(
-            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
-            maxThrottle: 0.6
+            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.12),
+            maxThrottle: 0.4
         ))
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 2.0, pose: anchor))
@@ -62,8 +62,11 @@ final class WaypointPlannerTests: XCTestCase {
         XCTAssertEqual(planner.activeWaypoints.first?.x ?? -1, anchor.x, accuracy: 0.001)
         XCTAssertEqual(planner.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)
         XCTAssertGreaterThan(cmd.steering, 0, "Startup should enter the first right lobe of the horizontal figure eight")
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.50, "Figure-eight steering should stay below servo-stop saturation")
-        XCTAssertGreaterThan(cmd.throttle, 0.4)
+        XCTAssertGreaterThan(cmd.steering, 0.35, "Startup steering should overcome linkage deadband")
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.45, "Figure-eight steering should stay below servo-stop saturation")
+        XCTAssertLessThanOrEqual(planner.currentWaypointIndex, 3, "Startup should not skip over the early turning cue")
+        XCTAssertGreaterThan(cmd.throttle, 0.25)
+        XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
     }
 
@@ -73,7 +76,7 @@ final class WaypointPlannerTests: XCTestCase {
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
 
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.50)
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.45)
     }
 
     func testClosedLoopPlannerSkipsAheadWhenCarMissesCurrentWaypoint() {
@@ -92,7 +95,7 @@ final class WaypointPlannerTests: XCTestCase {
         ))
 
         XCTAssertGreaterThanOrEqual(planner.currentWaypointIndex, 28)
-        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.50)
+        XCTAssertLessThanOrEqual(abs(cmd.steering), 0.45)
         XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
     }
 

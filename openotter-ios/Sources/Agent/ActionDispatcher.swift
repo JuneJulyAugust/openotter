@@ -57,15 +57,14 @@ final class ActionDispatcher: ActionDispatching {
             return ActionResult(success: true, message: status)
 
         case .figureEight:
-            let boostedThrottle = min(interpreter.currentThrottle * 2, 1.0)
             goalReceiver?.setGoal(.followFigureEight(
                 config: .init(
                     segmentCount: 240,
                     length: 4.0,
                     width: 2.0,
-                    acceptanceRadius: 0.25
+                    acceptanceRadius: 0.12
                 ),
-                maxThrottle: boostedThrottle
+                maxThrottle: interpreter.currentThrottle
             ))
             return ActionResult(success: true, message: "Starting figure-8 mission")
 
@@ -100,7 +99,7 @@ final class ActionDispatcher: ActionDispatching {
 
         Speed presets:
           🐢 slow            — 20%
-          🚗 normal           — 60% (default)
+          🚗 normal           — 40% (default)
           🐇 fast             — 80%
           speed <0.1–1.0>    — Set exact speed
 

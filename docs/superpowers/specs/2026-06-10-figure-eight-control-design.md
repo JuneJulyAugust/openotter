@@ -54,6 +54,17 @@ Second field review after the waypoint baseline:
 - The front wheel servo made end-stop chatter, so steering authority must be
   capped below full travel until the mechanical range is calibrated.
 
+Third field review after raising mission speed:
+
+- `0.6` normalized throttle was too fast for the basement test.
+- The car still looked like it did not turn enough to follow the figure eight.
+- The controller's computed initial steering was only about `0.23`, which is
+  mathematically nonzero but may be too weak to overcome steering deadband,
+  carpet load, or linkage friction.
+- The earlier `0.25 m` waypoint acceptance radius was also too loose for the
+  roughly `5 cm` waypoint spacing, so the controller could skip the first
+  shaping waypoints at the center crossing.
+
 The fix is not to jump to a more advanced controller yet. The fix is to make
 the simple controller coherent and testable.
 
@@ -187,18 +198,22 @@ Current default command parameters:
 segmentCount      = 240
 length            = 4.0 m
 width             = 2.0 m
-acceptanceRadius  = 0.25 m
-figure8 throttle  = min(current Telegram speed * 2, 1.0)
-default /figure8  = 1.0
-max steering      = 0.50
+acceptanceRadius  = 0.12 m
+figure8 throttle  = current Telegram speed, with no hidden boost
+default /figure8  = 0.4
+max steering      = 0.45
 ```
 
 `length` and `width` are generator scale parameters. The larger default path
 and smoother arc-length-spaced curve reduce demanded curvature compared with
-the earlier tight path. The tests verify the path stays inside the configured
-horizontal infinity dimensions, crosses the anchor halfway through the loop,
-forms a continuous loop, keeps adjacent waypoint spacing even, and avoids the
-old tight corner-like curvature.
+the earlier tight path. The tighter acceptance radius keeps the startup
+waypoints from being consumed too aggressively at the center crossing. The
+stronger proportional steering gain makes the front wheel visibly turn for the
+first lobe, while the `0.45` cap avoids intentionally sitting on the servo end
+stop. The tests verify the path stays inside the configured horizontal
+infinity dimensions, crosses the anchor halfway through the loop, forms a
+continuous loop, keeps adjacent waypoint spacing even, and avoids the old
+tight corner-like curvature.
 
 ## 6. Runtime Flow
 

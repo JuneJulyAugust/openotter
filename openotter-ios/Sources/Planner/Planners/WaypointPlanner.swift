@@ -4,12 +4,13 @@ import Foundation
 
 struct WaypointPlannerConfig {
     /// Steering fraction applied at a 90° heading error (0–1).
-    /// Full deflection would be 1.0; 0.4 avoids over-driving the servo.
-    var steeringFractionAt90Deg: Float = 0.4
+    /// Full deflection would be 1.0; 0.7 gives visible steering authority
+    /// while the output cap below still protects the mechanical end stop.
+    var steeringFractionAt90Deg: Float = 0.7
 
     /// Hard cap for steering output. Keep below the mechanical stop range so
     /// the servo does not sit against its end stop and chatter.
-    var maxSteeringFraction: Float = 0.50
+    var maxSteeringFraction: Float = 0.45
 
     /// Keep enough throttle through normal turns that the car does not stall
     /// while the heading loop is still converging.

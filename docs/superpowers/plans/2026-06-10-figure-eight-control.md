@@ -36,7 +36,7 @@
 - `openotter-ios/Sources/Planner/PlannerOrchestrator.swift`
   - Route figure-eight goals to `WaypointPlanner` and expose active waypoints.
 - `openotter-ios/Sources/Agent/KeywordInterpreter.swift`
-  - Raise default/normal throttle to `0.6`.
+  - Use default/normal throttle `0.4` after field testing showed `0.6` is too fast.
 - `openotter-ios/Sources/Agent/ActionDispatcher.swift`
   - Dispatch `/figure8` as a figure-eight goal instead of precomputed global waypoints.
 - `openotter-ios/Sources/Capture/SelfDrivingViewModel.swift`
@@ -166,7 +166,7 @@ after it physically misses the acceptance radius.
 
 ---
 
-## Task 4: Make Startup Faster But Still Bounded
+## Task 4: Make Startup Useful But Still Bounded
 
 **Files:**
 - Modify: `openotter-ios/Sources/Agent/KeywordInterpreter.swift`
@@ -174,12 +174,11 @@ after it physically misses the acceptance radius.
 - Modify: `openotter-ios/Sources/Planner/Planners/WaypointPlanner.swift`
 - Modify: related tests
 
-- [x] **Step 1: Raise figure-eight throttle**
+- [x] **Step 1: Set explicit figure-eight throttle policy**
 
-Default and `normal` remain `0.6` for ordinary movement. `/figure8` boosts the
-current Telegram speed by 2x and caps it at `1.0`, so the default figure-eight
-mission runs at full normalized throttle while lower explicit test speeds still
-work.
+Default and `normal` are `0.4`. `/figure8` uses the current Telegram speed
+directly, with no hidden multiplier. Field testing showed `0.6` was too fast;
+faster runs should be requested explicitly with `speed <value>`.
 
 - [x] **Step 2: Add waypoint throttle floor**
 
@@ -193,9 +192,9 @@ Hold throttle at zero only when the target is nearly behind the car.
 
 - [x] **Step 3: Cap steering below servo end stops**
 
-Use `steeringFractionAt90Deg = 0.4` and `maxSteeringFraction = 0.50` so the
-controller still turns decisively but does not command full servo travel during
-large heading errors.
+Use `steeringFractionAt90Deg = 0.7` and `maxSteeringFraction = 0.45` so the
+controller gives a visibly stronger initial turn while still avoiding full
+servo travel during large heading errors.
 
 ---
 
@@ -214,8 +213,8 @@ large heading errors.
 
 ```swift
 .followFigureEight(
-    config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
-    maxThrottle: min(interpreter.currentThrottle * 2, 1.0)
+    config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.12),
+    maxThrottle: interpreter.currentThrottle
 )
 ```
 

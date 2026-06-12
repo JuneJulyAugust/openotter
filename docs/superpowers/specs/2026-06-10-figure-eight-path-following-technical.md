@@ -100,9 +100,9 @@ The current command defaults are:
 segmentCount      = 240
 length            = 4.0 m
 width             = 2.0 m
-acceptanceRadius  = 0.25 m
-maxThrottle       = min(current Telegram speed * 2, 1.0)
-default /figure8  = 1.0
+acceptanceRadius  = 0.12 m
+maxThrottle       = current Telegram speed, with no hidden boost
+default /figure8  = 0.4
 ```
 
 `segmentCount` turns the smooth curve into a list of waypoints. With 240
@@ -243,22 +243,22 @@ positive steering command, which maps to right steering PWM.
 The gain is configured as:
 
 ```text
-steeringFractionAt90Deg = 0.4
+steeringFractionAt90Deg = 0.7
 steeringGain = steeringFractionAt90Deg / (pi / 2)
-maxSteeringFraction = 0.50
+maxSteeringFraction = 0.45
 ```
 
 That means:
 
 ```text
-90 degree heading error -> raw steering command about 0.4
-larger errors -> steering capped to +/-0.50
+90 degree heading error -> raw steering command about 0.7
+larger errors -> steering capped to +/-0.45
 ```
 
 This is a practical choice:
 
 - small errors give small steering corrections,
-- moderate errors give useful turning authority,
+- moderate errors give visible turning authority,
 - very large errors do not command the servo to its mechanical end stops,
 - the servo command remains bounded even if ARKit pose jumps,
 - the front wheel should stop making end-stop chatter unless the mechanical
@@ -303,16 +303,17 @@ What this does:
 - For ordinary turns, keep a throttle floor so the car does not creep and then
   stall.
 
-With the default Telegram speed and the `/figure8` 2x boost:
+With the default Telegram speed:
 
 ```text
-maxThrottle = min(0.6 * 2, 1.0) = 1.0
-minimum moving throttle = 1.0 * 0.35 = 0.35
+maxThrottle = 0.4
+minimum moving throttle = 0.4 * 0.35 = 0.14
 ```
 
-That is intentionally faster than the earlier unboosted figure-eight command.
-The safety supervisor still has final authority over forward and reverse
-braking.
+There is no hidden `/figure8` throttle multiplier. If the operator wants to
+test faster, they should explicitly send `speed 0.5`, `speed 0.6`, or another
+chosen value before `/figure8`. The safety supervisor still has final
+authority over forward and reverse braking.
 
 ## 9. Safety Supervisor Interaction
 
@@ -354,12 +355,12 @@ onTelegramMessage(text):
             segmentCount = 240,
             length = 4.0,
             width = 2.0,
-            acceptanceRadius = 0.25
+            acceptanceRadius = 0.12
         )
 
         goal = FollowFigureEight(
             config = config,
-            maxThrottle = min(interpreter.currentThrottle * 2, 1.0)
+            maxThrottle = interpreter.currentThrottle
         )
 
         PlannerOrchestrator.setGoal(goal)
@@ -564,10 +565,10 @@ controller could then map curvature to steering after calibration.
 That upgrade should wait until the waypoint baseline has real basement data:
 
 - Does ARKit yaw drift too much?
-- Is 0.25 m acceptance radius too loose or too tight?
-- Does boosted 1.0 figure-eight throttle plus a 0.35 floor move reliably?
+- Is 0.12 m acceptance radius too loose or too tight?
+- Does default 0.4 figure-eight throttle plus a 0.35 floor move reliably?
 - Does the car understeer or oversteer on carpet?
-- Is the 0.50 steering cap low enough to avoid end-stop chatter but high
+- Is the 0.45 steering cap low enough to avoid end-stop chatter but high
   enough to complete both lobes?
 - Does servo center need a trim offset?
 

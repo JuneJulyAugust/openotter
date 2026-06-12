@@ -286,8 +286,8 @@ final class PlannerOrchestratorTests: XCTestCase {
         let anchor = PoseEntry(timestamp: 0.1, x: 1.5, y: 0, z: -0.5, yaw: 0, confidence: 1)
 
         orchestrator.setGoal(.followFigureEight(
-            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.25),
-            maxThrottle: 0.6
+            config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.12),
+            maxThrottle: 0.4
         ))
 
         XCTAssertTrue(orchestrator.activePlanner is WaypointPlanner)
@@ -302,7 +302,8 @@ final class PlannerOrchestratorTests: XCTestCase {
         XCTAssertEqual(orchestrator.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)
         XCTAssertGreaterThan(orchestrator.activeWaypoints[1].x, anchor.x)
         XCTAssertGreaterThan(orchestrator.activeWaypoints[1].z, anchor.z)
-        XCTAssertGreaterThan(cmd.throttle, 0.4)
+        XCTAssertGreaterThan(cmd.throttle, 0.25)
+        XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
     }
 
     func testSetGoalConstantThrottleSwitchesBackToConstantPlanner() {

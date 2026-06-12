@@ -4,15 +4,15 @@ import Foundation
 ///
 /// Stateful: holds the current throttle magnitude so that subsequent
 /// move commands (`drive`, `reverse`, etc.) use the most recently set
-/// speed. The default is 0.6 (60% throttle).
+/// speed. The default is 0.4 (40% throttle).
 ///
 /// Speed can be changed via:
-/// - Text:    `speed 0.6`, `/speed 0.3`
-/// - Buttons: `🐢 Slow` (0.3), `🐇 Fast` (0.6)
+/// - Text:    `speed 0.4`, `/speed 0.3`
+/// - Buttons: `🐢 Slow` (0.2), `🚗 Normal` (0.4), `🐇 Fast` (0.8)
 final class KeywordInterpreter: CommandInterpreter {
 
     /// Current throttle magnitude [0.1, 1.0]. Drives all subsequent move commands.
-    private(set) var currentThrottle: Float = 0.6
+    private(set) var currentThrottle: Float = 0.4
 
     /// Clamp and store a new throttle value.
     func setThrottle(_ value: Float) {
@@ -71,7 +71,7 @@ final class KeywordInterpreter: CommandInterpreter {
 
             // Speed preset buttons (emoji stripped by interpret())
             "slow": .setSpeed(throttle: 0.2),
-            "normal": .setSpeed(throttle: 0.6),
+            "normal": .setSpeed(throttle: 0.4),
             "fast": .setSpeed(throttle: 0.8),
         ]
     }()
@@ -102,7 +102,7 @@ final class KeywordInterpreter: CommandInterpreter {
 
     // MARK: - Speed Parsing
 
-    /// Matches `speed 0.6`, `/speed 0.3`, `speed0.5` (no space).
+    /// Matches `speed 0.4`, `/speed 0.3`, `speed0.5` (no space).
     /// Returns nil if the text doesn't match the speed pattern.
     private func parseSpeedCommand(_ command: String) -> AgentAction? {
         let prefix = command.hasPrefix("/speed") ? "/speed" : (command.hasPrefix("speed") ? "speed" : nil)

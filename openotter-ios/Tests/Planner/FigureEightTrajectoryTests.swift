@@ -8,8 +8,8 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let waypoints = FigureEightTrajectory.waypoints(config: config)
 
         XCTAssertEqual(waypoints.count, 240)
-        XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.25, accuracy: 0.001)
-        XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.25, accuracy: 0.001)
+        XCTAssertEqual(waypoints.first?.acceptanceRadius ?? -1, 0.12, accuracy: 0.001)
+        XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.12, accuracy: 0.001)
     }
 
     func testWaypointsStayWithinConfiguredHorizontalInfinityDimensions() {
