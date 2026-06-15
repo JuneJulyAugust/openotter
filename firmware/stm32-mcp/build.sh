@@ -69,6 +69,45 @@ check_prerequisites() {
     export PATH="${GCC_BIN}:${NINJA_BIN}:${CMAKE_BIN}:${PATH}"
 }
 
+check_vendor_dependencies() {
+    local missing=0
+    local required=(
+        "Drivers/CMSIS/Include/core_cm4.h"
+        "Drivers/CMSIS/Device/ST/STM32L4xx/Include/stm32l475xx.h"
+        "Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal.c"
+        "BLE/ble_core/bluenrg_gap_aci.c"
+        "BLE/tl/tl_ble_hci.c"
+        "BLE/hw/hw_spi.c"
+        "BLE/ble_services/svc_ctl.c"
+        "BLE/utilities/scheduler.c"
+        "Drivers/VL53L8CX/modules/vl53l8cx_api.h"
+        "Drivers/VL53L8CX/platform/platform.h"
+    )
+
+    for rel in "${required[@]}"; do
+        if [[ ! -e "${PROJECT_DIR}/${rel}" ]]; then
+            error "Missing vendor dependency: ${rel}"
+            missing=1
+        fi
+    done
+
+    if (( missing )); then
+        cat >&2 <<EOF
+
+Vendor dependencies are intentionally not tracked in git.
+Populate them before building this worktree:
+
+  cd "${PROJECT_DIR}"
+  bash scripts/fetch-deps.sh --vl53l8cx-path /path/to/extracted/STSW-IMG040
+
+STM32CubeL4 and BlueNRG-MS are fetched automatically by that script.
+VL53L8CX requires ST's manually downloaded STSW-IMG040 package.
+
+EOF
+        exit 1
+    fi
+}
+
 # ── Build Steps ───────────────────────────────────────────────────────────────
 do_configure() {
     info "Configuring ${BOLD}${BUILD_TYPE}${NC} build..."
@@ -186,9 +225,11 @@ main() {
 
     case "${command}" in
         configure)
+            check_vendor_dependencies
             do_configure
             ;;
         build)
+            check_vendor_dependencies
             do_configure
             do_build
             do_generate_artifacts
@@ -208,6 +249,7 @@ main() {
             do_flash
             ;;
         all)
+            check_vendor_dependencies
             do_configure
             do_build
             do_generate_artifacts

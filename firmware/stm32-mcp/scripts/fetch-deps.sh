@@ -109,7 +109,7 @@ if [[ -n "$VL53L8CX_PATH" ]]; then
   fi
 else
   echo ""
-  echo "VL53L8CX: SKIPPED - download STSW-IMG040 from:"
+  echo "VL53L8CX: REQUIRED - download STSW-IMG040 from:"
   echo "  https://www.st.com/en/embedded-software/stsw-img040.html"
   echo "Then re-run: $0 --vl53l8cx-path /path/to/extracted/stsw-img040"
   echo ""
@@ -127,7 +127,13 @@ check() {
 check "$ROOT/Drivers/CMSIS/Include/core_cm4.h"
 check "$ROOT/Drivers/CMSIS/Device/ST/STM32L4xx/Include/stm32l475xx.h"
 check "$ROOT/Drivers/STM32L4xx_HAL_Driver/Src/stm32l4xx_hal.c"
-[[ -n "$VL53L8CX_PATH" ]] && check "$ROOT/Drivers/VL53L8CX/modules/vl53l8cx_api.h"
+check "$ROOT/BLE/ble_core/bluenrg_gap_aci.c"
+check "$ROOT/BLE/tl/tl_ble_hci.c"
+check "$ROOT/BLE/hw/hw_spi.c"
+check "$ROOT/BLE/ble_services/svc_ctl.c"
+check "$ROOT/BLE/utilities/scheduler.c"
+check "$ROOT/Drivers/VL53L8CX/modules/vl53l8cx_api.h"
+check "$ROOT/Drivers/VL53L8CX/platform/platform.h"
 
 if [[ $errors -eq 0 ]]; then
   echo ""
