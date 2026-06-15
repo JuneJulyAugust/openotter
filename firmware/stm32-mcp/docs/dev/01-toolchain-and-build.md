@@ -227,6 +227,16 @@ export CUBECLT_ROOT=/opt/ST/STM32CubeCLT_1.21.0
 ./build.sh flash
 ```
 
+`fetch-deps.sh` pins STM32CubeL4 to
+`ca1ce808ce1e49916f9d3d795b8e4437fe65d715` so fresh worktrees do not
+silently change when ST reorganizes `master`. To intentionally test a newer
+Cube snapshot, override the ref for one run:
+
+```bash
+STM32CUBE_L4_REF=<branch-tag-or-commit> \
+  bash scripts/fetch-deps.sh --vl53l8cx-path /path/to/extracted/STSW-IMG040
+```
+
 A successful Debug build ends with output similar to:
 
 ```

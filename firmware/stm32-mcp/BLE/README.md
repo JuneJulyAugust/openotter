@@ -41,7 +41,14 @@ each local file to its upstream counterpart.
 ## Fetch instructions
 
 ```bash
-git clone --depth 1 https://github.com/STMicroelectronics/STM32CubeL4 /tmp/STM32CubeL4
+STM32CUBE_L4_REF=ca1ce808ce1e49916f9d3d795b8e4437fe65d715
+git init /tmp/STM32CubeL4
+git -C /tmp/STM32CubeL4 remote add origin https://github.com/STMicroelectronics/STM32CubeL4
+git -C /tmp/STM32CubeL4 fetch --depth 1 origin $STM32CUBE_L4_REF
+git -C /tmp/STM32CubeL4 checkout --detach FETCH_HEAD
+git -C /tmp/STM32CubeL4 submodule update --init --depth 1 \
+  Drivers/CMSIS/Device/ST/STM32L4xx \
+  Drivers/STM32L4xx_HAL_Driver
 
 BLE_APPS=/tmp/STM32CubeL4/Projects/B-L475E-IOT01A/Applications/BLE
 COMMON=$BLE_APPS/Common

@@ -3,13 +3,14 @@
 #
 # Usage: ./scripts/fetch-deps.sh [--vl53l8cx-path /path/to/stsw-img040]
 #
-# Clones STM32CubeL4 from GitHub (no login required).
+# Fetches a pinned STM32CubeL4 snapshot from GitHub (no login required).
 # VL53L8CX requires a manual download from st.com; see --vl53l8cx-path.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
+STM32CUBE_L4_REF="${STM32CUBE_L4_REF:-ca1ce808ce1e49916f9d3d795b8e4437fe65d715}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "--- $*"; }
@@ -31,11 +32,12 @@ TMPDIR_BASE="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_BASE"' EXIT
 
 # ── 1. STM32CubeL4 (CMSIS + HAL + BLE) ───────────────────────────────────────
-info "Cloning STM32CubeL4 (shallow) ..."
+info "Fetching STM32CubeL4 $STM32CUBE_L4_REF ..."
 CUBE_DIR="$TMPDIR_BASE/STM32CubeL4"
-git clone --depth 1 \
-  https://github.com/STMicroelectronics/STM32CubeL4 \
-  "$CUBE_DIR"
+git init -q "$CUBE_DIR"
+git -C "$CUBE_DIR" remote add origin https://github.com/STMicroelectronics/STM32CubeL4
+git -C "$CUBE_DIR" fetch --depth 1 origin "$STM32CUBE_L4_REF"
+git -C "$CUBE_DIR" checkout -q --detach FETCH_HEAD
 git -C "$CUBE_DIR" submodule update --init --depth 1 \
   Drivers/CMSIS/Device/ST/STM32L4xx \
   Drivers/STM32L4xx_HAL_Driver
