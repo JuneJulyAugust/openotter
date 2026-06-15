@@ -3,10 +3,14 @@ import SwiftUI
 // MARK: - Drawing constants
 
 private enum MapStyle {
-    static let waypointRadius: CGFloat = 8
+    static let waypointRadius: CGFloat = 7
     static let waypointLineWidth: CGFloat = 2
     static let trajectoryLineDash: [CGFloat] = [8, 4]
     static let trajectoryLineWidth: CGFloat = 2
+    static let referenceLineWidth: CGFloat = 9
+    static let referenceArrowLength: CGFloat = 15
+    static let referenceArrowHeadLength: CGFloat = 7
+    static let referenceArrowCount = 10
 }
 
 // MARK: - PoseMapView
@@ -17,6 +21,7 @@ struct PoseMapView: View {
     let currentPose: PoseEntry?
     let isTracking: Bool
     var waypoints: [Waypoint] = []
+    var referenceWaypoints: [Waypoint] = []
 
     @Binding var scale: CGFloat
     @Binding var offset: CGSize
@@ -31,6 +36,7 @@ struct PoseMapView: View {
             drawGrid(context: context, size: size, center: center)
             drawAxes(context: context, size: size, center: center)
             drawPath(context: context, center: center)
+            drawReferenceWaypoints(context: context, center: center)
             drawWaypoints(context: context, center: center)
             drawCurrentPose(context: context, center: center)
         }
@@ -128,6 +134,11 @@ struct PoseMapView: View {
     private func drawWaypoints(context: GraphicsContext, center: CGPoint) {
         guard !waypoints.isEmpty else { return }
 
+        if waypoints.count > 8 {
+            drawWaypointStartMarker(waypoints: waypoints, context: context, center: center)
+            return
+        }
+
         if let pose = currentPose {
             drawTrajectoryLine(
                 from: canvasPoint(x: pose.x, z: pose.z, center: center),
@@ -139,6 +150,95 @@ struct PoseMapView: View {
         for wp in waypoints {
             drawWaypointMarker(at: canvasPoint(x: wp.x, z: wp.z, center: center), context: context)
         }
+    }
+
+    private func drawReferenceWaypoints(context: GraphicsContext, center: CGPoint) {
+        guard referenceWaypoints.count > 1 else { return }
+
+        var path = Path()
+        for (index, waypoint) in referenceWaypoints.enumerated() {
+            let pt = canvasPoint(x: waypoint.x, z: waypoint.z, center: center)
+            index == 0 ? path.move(to: pt) : path.addLine(to: pt)
+        }
+        if let first = referenceWaypoints.first {
+            path.addLine(to: canvasPoint(x: first.x, z: first.z, center: center))
+        }
+
+        context.stroke(
+            path,
+            with: .color(.red.opacity(0.30)),
+            style: StrokeStyle(
+                lineWidth: MapStyle.referenceLineWidth,
+                lineCap: .round,
+                lineJoin: .round
+            )
+        )
+
+        drawReferenceArrows(waypoints: referenceWaypoints, context: context, center: center)
+        drawWaypointStartMarker(waypoints: referenceWaypoints, context: context, center: center)
+    }
+
+    private func drawReferenceArrows(waypoints: [Waypoint], context: GraphicsContext, center: CGPoint) {
+        guard waypoints.count > 2 else { return }
+
+        let arrowCount = min(MapStyle.referenceArrowCount, max(1, waypoints.count / 18))
+        let arrowStride = max(1, waypoints.count / arrowCount)
+        for index in stride(from: arrowStride / 2, to: waypoints.count, by: arrowStride) {
+            let start = waypoints[index]
+            let end = waypoints[(index + 2) % waypoints.count]
+            drawDirectionArrow(
+                from: canvasPoint(x: start.x, z: start.z, center: center),
+                to: canvasPoint(x: end.x, z: end.z, center: center),
+                context: context
+            )
+        }
+    }
+
+    private func drawDirectionArrow(from start: CGPoint, to end: CGPoint, context: GraphicsContext) {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = max(0.001, sqrt(dx * dx + dy * dy))
+        let ux = dx / length
+        let uy = dy / length
+        let arrowLength = MapStyle.referenceArrowLength
+        let tip = CGPoint(x: start.x + ux * arrowLength, y: start.y + uy * arrowLength)
+        let base = CGPoint(x: tip.x - ux * MapStyle.referenceArrowHeadLength,
+                           y: tip.y - uy * MapStyle.referenceArrowHeadLength)
+        let normal = CGPoint(x: -uy, y: ux)
+        let wing: CGFloat = 4
+
+        var arrow = Path()
+        arrow.move(to: start)
+        arrow.addLine(to: tip)
+        arrow.move(to: tip)
+        arrow.addLine(to: CGPoint(x: base.x + normal.x * wing, y: base.y + normal.y * wing))
+        arrow.move(to: tip)
+        arrow.addLine(to: CGPoint(x: base.x - normal.x * wing, y: base.y - normal.y * wing))
+
+        context.stroke(
+            arrow,
+            with: .color(.red.opacity(0.55)),
+            style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+        )
+    }
+
+    private func drawWaypointStartMarker(waypoints: [Waypoint], context: GraphicsContext, center: CGPoint) {
+        guard waypoints.count > 1, let first = waypoints.first else { return }
+
+        let start = canvasPoint(x: first.x, z: first.z, center: center)
+        let next = canvasPoint(x: waypoints[1].x, z: waypoints[1].z, center: center)
+        let r = MapStyle.waypointRadius
+
+        context.fill(
+            Path(ellipseIn: CGRect(x: start.x - r, y: start.y - r, width: r * 2, height: r * 2)),
+            with: .color(.orange)
+        )
+        context.stroke(
+            Path(ellipseIn: CGRect(x: start.x - r, y: start.y - r, width: r * 2, height: r * 2)),
+            with: .color(.white.opacity(0.9)),
+            lineWidth: 2
+        )
+        drawDirectionArrow(from: start, to: next, context: context)
     }
 
     private func drawTrajectoryLine(from: CGPoint, to: CGPoint, context: GraphicsContext) {

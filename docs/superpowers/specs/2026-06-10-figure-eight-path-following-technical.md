@@ -145,6 +145,44 @@ The whole local path is still transformed through the car's yaw, so the
 horizontal infinity is horizontal relative to the car's starting heading, not
 hard-coded to an arbitrary ARKit world axis.
 
+### Practical Initial Pose
+
+For the best basement test, place the car at the desired center crossing of the
+figure eight and point the nose along the desired long axis of the track before
+sending `/figure8`.
+
+That means:
+
+- the car's current ARKit pose becomes waypoint `0`,
+- the orange start dot on the map is the car's starting pose,
+- the small arrow leaving the orange dot shows the first desired movement,
+- the first lobe is forward and to the car's right,
+- the second lobe is behind the original start point after the path crosses
+  the center again. By then the car has turned around, so it still drives
+  forward along the path instead of reversing.
+
+With the current `3.2 m x 1.6 m` default, reserve roughly this clear area around
+the starting pose:
+
+```text
+1.6 m forward from the start crossing
+1.6 m behind the start crossing
+0.8 m to the left
+0.8 m to the right
+```
+
+If you want the long axis of the 8 to face a different physical direction in
+the basement, rotate the car first, then send `/figure8`. The controller does
+not use a fixed room direction; it anchors the whole path to the car's pose and
+yaw at mission start.
+
+The ideal starting alignment is not at the outside of a lobe. It is at the
+center crossing, with the green ego heading approximately aligned with the
+orange start arrow. Starting near the center but with the car pointed 90
+degrees away from that arrow makes the first seconds harder, because the
+controller must spend steering authority correcting heading instead of smoothly
+entering the first lobe.
+
 ## 5. Waypoint Advancement
 
 The controller stores:

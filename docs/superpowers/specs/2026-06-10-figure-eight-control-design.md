@@ -235,6 +235,22 @@ This local point is transformed into world coordinates using the car pose from
 the first control tick. In other words, `/figure8` treats the car's current
 pose as the crossing point of the track.
 
+Good physical setup:
+
+```text
+1. Put the car at the desired center crossing of the 8.
+2. Point the car's nose along the desired long axis of the 8.
+3. Leave about 1.6 m clear in front and behind the car.
+4. Leave about 0.8 m clear on each side.
+5. Send /figure8.
+```
+
+The orange map marker is this start/crossing point. Its arrow shows the first
+desired motion. The green ego heading should roughly agree with that arrow
+before launch. If the green heading points across the track instead, the first
+seconds will be spent recovering heading error, and the actual blue trace will
+usually bulge outside the reference.
+
 The first segment moves into the forward/right branch:
 
 ```text

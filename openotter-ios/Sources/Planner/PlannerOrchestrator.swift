@@ -43,6 +43,11 @@ final class PlannerOrchestrator: ObservableObject {
     /// Current planner waypoints for map overlay and field debugging.
     @Published private(set) var activeWaypoints: [Waypoint] = []
 
+    /// Last non-empty reference path published by a waypoint planner. This is
+    /// display-only; Park/Stop clear control intent but keep this overlay on
+    /// the map so the operator can compare the driven trace against the target.
+    @Published private(set) var referenceWaypoints: [Waypoint] = []
+
     // MARK: - Init
 
     init(planner: any PlannerProtocol,
@@ -162,6 +167,9 @@ final class PlannerOrchestrator: ObservableObject {
     private func refreshPlannerDebugState() {
         if let waypointProvider = activePlanner as? WaypointDebugProviding {
             activeWaypoints = waypointProvider.activeWaypoints
+            if !activeWaypoints.isEmpty {
+                referenceWaypoints = activeWaypoints
+            }
         } else {
             activeWaypoints = []
         }

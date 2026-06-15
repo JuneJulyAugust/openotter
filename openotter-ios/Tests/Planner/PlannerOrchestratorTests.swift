@@ -306,6 +306,43 @@ final class PlannerOrchestratorTests: XCTestCase {
         XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
     }
 
+    func testParkResetClearsActiveWaypointsButKeepsLastReferenceOverlay() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+
+        orchestrator.setGoal(.followFigureEight(
+            config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
+            maxThrottle: 0.4
+        ))
+        let _ = orchestrator.tick(
+            context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0)
+        )
+
+        XCTAssertEqual(orchestrator.activeWaypoints.count, 240)
+        XCTAssertEqual(orchestrator.referenceWaypoints.count, 240)
+
+        orchestrator.reset()
+
+        XCTAssertTrue(orchestrator.activeWaypoints.isEmpty)
+        XCTAssertEqual(orchestrator.referenceWaypoints.count, 240)
+    }
+
+    func testConstantThrottleKeepsLastReferenceOverlay() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+
+        orchestrator.setGoal(.followFigureEight(
+            config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
+            maxThrottle: 0.4
+        ))
+        let _ = orchestrator.tick(
+            context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0)
+        )
+
+        orchestrator.setGoal(.constantThrottle(targetThrottle: 0.2))
+
+        XCTAssertTrue(orchestrator.activeWaypoints.isEmpty)
+        XCTAssertEqual(orchestrator.referenceWaypoints.count, 240)
+    }
+
     func testSetGoalConstantThrottleSwitchesBackToConstantPlanner() {
         let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
 
