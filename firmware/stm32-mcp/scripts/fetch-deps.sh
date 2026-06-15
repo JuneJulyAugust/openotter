@@ -98,6 +98,50 @@ else
   die "Cannot find STM32CubeL4 BLE Common or legacy BLE_Application under $BLE_APPS"
 fi
 
+cat > "$ROOT/BLE/ble_core/hal_types.h" <<'EOF'
+/**
+ * @file  hal_types.h
+ * @brief Compatibility shim for BlueNRG-MS core files.
+ */
+#ifndef __HAL_TYPES_H
+#define __HAL_TYPES_H
+
+#include <stdint.h>
+#include "bluenrg_private_hal_types.h"
+
+#ifndef NULL
+#define NULL ((void *)0)
+#endif
+
+#ifndef BOOL
+typedef uint8_t BOOL;
+#endif
+
+#ifndef TRUE
+#define TRUE  1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+#endif /* __HAL_TYPES_H */
+EOF
+
+cat > "$ROOT/BLE/ble_core/hal.h" <<'EOF'
+/**
+ * @file  hal.h
+ * @brief Compatibility shim for BlueNRG-MS core files.
+ */
+#ifndef __HAL_H
+#define __HAL_H
+
+#include "hal_types.h"
+#include "hci_tl_io.h"
+
+#endif /* __HAL_H */
+EOF
+
 # Reference snapshot
 rm -rf "$ROOT/BLE/_reference"
 mkdir -p "$ROOT/BLE/_reference"
@@ -118,19 +162,142 @@ if [[ -n "$VL53L8CX_PATH" ]]; then
     ULD="$ULD/Middlewares/ST/VL53L8CX_ULD"
   elif [[ -d "$ULD/VL53L8CX_ULD" ]]; then
     ULD="$ULD/VL53L8CX_ULD"
+  elif [[ -d "$ULD/VL53L8CX_ULD_API" ]]; then
+    ULD="$ULD"
+  else
+    shopt -s nullglob
+    candidates=("$ULD"/VL53L8CX_ULD_driver_*/VL53L8CX_ULD_API)
+    shopt -u nullglob
+    if [[ ${#candidates[@]} -gt 0 ]]; then
+      ULD="$(dirname "${candidates[0]}")"
+    fi
   fi
 
-  [[ -d "$ULD/modules" ]] || die "Cannot find VL53L8CX_ULD/modules under $VL53L8CX_PATH"
-  [[ -d "$ULD/platform" ]] || die "Cannot find VL53L8CX_ULD/platform under $VL53L8CX_PATH"
+  if [[ -d "$ULD/modules" ]]; then
+    [[ -d "$ULD/platform" ]] || die "Cannot find VL53L8CX_ULD/platform under $VL53L8CX_PATH"
+    cp "$ULD"/modules/*.c  "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
+    cp "$ULD"/modules/*.h  "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
 
-  cp "$ULD"/modules/*.c  "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
-  cp "$ULD"/modules/*.h  "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
+    if [[ -f "$ROOT/Drivers/VL53L8CX/platform/platform.h" ]]; then
+      echo "NOTE: Preserving existing VL53L8CX platform wrapper."
+    else
+      cp "$ULD"/platform/*.c "$ROOT/Drivers/VL53L8CX/platform/" 2>/dev/null || true
+      cp "$ULD"/platform/*.h "$ROOT/Drivers/VL53L8CX/platform/" 2>/dev/null || true
+    fi
+  elif [[ -d "$ULD/VL53L8CX_ULD_API/inc" && -d "$ULD/VL53L8CX_ULD_API/src" ]]; then
+    [[ -d "$ULD/Platform" ]] || die "Cannot find STSW-IMG040 Platform under $VL53L8CX_PATH"
+    cp "$ULD"/VL53L8CX_ULD_API/src/*.c "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
+    cp "$ULD"/VL53L8CX_ULD_API/inc/*.h "$ROOT/Drivers/VL53L8CX/modules/" 2>/dev/null || true
+    perl -0pi -e 's/goto exit\r?\n([ \t]*\})/goto exit;\n$1/' \
+      "$ROOT/Drivers/VL53L8CX/modules/vl53l8cx_api.c"
+    cat > "$ROOT/Drivers/VL53L8CX/platform/platform.h" <<'EOF'
+/* SPDX-License-Identifier: BSD-3-Clause */
+#ifndef OPENOTTER_VL53L8CX_PLATFORM_H
+#define OPENOTTER_VL53L8CX_PLATFORM_H
 
-  if [[ -f "$ROOT/Drivers/VL53L8CX/platform/platform.h" ]]; then
-    echo "NOTE: Preserving existing VL53L8CX platform wrapper."
+#include <stdint.h>
+#include <string.h>
+
+typedef struct {
+  uint16_t address;
+  uint8_t (*Write)(void *handle, uint16_t register_addr, uint8_t *data,
+                   uint32_t size);
+  uint8_t (*Read)(void *handle, uint16_t register_addr, uint8_t *data,
+                  uint32_t size);
+  uint8_t (*Wait)(void *handle, uint32_t time_ms);
+  void *handle;
+} VL53L8CX_Platform;
+
+#ifndef VL53L8CX_NB_TARGET_PER_ZONE
+#define VL53L8CX_NB_TARGET_PER_ZONE 1U
+#endif
+
+uint8_t VL53L8CX_RdByte(VL53L8CX_Platform *p_platform,
+                        uint16_t RegisterAdress, uint8_t *p_value);
+uint8_t VL53L8CX_WrByte(VL53L8CX_Platform *p_platform,
+                        uint16_t RegisterAdress, uint8_t value);
+uint8_t VL53L8CX_RdMulti(VL53L8CX_Platform *p_platform,
+                         uint16_t RegisterAdress, uint8_t *p_values,
+                         uint32_t size);
+uint8_t VL53L8CX_WrMulti(VL53L8CX_Platform *p_platform,
+                         uint16_t RegisterAdress, uint8_t *p_values,
+                         uint32_t size);
+uint8_t VL53L8CX_Reset_Sensor(VL53L8CX_Platform *p_platform);
+void VL53L8CX_SwapBuffer(uint8_t *buffer, uint16_t size);
+uint8_t VL53L8CX_WaitMs(VL53L8CX_Platform *p_platform, uint32_t TimeMs);
+
+#endif
+EOF
+    cat > "$ROOT/Drivers/VL53L8CX/platform/platform.c" <<'EOF'
+/* SPDX-License-Identifier: BSD-3-Clause */
+#include "platform.h"
+
+#define VL53L8CX_PLATFORM_ERROR 255U
+
+uint8_t VL53L8CX_RdByte(VL53L8CX_Platform *p_platform,
+                        uint16_t RegisterAdress, uint8_t *p_value)
+{
+  return VL53L8CX_RdMulti(p_platform, RegisterAdress, p_value, 1U);
+}
+
+uint8_t VL53L8CX_WrByte(VL53L8CX_Platform *p_platform,
+                        uint16_t RegisterAdress, uint8_t value)
+{
+  return VL53L8CX_WrMulti(p_platform, RegisterAdress, &value, 1U);
+}
+
+uint8_t VL53L8CX_RdMulti(VL53L8CX_Platform *p_platform,
+                         uint16_t RegisterAdress, uint8_t *p_values,
+                         uint32_t size)
+{
+  if (p_platform == 0 || p_platform->Read == 0) {
+    return VL53L8CX_PLATFORM_ERROR;
+  }
+  return p_platform->Read(p_platform->handle, RegisterAdress, p_values, size);
+}
+
+uint8_t VL53L8CX_WrMulti(VL53L8CX_Platform *p_platform,
+                         uint16_t RegisterAdress, uint8_t *p_values,
+                         uint32_t size)
+{
+  if (p_platform == 0 || p_platform->Write == 0) {
+    return VL53L8CX_PLATFORM_ERROR;
+  }
+  return p_platform->Write(p_platform->handle, RegisterAdress, p_values, size);
+}
+
+uint8_t VL53L8CX_Reset_Sensor(VL53L8CX_Platform *p_platform)
+{
+  if (p_platform == 0 || p_platform->Wait == 0) {
+    return VL53L8CX_PLATFORM_ERROR;
+  }
+  uint8_t status = p_platform->Wait(p_platform->handle, 100U);
+  status |= p_platform->Wait(p_platform->handle, 100U);
+  return status;
+}
+
+void VL53L8CX_SwapBuffer(uint8_t *buffer, uint16_t size)
+{
+  uint32_t i;
+  for (i = 0; i < size; i += 4U) {
+    uint32_t tmp = ((uint32_t)buffer[i] << 24) |
+                   ((uint32_t)buffer[i + 1U] << 16) |
+                   ((uint32_t)buffer[i + 2U] << 8) |
+                   ((uint32_t)buffer[i + 3U]);
+    memcpy(&buffer[i], &tmp, 4U);
+  }
+}
+
+uint8_t VL53L8CX_WaitMs(VL53L8CX_Platform *p_platform, uint32_t TimeMs)
+{
+  if (p_platform == 0 || p_platform->Wait == 0) {
+    return VL53L8CX_PLATFORM_ERROR;
+  }
+  return p_platform->Wait(p_platform->handle, TimeMs);
+}
+EOF
   else
-    cp "$ULD"/platform/*.c "$ROOT/Drivers/VL53L8CX/platform/" 2>/dev/null || true
-    cp "$ULD"/platform/*.h "$ROOT/Drivers/VL53L8CX/platform/" 2>/dev/null || true
+    die "Cannot find VL53L8CX ULD files under $VL53L8CX_PATH"
   fi
 else
   echo ""
