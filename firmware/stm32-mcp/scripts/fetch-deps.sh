@@ -23,6 +23,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "$VL53L8CX_PATH" && ! -d "$VL53L8CX_PATH" ]]; then
+  die "VL53L8CX path does not exist: $VL53L8CX_PATH"
+fi
+
 TMPDIR_BASE="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_BASE"' EXIT
 
@@ -32,6 +36,9 @@ CUBE_DIR="$TMPDIR_BASE/STM32CubeL4"
 git clone --depth 1 \
   https://github.com/STMicroelectronics/STM32CubeL4 \
   "$CUBE_DIR"
+git -C "$CUBE_DIR" submodule update --init --depth 1 \
+  Drivers/CMSIS/Device/ST/STM32L4xx \
+  Drivers/STM32L4xx_HAL_Driver
 
 # CMSIS core headers
 info "Installing CMSIS/Include ..."
@@ -50,36 +57,52 @@ info "Installing STM32L4xx_HAL_Driver ..."
 rm -rf "$ROOT/Drivers/STM32L4xx_HAL_Driver"
 cp -r "$CUBE_DIR/Drivers/STM32L4xx_HAL_Driver" "$ROOT/Drivers/"
 
-# BLE middleware from P2P_LedButton example
+# BLE middleware from the B-L475E-IOT01A BLE examples.
 info "Installing BLE middleware ..."
-EXAMPLE="$CUBE_DIR/Projects/B-L475E-IOT01A/Applications/BLE/P2P_LedButton"
-MIDDLEWARE="$CUBE_DIR/Middlewares/ST/BlueNRG-MS"
+BLE_APPS="$CUBE_DIR/Projects/B-L475E-IOT01A/Applications/BLE"
+EXAMPLE="$BLE_APPS/P2P_LedButton"
+COMMON="$BLE_APPS/Common"
+LEGACY_APP="$EXAMPLE/BLE_Application"
 
 mkdir -p "$ROOT/BLE/"{ble_core,ble_services,hw,tl,utilities,debug,_reference}
 
-# BlueNRG-MS ACI + HCI layer
-cp "$MIDDLEWARE"/hci/*.c         "$ROOT/BLE/ble_core/" 2>/dev/null || true
-cp "$MIDDLEWARE"/hci/*.h         "$ROOT/BLE/ble_core/" 2>/dev/null || true
-cp "$MIDDLEWARE"/includes/*.h    "$ROOT/BLE/ble_core/" 2>/dev/null || true
-
-# Transport layer
-cp "$EXAMPLE"/BLE_Application/TL/tl_ble_*.c  "$ROOT/BLE/tl/" 2>/dev/null || true
-cp "$EXAMPLE"/BLE_Application/TL/tl_ble_*.h  "$ROOT/BLE/tl/" 2>/dev/null || true
-
-# HW abstraction
-cp "$EXAMPLE"/BLE_Application/hw_*.c  "$ROOT/BLE/hw/" 2>/dev/null || true
-cp "$EXAMPLE"/BLE_Application/hw_*.h  "$ROOT/BLE/hw/" 2>/dev/null || true
-
-# Utilities
-find "$EXAMPLE"/BLE_Application -maxdepth 2 -name "osal.*" \
-     -o -name "stm32_seq.*" | while read f; do
-  cp "$f" "$ROOT/BLE/utilities/" 2>/dev/null || true
-done
+if [[ -d "$COMMON" ]]; then
+  # Current STM32CubeL4 layout: common reusable middleware lives outside each
+  # example application. Copy only generated/vendor directories; Core/Inc owns
+  # this project's active BLE configuration.
+  rm -rf "$ROOT/BLE/ble_core" "$ROOT/BLE/ble_services" "$ROOT/BLE/hw" \
+         "$ROOT/BLE/tl" "$ROOT/BLE/utilities" "$ROOT/BLE/debug"
+  cp -r "$COMMON/ble_core" "$ROOT/BLE/"
+  cp -r "$COMMON/ble_services" "$ROOT/BLE/"
+  cp -r "$COMMON/hw" "$ROOT/BLE/"
+  cp -r "$COMMON/tl" "$ROOT/BLE/"
+  cp -r "$COMMON/utilities" "$ROOT/BLE/"
+  cp -r "$COMMON/debug" "$ROOT/BLE/"
+  cp "$COMMON"/ble_*_template.h "$ROOT/BLE/" 2>/dev/null || true
+  cp "$COMMON"/common.h "$COMMON"/config_template.h "$ROOT/BLE/" 2>/dev/null || true
+elif [[ -d "$LEGACY_APP" ]]; then
+  # Older STM32CubeL4 layout: middleware was nested under P2P_LedButton.
+  rm -rf "$ROOT/BLE/ble_core" "$ROOT/BLE/ble_services" "$ROOT/BLE/hw" \
+         "$ROOT/BLE/tl" "$ROOT/BLE/utilities" "$ROOT/BLE/debug"
+  mkdir -p "$ROOT/BLE/"{ble_core,ble_services,hw,tl,utilities,debug}
+  cp "$LEGACY_APP"/TL/tl_ble_*.c "$ROOT/BLE/tl/" 2>/dev/null || true
+  cp "$LEGACY_APP"/TL/tl_ble_*.h "$ROOT/BLE/tl/" 2>/dev/null || true
+  cp "$LEGACY_APP"/HW/hw_*.c "$ROOT/BLE/hw/" 2>/dev/null || true
+  cp "$LEGACY_APP"/HW/hw_*.h "$ROOT/BLE/hw/" 2>/dev/null || true
+  cp "$LEGACY_APP"/SERVICES/*.{c,h} "$ROOT/BLE/ble_services/" 2>/dev/null || true
+  cp "$LEGACY_APP"/Utilities/*.{c,h} "$ROOT/BLE/utilities/" 2>/dev/null || true
+  cp "$LEGACY_APP"/Debug/*.h "$ROOT/BLE/debug/" 2>/dev/null || true
+else
+  die "Cannot find STM32CubeL4 BLE Common or legacy BLE_Application under $BLE_APPS"
+fi
 
 # Reference snapshot
-cp "$EXAMPLE"/Core/Src/main.c         "$ROOT/BLE/_reference/" 2>/dev/null || true
-cp "$EXAMPLE"/Core/Src/stm32l4xx_it.c "$ROOT/BLE/_reference/" 2>/dev/null || true
-cp "$EXAMPLE"/Core/Inc/*.h            "$ROOT/BLE/_reference/" 2>/dev/null || true
+rm -rf "$ROOT/BLE/_reference"
+mkdir -p "$ROOT/BLE/_reference"
+cp "$EXAMPLE"/Src/*.c "$ROOT/BLE/_reference/" 2>/dev/null || true
+cp "$EXAMPLE"/Inc/*.h "$ROOT/BLE/_reference/" 2>/dev/null || true
+cp "$EXAMPLE"/Core/Src/*.c "$ROOT/BLE/_reference/" 2>/dev/null || true
+cp "$EXAMPLE"/Core/Inc/*.h "$ROOT/BLE/_reference/" 2>/dev/null || true
 
 # ── 2. VL53L8CX ULD ───────────────────────────────────────────────────────────
 if [[ -n "$VL53L8CX_PATH" ]]; then

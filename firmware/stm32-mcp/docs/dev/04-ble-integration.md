@@ -331,18 +331,18 @@ unexpectedly.
 
 | Local path                     | Upstream origin (STM32CubeL4)                                                | Notes                                                       |
 | ------------------------------ | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `BLE/ble_core/*.{c,h}`         | `Middlewares/ST/BlueNRG-MS/hci/…` and `bluenrg1_*` headers                   | ACI command builders                                        |
-| `BLE/tl/tl_ble_*.{c,h}`        | `Projects/B-L475E-IOT01A/Applications/BLE/P2P_LedButton/BLE_Application/TL/` | HCI transport over SPI                                      |
-| `BLE/hw/hw_spi.c`              | same project, `BLE_Application/HW/hw_spi.c`                                  | SPI driver, unmodified                                      |
-| `BLE/hw/hw_timerserver.c`      | same project, `BLE_Application/HW/hw_timerserver.c`                          | RTC-wakeup timer server                                     |
-| `BLE/hw/hw_lpm.c`              | same project, `BLE_Application/HW/hw_lpm.c`                                  |                                                             |
-| `BLE/ble_services/svc_ctl.*`   | same project, `BLE_Application/Core/svc_ctl.*`                               | Local edit: GAP name set to `OPENOTTER-MCP`                 |
-| `BLE/ble_services/lbs_stm.*`   | same project, `LedButtonService/lbs_stm.*`                                   | Kept for reference; unused at runtime                       |
-| `BLE/ble_services/{dis,hrs}.*` | `Middlewares/ST/BlueNRG-MS/Profile_Framework/Src/`                           | Device-info / heart-rate; not compiled into our service set |
-| `BLE/utilities/*.{c,h}`        | `Middlewares/ST/BlueNRG-MS/utilities/`                                       | Scheduler, queue, list, memory manager, LPM                 |
-| `BLE/debug/debug.h`            | same project, `BLE_Application/Debug/debug.h`                                | Trace macros (disabled)                                     |
+| `BLE/ble_core/*.{c,h}`         | `Projects/B-L475E-IOT01A/Applications/BLE/Common/ble_core/`                  | ACI command builders                                        |
+| `BLE/tl/tl_ble_*.{c,h}`        | `Projects/B-L475E-IOT01A/Applications/BLE/Common/tl/`                        | HCI transport over SPI                                      |
+| `BLE/hw/hw_spi.c`              | `Projects/B-L475E-IOT01A/Applications/BLE/Common/hw/hw_spi.c`                | SPI driver, unmodified                                      |
+| `BLE/hw/hw_timerserver.c`      | `Projects/B-L475E-IOT01A/Applications/BLE/Common/hw/hw_timerserver.c`        | RTC-wakeup timer server                                     |
+| `BLE/hw/hw_lpm.c`              | `Projects/B-L475E-IOT01A/Applications/BLE/Common/hw/hw_lpm.c`                |                                                             |
+| `BLE/ble_services/svc_ctl.*`   | `Projects/B-L475E-IOT01A/Applications/BLE/Common/ble_services/svc_ctl.*`     | Local edit: GAP name set to `OPENOTTER-MCP`                 |
+| `BLE/ble_services/lbs_stm.*`   | `Projects/B-L475E-IOT01A/Applications/BLE/Common/ble_services/lbs_stm.*`     | Kept for reference; unused at runtime                       |
+| `BLE/ble_services/{dis,hrs}.*` | `Projects/B-L475E-IOT01A/Applications/BLE/Common/ble_services/`              | Device-info / heart-rate; not compiled into our service set |
+| `BLE/utilities/*.{c,h}`        | `Projects/B-L475E-IOT01A/Applications/BLE/Common/utilities/`                 | Scheduler, queue, list, memory manager, LPM                 |
+| `BLE/debug/debug.h`            | `Projects/B-L475E-IOT01A/Applications/BLE/Common/debug/debug.h`              | Trace macros (disabled)                                     |
 | `BLE/_reference/*`             | verbatim copies of `main.c`, `lb_client_app.c`, etc. from `P2P_LedButton`    | Not compiled; historical reference only                     |
-| `Core/Inc/ble_config.h`        | derived from `P2P_LedButton/Core/Inc/app_conf.h` + `config.h`                | Trimmed to peripheral-only, hand-tuned                      |
+| `Core/Inc/ble_config.h`        | derived from `P2P_LedButton/Inc/config.h` and `Common/config_template.h`     | Trimmed to peripheral-only, hand-tuned                      |
 | `Core/Inc/config.h`            | new; one-line wrapper so middleware `#include "config.h"` still resolves     | Hand-written                                                |
 | `Core/Src/ble_app.c`           | **hand-written** (inspired by `lb_server_app.c`)                             | OpenOtter-specific                                          |
 
