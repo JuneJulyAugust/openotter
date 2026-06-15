@@ -276,7 +276,7 @@ final class PlannerOrchestratorTests: XCTestCase {
         let cmd = orchestrator.tick(
             context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0)
         )
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
         XCTAssertGreaterThan(cmd.throttle, 0.39)
         XCTAssertEqual(orchestrator.activeWaypoints.count, 1)
     }
@@ -296,7 +296,7 @@ final class PlannerOrchestratorTests: XCTestCase {
             context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0, pose: anchor)
         )
 
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
         XCTAssertEqual(orchestrator.activeWaypoints.count, 240)
         XCTAssertEqual(orchestrator.activeWaypoints.first?.x ?? -1, anchor.x, accuracy: 0.001)
         XCTAssertEqual(orchestrator.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)

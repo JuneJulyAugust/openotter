@@ -1,6 +1,6 @@
 # Figure-Eight Basement Control - Revised Design
 
-**Status:** Implemented tangent-heading PID/feedforward baseline for review
+**Status:** Implemented `TangentTrack` PID/feedforward baseline for review
 **Date:** 2026-06-10
 **Branch/worktree:** `control-figure-eight-design` at `.worktrees/control-figure-eight-design`
 **Technical note:** `docs/superpowers/specs/2026-06-10-figure-eight-path-following-technical.md`
@@ -9,9 +9,10 @@
 ## 1. Goal
 
 Make OpenOtter follow a repeatable figure-eight path indoors from a Telegram
-or iOS agent command. This milestone intentionally stays below pure pursuit or
-MPC complexity, but now uses path reference heading, PID-shaped feedback, and
-curvature feedforward.
+or iOS agent command. This milestone intentionally stays below pure pursuit,
+LQR, or MPC complexity, but now uses path reference heading, PID-shaped
+feedback, and curvature feedforward. This baseline controller is named
+`TangentTrack`.
 
 The target behavior is:
 
@@ -34,8 +35,9 @@ Observed behavior:
 Root causes in the first implementation:
 
 1. **Steering sign was inverted.** Firmware and `PwmMapping` define negative
-   steering as left and positive steering as right, but `WaypointPlanner`
-   produced negative steering for a target on robot-right.
+   steering as left and positive steering as right, but the first
+   `WaypointPlanner` implementation produced negative steering for a target on
+   robot-right.
 2. **Figure-eight waypoints were not anchored to the current pose.** The
    command built a small path around ARKit world `(0, 0)` instead of the car's
    pose when the mission began.
@@ -105,8 +107,17 @@ steering  0.0 -> 1500 us -> centered
 steering +1.0 -> 2000 us -> full right
 ```
 
-Therefore a target at robot-right must produce **positive** steering. This is
-locked by `WaypointPlannerTests`.
+`PoseMapView` renders the same ground plane as:
+
+```text
+z = screen right
++x = screen up / forward
+```
+
+Therefore a horizontal figure-eight on the app map uses `+Z/-Z` as the long
+left/right axis and `+X/-X` as the shorter forward/back width. A target at
+robot-right must produce **positive** steering. These invariants are locked by
+`FigureEightTrajectoryTests` and `WaypointPlannerTests`.
 
 ## 4. Controller Strategy
 
@@ -162,11 +173,12 @@ Current defaults:
 
 ```text
 maxSteeringFraction = 1.0
+steeringThrottleScaleAtLimit = 0.70
 steeringThrottleFullLoadFraction = 0.45
 crossTrackGain = 2.2
 crossTrackSofteningDistance = 0.18 m
 curvatureFeedforwardGain = 0.10 m
-Kp = 0.7 / (pi / 2)
+Kp = 0.9 / (pi / 2)
 Ki = 0.0
 Kd = 0.02
 ```
@@ -183,7 +195,7 @@ car is stuck or nearly stuck:
 ```text
 base = maxThrottle * max(0.35, 1 - abs(pathHeadingError) / pi)
 steeringLoad = abs(steering) / steeringThrottleFullLoadFraction
-scale = 1 - (1 - 0.45) * steeringLoad * lateralLoad
+scale = 1 - (1 - 0.70) * steeringLoad * lateralLoad
 throttle = base * scale
 
 if measuredSpeed < 0.12 m/s and abs(pathHeadingError) < 90 degrees:
@@ -206,9 +218,11 @@ raw_x = -cos(theta) / (1 + sin(theta)^2)
 raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
 ```
 
-The raw curve is normalized to the requested 3.2 m by 1.6 m envelope. This
-keeps the literal horizontal infinity shape, but reduces tight corner-like
-curvature and gives the segment-tangent controller a smooth reference heading.
+The raw curve is normalized to the requested 3.2 m by 1.6 m app-map envelope:
+3.2 m left/right along local `+Z/-Z`, and 1.6 m forward/back along local
+`+X/-X`. This keeps the literal horizontal infinity shape, but reduces tight
+corner-like curvature and gives the segment-tangent controller a smooth
+reference heading.
 
 That means:
 
@@ -239,10 +253,11 @@ Good physical setup:
 
 ```text
 1. Put the car at the desired center crossing of the 8.
-2. Point the car's nose along the desired long axis of the 8.
-3. Leave about 1.6 m clear in front and behind the car.
-4. Leave about 0.8 m clear on each side.
-5. Send /figure8.
+2. Point the car's nose along the desired forward/back width axis of the 8.
+3. The long 3.2 m axis will run left/right across the car on the app map.
+4. Leave about 0.8 m clear in front and behind the car.
+5. Leave about 1.6 m clear on each side.
+6. Send /figure8.
 ```
 
 The orange map marker is this start/crossing point. Its arrow shows the first
@@ -278,18 +293,19 @@ max steering      = 1.0
 progress search   = 32 future samples
 ```
 
-`length` and `width` are generator scale parameters. The current default is
-80% of the previous `4.0 m x 2.0 m` envelope, giving the controller more
-basement wall margin while preserving the same horizontal infinity shape. The
-tighter acceptance radius keeps the startup waypoints from being consumed too
-aggressively at the center crossing. The tangent-heading controller makes the
-front wheel visibly turn for the first lobe, while firmware clamps and slews
-the PWM command so full-range steering remains bounded and less abrupt. The
-tests verify the path stays
-inside the configured horizontal infinity dimensions, crosses the anchor
-halfway through the loop, forms a continuous loop, keeps adjacent waypoint
-spacing even, avoids the old tight corner-like curvature, and tracks the path
-under a slow-yaw regression model.
+`length` and `width` are app-map envelope parameters, not mathematical `x` and
+`z` dimensions: `length` is the horizontal `+Z/-Z` span, and `width` is the
+vertical `+X/-X` span. The current default is 80% of the previous
+`4.0 m x 2.0 m` envelope, giving the controller more basement wall margin while
+preserving the same horizontal infinity shape. The tighter acceptance radius
+keeps the startup waypoints from being consumed too aggressively at the center
+crossing. `TangentTrack` makes the front wheel visibly turn for the first lobe,
+while firmware clamps and slews the PWM command so full-range steering remains
+bounded and less abrupt. The tests verify the path stays inside the configured
+app-map horizontal infinity dimensions, crosses the anchor halfway through the
+loop, forms a continuous loop, keeps adjacent waypoint spacing even, avoids the
+old tight corner-like curvature, and tracks the path under a slow-yaw
+regression model.
 
 ## 6. Runtime Flow
 
@@ -300,13 +316,14 @@ Telegram /figure8
   -> PlannerGoal.followFigureEight(config, maxThrottle)
   -> PlannerOrchestrator switches to WaypointPlanner
   -> first control tick anchors waypoints from PlannerContext.pose
-  -> WaypointPlanner emits steering/throttle
+  -> TangentTrack emits steering/throttle
   -> SafetySupervisor may brake
   -> STM32 receives PWM command
 ```
 
 Anchoring inside `WaypointPlanner.plan(context:)` is deliberate. Telegram does
-not have pose. The planner does.
+not have pose. The planner does. The Swift implementation type remains
+`WaypointPlanner`, while its controller/telemetry name is `TangentTrack`.
 
 ## 7. Component Ownership
 
@@ -314,10 +331,11 @@ not have pose. The planner does.
 
 - `FigureEightTrajectory` generates waypoint paths.
 - `RobotGeometry` owns yaw/local/world transformations.
-- `WaypointPlanner` owns waypoint advancement, tangent-heading feedback,
-  curvature feedforward, throttle shaping, and figure-eight looping.
-- `PlannerOrchestrator` routes figure-eight goals to `WaypointPlanner` and
-  publishes active waypoints for UI overlay.
+- `WaypointPlanner` implements the `TangentTrack` controller: waypoint
+  advancement, tangent-heading feedback, curvature feedforward, throttle
+  shaping, and figure-eight looping.
+- `PlannerOrchestrator` routes figure-eight goals to the `WaypointPlanner`
+  implementation and publishes active/reference waypoints for UI overlay.
 - `ActionDispatcher` maps `/figure8` to a figure-eight planner goal.
 - `PoseMapView` receives active waypoints through `SelfDrivingView`.
 
@@ -356,14 +374,9 @@ SIMULATOR_UDID=40B418BA-9B70-4B34-9D13-81E3A3F281A9 bash openotter-ios/build.sh 
 
 ## 9. Future Controller Upgrade
 
-Pure pursuit is still a useful later upgrade after tangent-heading control has
-field data. It should add:
-
-- closest-path projection,
-- lookahead target selection by arc length,
-- curvature-based steering,
-- speed feedback PI control,
-- slow steering trim for servo/linkage bias.
-
-That is intentionally a later milestone. This PR should make the simple
-controller behave honestly first.
+The next investigated controller is `LQRTrack`, an LQR speed-and-steering
+controller based on the same path reference but with a small state-space model
+and quadratic cost. Its design is documented in
+`docs/superpowers/specs/2026-06-15-lqr-track-design.md`, and its math/pseudocode
+is documented in `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`.
+`TangentTrack` stays the understandable, field-tested baseline for comparison.

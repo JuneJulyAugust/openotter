@@ -26,7 +26,7 @@ final class WaypointPlannerTests: XCTestCase {
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
         XCTAssertEqual(cmd.steering, 0, accuracy: 1e-5)
         XCTAssertEqual(cmd.throttle, 0.5, accuracy: 1e-5)
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
     }
 
     func testTargetToRobotRightProducesPositiveSteering() {
@@ -67,7 +67,7 @@ final class WaypointPlannerTests: XCTestCase {
         XCTAssertLessThanOrEqual(planner.currentWaypointIndex, 3, "Startup should not skip over the early turning cue")
         XCTAssertGreaterThan(cmd.throttle, 0.25)
         XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
     }
 
     func testSteeringOutputAllowsFullSafeRange() {
@@ -97,7 +97,7 @@ final class WaypointPlannerTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(planner.currentWaypointIndex, 28)
         XCTAssertLessThanOrEqual(abs(cmd.steering), 1.0)
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
     }
 
     func testFigureEightMissionLoopsInsteadOfStoppingAfterOneLap() {
@@ -116,7 +116,7 @@ final class WaypointPlannerTests: XCTestCase {
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 100.0, pose: anchor))
         XCTAssertNotEqual(cmd, .neutral)
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
     }
 
     func testFigureEightMissionDoesNotCompleteWhenAllWaypointsAreInsideAcceptanceRadius() {
@@ -130,7 +130,7 @@ final class WaypointPlannerTests: XCTestCase {
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: anchor))
 
         XCTAssertNotEqual(cmd, .neutral)
-        XCTAssertEqual(cmd.source, .planner("WaypointPlanner"))
+        XCTAssertEqual(cmd.source, .planner("TangentTrack"))
     }
 
     func testFigureEightControllerStaysNearPathWithSlowYawResponse() {
@@ -195,16 +195,17 @@ final class WaypointPlannerTests: XCTestCase {
         )
     }
 
-    func testFigureEightControllerCanSlowLoadedSteeringOnceMoving() {
+    func testFigureEightControllerKeepsUsefulSpeedDuringLoadedSteeringOnceMoving() {
         let command = figureEightCommand(offsetAt: 30, lateralOffset: 0.2, arkitSpeedMps: 0.2)
 
         XCTAssertLessThan(command.steering, -0.1)
         XCTAssertLessThanOrEqual(abs(command.steering), 1.0)
-        XCTAssertLessThan(
+        XCTAssertGreaterThanOrEqual(
             command.throttle,
-            0.25,
-            "Once speed feedback says the car is moving, loaded steering may slow down to protect the lobe shape"
+            0.28,
+            "Loaded steering should slow the car but not make figure-eight tracking crawl"
         )
+        XCTAssertLessThanOrEqual(command.throttle, 0.36)
     }
 
     func testPlannerAdvancesToNextWaypointAfterReach() {
@@ -391,7 +392,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     private func envelopeOvershoot(pose: PoseEntry, length: Float, width: Float) -> Float {
-        max(0, abs(pose.x) - length / 2, abs(pose.z) - width / 2)
+        max(0, abs(pose.x) - width / 2, abs(pose.z) - length / 2)
     }
 
     private func percentile95(_ values: [Float]) -> Float {

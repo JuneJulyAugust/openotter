@@ -4,9 +4,9 @@ import Foundation
 
 struct WaypointPlannerConfig {
     /// Steering fraction applied at a 90° heading error (0–1).
-    /// Full deflection would be 1.0; 0.7 gives visible steering authority
+    /// Full deflection would be 1.0; 0.9 gives visible steering authority
     /// while the output cap below still protects the mechanical end stop.
-    var steeringFractionAt90Deg: Float = 0.7
+    var steeringFractionAt90Deg: Float = 0.9
 
     /// Hard cap for steering output. The firmware clamps normalized full range
     /// to 1000...2000 us and slews steering PWM so rapid full-range requests
@@ -54,7 +54,7 @@ struct WaypointPlannerConfig {
 
     /// When the car is far from the centerline and steering is loaded, reduce
     /// speed enough for the yaw loop to catch up.
-    var steeringThrottleScaleAtLimit: Float = 0.45
+    var steeringThrottleScaleAtLimit: Float = 0.70
 
     /// Steering command magnitude that counts as fully loaded for throttle
     /// shaping. This stays independent from `maxSteeringFraction`: the planner
@@ -82,13 +82,13 @@ protocol WaypointDebugProviding: AnyObject {
 
 // MARK: - WaypointPlanner
 
-/// Waypoint follower with path-tangent tracking for closed-loop courses.
+/// TangentTrack waypoint follower with path-tangent tracking for closed-loop courses.
 ///
 /// Finite waypoint missions still steer toward the current waypoint. Closed
 /// loops derive reference heading and curvature from the active path segment.
 final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
 
-    let name = "WaypointPlanner"
+    let name = "TangentTrack"
     let config: WaypointPlannerConfig
 
     init(config: WaypointPlannerConfig = .init()) {

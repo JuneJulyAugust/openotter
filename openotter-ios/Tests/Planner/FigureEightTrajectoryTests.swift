@@ -14,7 +14,7 @@ final class FigureEightTrajectoryTests: XCTestCase {
         XCTAssertEqual(waypoints.last?.acceptanceRadius ?? -1, 0.12, accuracy: 0.001)
     }
 
-    func testWaypointsStayWithinConfiguredHorizontalInfinityDimensions() {
+    func testWaypointsStayWithinConfiguredAppMapHorizontalInfinityDimensions() {
         let config = FigureEightTrajectory.Config(segmentCount: 720)
         let waypoints = FigureEightTrajectory.waypoints(config: config)
 
@@ -25,8 +25,8 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let hasTop = waypoints.contains(where: { $0.z > 0 })
         let hasBottom = waypoints.contains(where: { $0.z < 0 })
 
-        XCTAssertEqual(maxAbsX, config.length / 2, accuracy: 0.02)
-        XCTAssertEqual(maxAbsZ, config.width / 2, accuracy: 0.02)
+        XCTAssertEqual(maxAbsX, config.width / 2, accuracy: 0.02)
+        XCTAssertEqual(maxAbsZ, config.length / 2, accuracy: 0.02)
         XCTAssertTrue(hasLeft)
         XCTAssertTrue(hasRight)
         XCTAssertTrue(hasTop)
@@ -50,6 +50,14 @@ final class FigureEightTrajectoryTests: XCTestCase {
         let next = waypoints[1]
         XCTAssertGreaterThan(next.x, anchor.x)
         XCTAssertGreaterThan(next.z, anchor.z)
+
+        let rightLobePeak = waypoints[config.segmentCount / 4]
+        XCTAssertEqual(rightLobePeak.x, anchor.x, accuracy: 0.08)
+        XCTAssertGreaterThan(
+            rightLobePeak.z,
+            anchor.z + config.length / 2 - 0.08,
+            "The app map's horizontal +Z/right axis is the long axis of the figure eight"
+        )
     }
 
     func testPathCrossesAnchorAgainHalfwayThroughLoop() {

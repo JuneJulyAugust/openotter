@@ -1,6 +1,6 @@
 # Figure-Eight Path Following Technical Note
 
-**Status:** Companion technical document for tangent-heading PID/feedforward control
+**Status:** Companion technical document for `TangentTrack` PID/feedforward control
 **Date:** 2026-06-10
 **Feature:** Telegram/iOS `/figure8` basement trajectory following
 
@@ -15,6 +15,11 @@ pose.x      ground-plane x position, metres
 pose.z      ground-plane z position, metres
 pose.yaw    heading angle, radians
 ```
+
+The current controller is named `TangentTrack`. The Swift implementation type is
+still `WaypointPlanner`, because it also handles ordinary finite waypoint
+missions, but telemetry, tests, and design discussion use `TangentTrack` for
+this path-tangent PID/feedforward behavior.
 
 The controller's job is:
 
@@ -40,6 +45,17 @@ OpenOtter planner code uses a 2D ground-plane model:
 +x = robot forward when yaw = 0
 +z = robot right when yaw = 0
 ```
+
+`PoseMapView` renders those axes as:
+
+```text
+screen up    = +x forward
+screen right = +z right
+```
+
+So a "horizontal" figure eight in the app map is long in local `+Z/-Z` and
+shorter in local `+X/-X`. This is easy to mix up because the math variable
+`x` is not the app-map horizontal axis.
 
 That is enough for basement driving because the car is treated as moving on a
 flat floor. Height, roll, and pitch are ignored by this controller.
@@ -84,9 +100,9 @@ raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
 
 where `t` moves from `0` to `2 * pi`. The `pi / 2` shift makes `t = 0`
 the center crossing, and the negative signs make the first segment move
-forward/right. The raw curve is normalized to the configured length and width,
-then resampled by arc length so neighboring controller waypoints are nearly
-evenly spaced.
+forward/right. The raw curve is normalized to the configured app-map length
+and width, then resampled by arc length so neighboring controller waypoints are
+nearly evenly spaced.
 
 Intuition:
 
@@ -111,16 +127,18 @@ segments, neighboring waypoints are close enough for smooth steering, but not
 so dense that the controller spends all its time advancing tiny steps. The
 `3.2 m x 1.6 m` envelope is 80% of the previous `4.0 m x 2.0 m` default, which
 preserves the reference shape while adding wall margin for real tracking lag.
+Here, `length = 3.2 m` means left/right on the app map (`+Z/-Z`), and
+`width = 1.6 m` means forward/back on the app map (`+X/-X`).
 
 ## 4. Horizontal Infinity Shape And Start
 
 The requested shape is a horizontal infinity track: two side-by-side lobes
 that cross in the center, like the reference image. The current generator keeps
-that literal shape in the robot frame:
+that literal shape in the app map:
 
 ```text
-+x = long axis of the figure eight
-+z = right side of the figure eight
++z/-z = long left/right axis of the figure eight
++x/-x = shorter forward/back width of the figure eight
 ```
 
 Waypoint `0` is the center crossing at the car's pose when `/figure8` starts.
@@ -142,14 +160,15 @@ rotated the curve to make this tangent point forward; that made the math tidy
 but made the plotted path less like the requested horizontal track.
 
 The whole local path is still transformed through the car's yaw, so the
-horizontal infinity is horizontal relative to the car's starting heading, not
-hard-coded to an arbitrary ARKit world axis.
+horizontal infinity is horizontal in the app map relative to the car's
+starting pose, not hard-coded to an arbitrary ARKit world axis.
 
 ### Practical Initial Pose
 
 For the best basement test, place the car at the desired center crossing of the
-figure eight and point the nose along the desired long axis of the track before
-sending `/figure8`.
+figure eight. Point the nose along the desired forward/back width axis of the
+track before sending `/figure8`; the long 3.2 m lobe-to-lobe axis will run
+left/right across the car on the app map.
 
 That means:
 
@@ -165,16 +184,17 @@ With the current `3.2 m x 1.6 m` default, reserve roughly this clear area around
 the starting pose:
 
 ```text
-1.6 m forward from the start crossing
-1.6 m behind the start crossing
-0.8 m to the left
-0.8 m to the right
+0.8 m forward from the start crossing
+0.8 m behind the start crossing
+1.6 m to the left
+1.6 m to the right
 ```
 
-If you want the long axis of the 8 to face a different physical direction in
-the basement, rotate the car first, then send `/figure8`. The controller does
-not use a fixed room direction; it anchors the whole path to the car's pose and
-yaw at mission start.
+If you want the long left/right axis of the 8 to face a different physical
+direction in the basement, rotate the car so its `+Z/-Z` side axis lines up
+with that direction, then send `/figure8`. The controller does not use a fixed
+room direction; it anchors the whole path to the car's pose and yaw at mission
+start.
 
 The ideal starting alignment is not at the outside of a lobe. It is at the
 center crossing, with the green ego heading approximately aligned with the
@@ -318,7 +338,7 @@ positive path curvature -> path turns left          -> negative feedforward
 Current constants:
 
 ```text
-steeringFractionAt90Deg = 0.7
+steeringFractionAt90Deg = 0.9
 steeringGain = steeringFractionAt90Deg / (pi / 2)
 maxSteeringFraction = 1.0
 steeringThrottleFullLoadFraction = 0.45
@@ -334,7 +354,7 @@ curvatureSampleSpan = 3 waypoints each side
 That means:
 
 ```text
-90 degree heading error -> raw feedback about 0.7
+90 degree heading error -> raw feedback about 0.9
 larger errors plus feedforward -> steering capped to +/-1.0
 ```
 
@@ -410,7 +430,7 @@ Current constants:
 ```text
 minimumThrottleFraction = 0.35
 maxPoweredHeadingError  = 5 * pi / 6   # 150 degrees
-steeringThrottleScaleAtLimit = 0.45
+steeringThrottleScaleAtLimit = 0.70
 lateralThrottleSlowdownDistance = 0.20 m
 antiStallThrottleFraction = 0.75
 antiStallSpeedThresholdMps = 0.12
@@ -424,8 +444,9 @@ What this does:
   U-turn.
 - If the car is on the centerline, do not slow just because the planned path is
   curved.
-- If the car is off the centerline and steering is near the cap, slow down so
-  yaw can catch up before the car balloons outside the lobe.
+- If the car is off the centerline and steering is near the cap, slow down
+  enough for yaw to catch up, but keep at least 70% of the base throttle so
+  the figure-eight mission does not crawl once the car is already moving.
 - If the car is almost stopped, blend back toward useful breakaway throttle so
   static friction and loaded steering do not make it sit in place.
 
@@ -590,7 +611,7 @@ plan(context):
     return ControlCommand(
         steering = steering,
         throttle = throttle,
-        source = "WaypointPlanner"
+        source = "TangentTrack"
     )
 ```
 
@@ -769,29 +790,40 @@ This controller is intentionally simple, but it has the right control shape:
 - It has direct tests for steering sign, lateral-error correction, and a
   slow-yaw simulation that reproduces the outside-lobe failure.
 
-The main limitation is that the speed command is not yet true speed feedback.
-If the floor is slippery, carpet is high-friction, or battery voltage changes,
-the same throttle value may produce different vehicle speeds. A future upgrade
-should add speed PI control and pure pursuit curvature tracking.
+The main limitations are:
 
-## 12. Future Pure Pursuit Upgrade
+- speed command is still throttle-shaped feedback, not direct speed control,
+- steering output commands servo effort without measuring actual wheel angle,
+- the gains are tuned for the current basement path and may need logs for other
+  surfaces.
+
+The next investigated controller is `LQRTrack`, which should control steering
+and speed from the same path reference using a small state-space model and a
+quadratic cost. `TangentTrack` remains the field-tested baseline for comparing
+that upgrade. The LQR controller design is in
+`docs/superpowers/specs/2026-06-15-lqr-track-design.md`, with math and
+pseudocode in `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`.
+
+## 12. Future `LQRTrack` Comparison
 
 The current figure-eight controller follows the tangent of the current path
-segment and adds cross-track correction. Pure pursuit would improve this by
-choosing a lookahead point along the path, then turning according to the
-curvature needed to reach that lookahead point.
-
-The usual pure pursuit steering concept is:
+segment and adds cross-track correction. `LQRTrack` should improve this by
+controlling a vector of errors together:
 
 ```text
-curvature = 2 * localLookaheadY / lookaheadDistance^2
+state = [lateral error,
+         lateral error rate,
+         heading error,
+         heading error rate,
+         speed error]
 ```
 
-In OpenOtter's ground frame, `localLookaheadY` would correspond to the
-left/right offset of the lookahead point in robot-local coordinates. The
-controller could then map curvature to steering after calibration.
+Instead of hand-tuning separate steering and throttle rules, LQR chooses the
+steering and acceleration corrections that minimize a weighted sum of tracking
+error and actuator effort. The detailed LQR design is documented separately so
+the two controllers can be compared clearly.
 
-That upgrade should wait until the tangent-heading baseline has real basement data:
+That upgrade should wait until `TangentTrack` has real basement data:
 
 - Does ARKit yaw drift too much?
 - Is 0.12 m acceptance radius too loose or too tight?

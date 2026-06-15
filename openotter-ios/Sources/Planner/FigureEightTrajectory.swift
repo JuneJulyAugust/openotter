@@ -76,13 +76,16 @@ enum FigureEightTrajectory {
         }
         let maxAbsX = raw.map { abs($0.x) }.max() ?? 1
         let maxAbsZ = raw.map { abs($0.z) }.max() ?? 1
-        let xScale = config.length / 2
-        let zScale = config.width / 2
+        // PoseMapView renders robot +X as screen-up/forward and robot +Z as
+        // screen-right. The requested "horizontal" figure eight therefore
+        // uses +Z/-Z as the long app-map axis and +X/-X as the shorter width.
+        let xScale = config.width / 2
+        let zScale = config.length / 2
 
         return raw.map { point in
             (
-                x: point.x / maxAbsX * xScale,
-                z: point.z / maxAbsZ * zScale
+                x: point.z / maxAbsZ * xScale,
+                z: point.x / maxAbsX * zScale
             )
         }
     }
