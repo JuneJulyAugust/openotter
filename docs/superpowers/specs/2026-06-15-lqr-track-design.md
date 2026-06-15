@@ -1,9 +1,9 @@
 # LQRTrack Speed And Steering Control Design
 
-**Status:** Proposed controller design, not the default `/figure8` controller
+**Status:** Initial implementation behind `/figure8_lqr`, not the default `/figure8` controller
 **Date:** 2026-06-15
 **Baseline controller:** `TangentTrack`
-**Proposed controller:** `LQRTrack`
+**Experimental controller:** `LQRTrack`
 **References:**
 
 - PythonRobotics LQR speed/steer example:
@@ -20,9 +20,9 @@ figure-eight path, computes tangent heading and cross-track error, then uses
 PID-shaped steering plus curvature feedforward. That is practical and easy to
 debug, so it should remain the default baseline.
 
-`LQRTrack` is the next controller to investigate. Its goal is not to be more
-complicated for its own sake. Its goal is to control the main tracking errors
-together:
+`LQRTrack` is the experimental controller now available for comparison. Its
+goal is not to be more complicated for its own sake. Its goal is to control
+the main tracking errors together:
 
 - lateral position error,
 - lateral error rate,
@@ -38,7 +38,7 @@ errors against steering and throttle effort.
 ## 2. Scope
 
 This design keeps `TangentTrack` as `/figure8` and adds `LQRTrack` as a
-separate selectable controller after implementation. Recommended command shape:
+separate selectable controller:
 
 ```text
 /figure8      -> TangentTrack baseline
@@ -61,8 +61,8 @@ length = 3.2 m along +Z/-Z
 width  = 1.6 m along +X/-X
 ```
 
-`FigureEightTrajectory` remains the path generator. A future implementation
-should factor the duplicated reference math into a small shared helper:
+`FigureEightTrajectory` remains the path generator. Both controllers use the
+same shared helper:
 
 ```text
 PathReference.project(pose, waypoints, currentIndex)
@@ -84,7 +84,7 @@ OpenOtter sign conventions:
 
 ```text
 x = [
-  e,          # signed lateral error, metres
+  e,          # LQR lateral state, metres
   e_dot,      # lateral error rate, metres/second
   theta_e,    # heading error to path tangent, radians
   theta_dot,  # heading error rate, radians/second
@@ -97,13 +97,16 @@ u = [
 ]
 ```
 
-Recommended signs:
+OpenOtter reference signs:
 
-- `e > 0`: car is right of the path.
+- `crossTrackError > 0`: car is right of the path.
 - `theta_e = pose.yaw - referenceYaw`.
 - Positive normalized steering means right.
-- If the car is right of the path, the controller should normally command left
-  steering, so tests must lock this sign.
+- `LQRTrack` feeds `e = -crossTrackError` into the LQR state. This makes a
+  right-of-path error produce left steering while keeping positive heading
+  error as a right-steering correction.
+- If the path reference jumps far ahead during reacquisition, derivative
+  memory is reset so stale lateral-error rate does not dominate steering.
 
 The PythonRobotics example computes steering as curvature feedforward plus LQR
 feedback, and acceleration as the second LQR output. OpenOtter should keep that
@@ -207,9 +210,9 @@ increase derivative filtering, or reduce `steeringScale`. If the car crawls,
 raise target speed or lower throttle `R`, but keep the safety supervisor as the
 final arbiter.
 
-## 8. Implementation Plan
+## 8. Implementation
 
-Recommended code structure:
+Implemented code structure:
 
 ```text
 openotter-ios/Sources/Planner/PathReference.swift
@@ -226,7 +229,11 @@ openotter-ios/Sources/Planner/PlannerProtocol.swift
 
 openotter-ios/Sources/Agent/KeywordInterpreter.swift
 openotter-ios/Sources/Agent/ActionDispatcher.swift
-  Add /figure8_lqr command.
+  Adds /figure8_lqr command and keeps /figure8 on TangentTrack.
+
+tools/trajectory-sim/
+  Local Python package for controller prototyping, deterministic simulation,
+  and SVG comparison plots.
 ```
 
 Do not add a heavy math dependency. The state is only 5 values and the input is
@@ -234,23 +241,23 @@ Do not add a heavy math dependency. The state is only 5 values and the input is
 
 ## 9. Tests
 
-Add tests before enabling field use:
+Initial implementation coverage:
 
-- `PathReferenceTests`: projection, signed lateral error, tangent yaw, app-map
-  `+Z` long-axis convention.
 - `LQRMathTests`: DARE converges for a known small system, output gain is
   finite, matrix inverse rejects singular inputs.
 - `LQRTrackPlannerTests`: right-of-path error commands left steering, left
-  error commands right steering, below target speed increases throttle, above
-  target speed reduces throttle.
-- `LQRTrackSimulationTests`: deterministic slow-yaw model follows the same
-  figure-eight envelope at least as well as `TangentTrack` before field use.
+  error commands right steering, reference reacquire resets derivative memory,
+  below target speed increases throttle, above target speed reduces throttle,
+  and the deterministic slow-yaw model makes progress inside the envelope.
 - `ActionDispatcherTests` and `AgentRuntimeTests`: `/figure8_lqr` routes to the
   LQR controller without changing `/figure8`.
+- `tools/trajectory-sim/tests`: Python path shape, arc-length sampling,
+  TangentTrack/LQRTrack progress, speed feedback, and lateral sign behavior.
 
 ## 10. Rollout Criteria
 
-Only field-test `LQRTrack` after all of these are true:
+`LQRTrack` is safe to field-test as an explicit experiment after these remain
+true:
 
 - simulator tests pass,
 - output steering is always finite and clamped to `[-1, 1]`,

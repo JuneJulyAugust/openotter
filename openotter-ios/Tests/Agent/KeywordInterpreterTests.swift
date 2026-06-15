@@ -59,12 +59,22 @@ final class KeywordInterpreterTests: XCTestCase {
 
     func testFigureEightCommandBySlashAlias() {
         let action = interpreter.interpret("/figure8")
-        XCTAssertEqual(action, .figureEight)
+        XCTAssertEqual(action, .figureEight(controller: .tangentTrack))
     }
 
     func testFigureEightCommandByShortAlias() {
         let action = interpreter.interpret("fig8")
-        XCTAssertEqual(action, .figureEight)
+        XCTAssertEqual(action, .figureEight(controller: .tangentTrack))
+    }
+
+    func testFigureEightLQRCommandBySlashAlias() {
+        let action = interpreter.interpret("/figure8_lqr")
+        XCTAssertEqual(action, .figureEight(controller: .lqrTrack))
+    }
+
+    func testFigureEightLQRCommandByBareAlias() {
+        let action = interpreter.interpret("fig8 lqr")
+        XCTAssertEqual(action, .figureEight(controller: .lqrTrack))
     }
 
     // MARK: - Speed commands

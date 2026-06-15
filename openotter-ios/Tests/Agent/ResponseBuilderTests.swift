@@ -18,9 +18,9 @@ final class ResponseBuilderTests: XCTestCase {
     }
 
     func testFigureEightStart() {
-        let result = ActionResult(success: true, message: "Starting figure-8 mission")
-        let text = builder.build(action: .figureEight, result: result)
-        XCTAssertEqual(text, "Starting figure-8 mission")
+        let result = ActionResult(success: true, message: "Starting TangentTrack figure-8 mission")
+        let text = builder.build(action: .figureEight(controller: .tangentTrack), result: result)
+        XCTAssertEqual(text, "Starting TangentTrack figure-8 mission")
     }
 
     func testMoveBlocked() {

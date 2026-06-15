@@ -1,6 +1,6 @@
 # LQRTrack Technical Note
 
-**Status:** Technical design for proposed `LQRTrack` controller
+**Status:** Technical note for initial `LQRTrack` implementation
 **Date:** 2026-06-15
 **Companion design:** `docs/superpowers/specs/2026-06-15-lqr-track-design.md`
 
@@ -66,7 +66,7 @@ x = [
 Definitions:
 
 ```text
-e          signed lateral error from the path, metres
+e          LQR lateral state, metres
 e_dot      (e - previous_e) / dt
 theta_e    wrapToPi(pose.yaw - referenceYaw)
 theta_dot  wrapToPi(theta_e - previous_theta_e) / dt
@@ -76,13 +76,16 @@ v_e        measuredSpeedMps - targetSpeedMps
 OpenOtter sign convention:
 
 ```text
-e > 0 means the car is right of the path.
+crossTrackError > 0 means the car is right of the path.
+LQR state e = -crossTrackError.
 positive steering means steer right.
 theta_e > 0 means the car yaw is left of the path tangent.
 ```
 
-The sign tests must verify behavior directly, because sign mistakes are easy
-and field-visible.
+That sign conversion is deliberate. A car right of the path should usually
+steer left, while a positive heading error at the center crossing should steer
+right to align with the first forward/right branch. The sign tests verify this
+directly, because sign mistakes are easy and field-visible.
 
 ## 4. Path Reference
 
@@ -96,7 +99,8 @@ projection = clamp(dot(pose - P0, segment) / dot(segment, segment), 0, 1)
 referencePoint = P0 + projection * segment
 referenceYaw = atan2(-(P1.z - P0.z), P1.x - P0.x)
 pathRight = (sin(referenceYaw), cos(referenceYaw))
-e = dot(pose - referencePoint, pathRight)
+crossTrackError = dot(pose - referencePoint, pathRight)
+e = -crossTrackError
 curvature = smoothed heading change / arc length
 ```
 
@@ -187,17 +191,21 @@ the error grows. Keep feedforward:
 steering_ff = -curvatureFeedforwardGain * curvature
 ```
 
-Then add LQR feedback:
+Then add LQR feedback. The discrete LQR solve returns `K`, and the conventional
+control law is `u = -Kx`. Because OpenOtter steering command sign is opposite
+the bicycle steering angle sign used in the model, the normalized steering
+command uses the converted feedback sign:
 
 ```text
-u = -K x
-steering_fb = steeringScale * u[0]
+feedback = K * x
+steering_fb = steeringScale * feedback[0]
 steering = clamp(steering_ff + steering_fb, -1, 1)
 ```
 
 Speed control uses the acceleration output as a throttle trim:
 
 ```text
+u = -K x
 baseThrottle = throttleForTargetSpeed(targetSpeedMps)
 throttleTrim = throttleAccelScale * u[1]
 throttle = clamp(baseThrottle + throttleTrim, 0, maxThrottle)
@@ -253,9 +261,13 @@ plan(context):
     measuredSpeed = bestFinite(context.motorSpeedMps, context.arkitSpeedMps) or 0
     targetSpeed = targetSpeedFor(reference.curvature)
 
-    e = reference.crossTrackError
-    eDot = (e - previousE) / dt
+    e = -reference.crossTrackError
     thetaE = wrapToPi(context.pose.yaw - reference.tangentYaw)
+    if reference.index jumps more than 8 samples from previousReferenceIndex:
+        previousE = e
+        previousThetaE = thetaE
+
+    eDot = (e - previousE) / dt
     thetaDot = wrapToPi(thetaE - previousThetaE) / dt
     vError = measuredSpeed - targetSpeed
 
@@ -267,9 +279,10 @@ plan(context):
     if K is invalid:
         return neutral with source "LQRTrack"
 
-    u = -K * state
+    feedback = K * state
+    u = -feedback
     steeringFF = -curvatureFeedforwardGain * reference.curvature
-    steering = clamp(steeringFF + steeringScale * u[0], -1, 1)
+    steering = clamp(steeringFF + steeringScale * feedback[0], -1, 1)
 
     baseThrottle = baseThrottleForTargetSpeed(targetSpeed, maxThrottle)
     throttle = clamp(baseThrottle + throttleAccelScale * u[1], 0, maxThrottle)
@@ -277,6 +290,7 @@ plan(context):
     previousE = e
     previousThetaE = thetaE
     previousTimestamp = context.timestamp
+    previousReferenceIndex = reference.index
 
     return ControlCommand(
         steering = steering,

@@ -17,6 +17,8 @@ feedback, and curvature feedforward. This baseline controller is named
 The target behavior is:
 
 - `/figure8` starts a closed figure-eight mission from the car's current pose.
+- `/figure8_lqr` starts the same path with the experimental `LQRTrack`
+  controller.
 - The first target segment enters the first lobe with bounded steering, not
   hard-left or hard-right.
 - Steering sign matches the firmware PWM convention.
@@ -36,7 +38,7 @@ Root causes in the first implementation:
 
 1. **Steering sign was inverted.** Firmware and `PwmMapping` define negative
    steering as left and positive steering as right, but the first
-   `WaypointPlanner` implementation produced negative steering for a target on
+   `TangentTrackPlanner` implementation produced negative steering for a target on
    robot-right.
 2. **Figure-eight waypoints were not anchored to the current pose.** The
    command built a small path around ARKit world `(0, 0)` instead of the car's
@@ -117,7 +119,7 @@ z = screen right
 Therefore a horizontal figure-eight on the app map uses `+Z/-Z` as the long
 left/right axis and `+X/-X` as the shorter forward/back width. A target at
 robot-right must produce **positive** steering. These invariants are locked by
-`FigureEightTrajectoryTests` and `WaypointPlannerTests`.
+`FigureEightTrajectoryTests` and `TangentTrackPlannerTests`.
 
 ## 4. Controller Strategy
 
@@ -313,17 +315,28 @@ regression model.
 Telegram /figure8
   -> KeywordInterpreter.figureEight
   -> ActionDispatcher
-  -> PlannerGoal.followFigureEight(config, maxThrottle)
-  -> PlannerOrchestrator switches to WaypointPlanner
+  -> PlannerGoal.followFigureEight(config, maxThrottle, controller: .tangentTrack)
+  -> PlannerOrchestrator switches to TangentTrackPlanner
   -> first control tick anchors waypoints from PlannerContext.pose
   -> TangentTrack emits steering/throttle
   -> SafetySupervisor may brake
   -> STM32 receives PWM command
 ```
 
-Anchoring inside `WaypointPlanner.plan(context:)` is deliberate. Telegram does
+Anchoring inside `TangentTrackPlanner.plan(context:)` is deliberate. Telegram does
 not have pose. The planner does. The Swift implementation type remains
-`WaypointPlanner`, while its controller/telemetry name is `TangentTrack`.
+`TangentTrackPlanner`, while its controller/telemetry name is `TangentTrack`.
+
+Experimental LQR flow uses the same trajectory and anchor:
+
+```text
+Telegram /figure8_lqr
+  -> KeywordInterpreter.figureEight(controller: .lqrTrack)
+  -> ActionDispatcher
+  -> PlannerGoal.followFigureEight(config, maxThrottle, controller: .lqrTrack)
+  -> PlannerOrchestrator switches to LQRTrackPlanner
+  -> LQRTrack emits steering/throttle from shared path reference state
+```
 
 ## 7. Component Ownership
 
@@ -331,12 +344,18 @@ not have pose. The planner does. The Swift implementation type remains
 
 - `FigureEightTrajectory` generates waypoint paths.
 - `RobotGeometry` owns yaw/local/world transformations.
-- `WaypointPlanner` implements the `TangentTrack` controller: waypoint
+- `TangentTrackPlanner` implements the `TangentTrack` controller: waypoint
   advancement, tangent-heading feedback, curvature feedforward, throttle
   shaping, and figure-eight looping.
-- `PlannerOrchestrator` routes figure-eight goals to the `WaypointPlanner`
-  implementation and publishes active/reference waypoints for UI overlay.
-- `ActionDispatcher` maps `/figure8` to a figure-eight planner goal.
+- `PathReference` owns shared projection, tangent heading, signed
+  cross-track error, and curvature for controller comparison.
+- `LQRTrackPlanner` implements the experimental `LQRTrack` controller for
+  `/figure8_lqr`.
+- `PlannerOrchestrator` routes figure-eight goals to the `TangentTrackPlanner`
+  or `LQRTrackPlanner` implementation and publishes active/reference waypoints
+  for UI overlay.
+- `ActionDispatcher` maps `/figure8` and `/figure8_lqr` to figure-eight planner
+  goals with explicit controller selection.
 - `PoseMapView` receives active waypoints through `SelfDrivingView`.
 
 ### Firmware
@@ -357,13 +376,17 @@ The implementation is covered by:
 - `RobotGeometryTests` for forward/right axis invariants.
 - `FigureEightTrajectoryTests` for defaults, horizontal infinity bounds,
   anchoring, yaw rotation, center crossing, and loop continuity.
-- `WaypointPlannerTests` for steering sign, anchored figure-eight startup,
+- `TangentTrackPlannerTests` for steering sign, anchored figure-eight startup,
   steering cap, missed-waypoint skip-ahead, lateral-error correction from a
   path tangent, finite waypoint completion, closed figure-eight looping, and a
   slow-yaw simulation that checks segment cross-track error, reference-heading
   error, and envelope overshoot.
 - `PlannerOrchestratorTests` for routing and active waypoint publication.
 - `ActionDispatcherTests` and `AgentRuntimeTests` for `/figure8` command flow.
+- `LQRMathTests` and `LQRTrackPlannerTests` for the experimental LQR speed and
+  steering controller.
+- `tools/trajectory-sim/tests` for local Python prototype parity and
+  simulation behavior.
 - Existing safety tests still cover forward/reverse braking behavior.
 
 Verification command:
@@ -372,11 +395,12 @@ Verification command:
 SIMULATOR_UDID=40B418BA-9B70-4B34-9D13-81E3A3F281A9 bash openotter-ios/build.sh test
 ```
 
-## 9. Future Controller Upgrade
+## 9. Controller Comparison
 
-The next investigated controller is `LQRTrack`, an LQR speed-and-steering
-controller based on the same path reference but with a small state-space model
-and quadratic cost. Its design is documented in
+`LQRTrack` is now available as `/figure8_lqr`, an experimental LQR
+speed-and-steering controller based on the same path reference but with a small
+state-space model and quadratic cost. Its design is documented in
 `docs/superpowers/specs/2026-06-15-lqr-track-design.md`, and its math/pseudocode
 is documented in `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`.
-`TangentTrack` stays the understandable, field-tested baseline for comparison.
+`TangentTrack` stays the understandable, field-tested `/figure8` baseline for
+comparison.

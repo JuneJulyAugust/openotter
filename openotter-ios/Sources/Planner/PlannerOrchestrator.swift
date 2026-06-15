@@ -17,7 +17,8 @@ final class PlannerOrchestrator: ObservableObject {
     private let supervisor = SafetySupervisor()
     private weak var modeReceiver: (any OperatingModeReceiving)?
     private var constantSpeedPlanner: ConstantSpeedPlanner
-    private var waypointPlanner: WaypointPlanner
+    private var tangentTrackPlanner: TangentTrackPlanner
+    private var lqrTrackPlanner: LQRTrackPlanner
 
     // MARK: - Published State
 
@@ -55,7 +56,8 @@ final class PlannerOrchestrator: ObservableObject {
         self.activePlanner = planner
         self.modeReceiver = modeReceiver
         self.constantSpeedPlanner = planner as? ConstantSpeedPlanner ?? ConstantSpeedPlanner()
-        self.waypointPlanner = planner as? WaypointPlanner ?? WaypointPlanner()
+        self.tangentTrackPlanner = planner as? TangentTrackPlanner ?? TangentTrackPlanner()
+        self.lqrTrackPlanner = planner as? LQRTrackPlanner ?? LQRTrackPlanner()
         modeReceiver?.setOperatingMode(.park)
     }
 
@@ -153,9 +155,20 @@ final class PlannerOrchestrator: ObservableObject {
 
     private func ensurePlanner(for goal: PlannerGoal) {
         switch goal {
-        case .followWaypoints, .followFigureEight:
-            if !(activePlanner is WaypointPlanner) {
-                activePlanner = waypointPlanner
+        case .followWaypoints:
+            if !(activePlanner is TangentTrackPlanner) {
+                activePlanner = tangentTrackPlanner
+            }
+        case .followFigureEight(_, _, let controller):
+            switch controller {
+            case .tangentTrack:
+                if !(activePlanner is TangentTrackPlanner) {
+                    activePlanner = tangentTrackPlanner
+                }
+            case .lqrTrack:
+                if !(activePlanner is LQRTrackPlanner) {
+                    activePlanner = lqrTrackPlanner
+                }
             }
         case .constantThrottle, .idle:
             if !(activePlanner is ConstantSpeedPlanner) {
@@ -165,7 +178,7 @@ final class PlannerOrchestrator: ObservableObject {
     }
 
     private func refreshPlannerDebugState() {
-        if let waypointProvider = activePlanner as? WaypointDebugProviding {
+        if let waypointProvider = activePlanner as? PathDebugProviding {
             activeWaypoints = waypointProvider.activeWaypoints
             if !activeWaypoints.isEmpty {
                 referenceWaypoints = activeWaypoints
@@ -179,8 +192,11 @@ final class PlannerOrchestrator: ObservableObject {
         if let speedPlanner = planner as? ConstantSpeedPlanner {
             constantSpeedPlanner = speedPlanner
         }
-        if let wpPlanner = planner as? WaypointPlanner {
-            waypointPlanner = wpPlanner
+        if let wpPlanner = planner as? TangentTrackPlanner {
+            tangentTrackPlanner = wpPlanner
+        }
+        if let lqrPlanner = planner as? LQRTrackPlanner {
+            lqrTrackPlanner = lqrPlanner
         }
     }
 }

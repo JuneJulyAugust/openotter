@@ -261,7 +261,7 @@ final class PlannerOrchestratorTests: XCTestCase {
 
     // MARK: - Planner Routing
 
-    func testSetGoalFollowWaypointsSwitchesToWaypointPlanner() {
+    func testSetGoalFollowWaypointsSwitchesToTangentTrackPlanner() {
         let constantPlanner = ConstantSpeedPlanner()
         let orchestrator = PlannerOrchestrator(planner: constantPlanner)
 
@@ -271,7 +271,7 @@ final class PlannerOrchestratorTests: XCTestCase {
             [Waypoint(x: 0.4, z: 0.0, acceptanceRadius: 0.2)],
             maxThrottle: 0.4
         ))
-        XCTAssertTrue(orchestrator.activePlanner is WaypointPlanner)
+        XCTAssertTrue(orchestrator.activePlanner is TangentTrackPlanner)
 
         let cmd = orchestrator.tick(
             context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0)
@@ -281,16 +281,17 @@ final class PlannerOrchestratorTests: XCTestCase {
         XCTAssertEqual(orchestrator.activeWaypoints.count, 1)
     }
 
-    func testSetGoalFollowFigureEightSwitchesToWaypointPlannerAndPublishesAnchoredWaypoints() {
+    func testSetGoalFollowFigureEightSwitchesToTangentTrackPlannerAndPublishesAnchoredWaypoints() {
         let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
         let anchor = PoseEntry(timestamp: 0.1, x: 1.5, y: 0, z: -0.5, yaw: 0, confidence: 1)
 
         orchestrator.setGoal(.followFigureEight(
             config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
-            maxThrottle: 0.4
+            maxThrottle: 0.4,
+            controller: .tangentTrack
         ))
 
-        XCTAssertTrue(orchestrator.activePlanner is WaypointPlanner)
+        XCTAssertTrue(orchestrator.activePlanner is TangentTrackPlanner)
 
         let cmd = orchestrator.tick(
             context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0, pose: anchor)
@@ -303,6 +304,32 @@ final class PlannerOrchestratorTests: XCTestCase {
         XCTAssertGreaterThan(orchestrator.activeWaypoints[1].x, anchor.x)
         XCTAssertGreaterThan(orchestrator.activeWaypoints[1].z, anchor.z)
         XCTAssertGreaterThan(cmd.throttle, 0.25)
+        XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
+    }
+
+    func testSetGoalFollowFigureEightLQRSwitchesToLQRTrackPlannerAndPublishesAnchoredWaypoints() {
+        let orchestrator = PlannerOrchestrator(planner: ConstantSpeedPlanner())
+        let anchor = PoseEntry(timestamp: 0.1, x: 1.5, y: 0, z: -0.5, yaw: 0, confidence: 1)
+
+        orchestrator.setGoal(.followFigureEight(
+            config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
+            maxThrottle: 0.4,
+            controller: .lqrTrack
+        ))
+
+        XCTAssertTrue(orchestrator.activePlanner is LQRTrackPlanner)
+
+        let cmd = orchestrator.tick(
+            context: PlannerTestFactory.context(timestamp: 0.1, forwardDepth: 10.0, arkitSpeedMps: 0.0, pose: anchor)
+        )
+
+        XCTAssertEqual(cmd.source, .planner("LQRTrack"))
+        XCTAssertEqual(orchestrator.activeWaypoints.count, 240)
+        XCTAssertEqual(orchestrator.activeWaypoints.first?.x ?? -1, anchor.x, accuracy: 0.001)
+        XCTAssertEqual(orchestrator.activeWaypoints.first?.z ?? -1, anchor.z, accuracy: 0.001)
+        XCTAssertGreaterThan(orchestrator.activeWaypoints[1].x, anchor.x)
+        XCTAssertGreaterThan(orchestrator.activeWaypoints[1].z, anchor.z)
+        XCTAssertGreaterThan(cmd.throttle, 0.0)
         XCTAssertLessThanOrEqual(cmd.throttle, 0.4)
     }
 

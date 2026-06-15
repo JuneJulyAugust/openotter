@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Config
 
-struct WaypointPlannerConfig {
+struct TangentTrackConfig {
     /// Steering fraction applied at a 90° heading error (0–1).
     /// Full deflection would be 1.0; 0.9 gives visible steering authority
     /// while the output cap below still protects the mechanical end stop.
@@ -75,23 +75,23 @@ struct WaypointPlannerConfig {
     var steeringGain: Float { steeringFractionAt90Deg / (.pi / 2) }
 }
 
-protocol WaypointDebugProviding: AnyObject {
+protocol PathDebugProviding: AnyObject {
     var activeWaypoints: [Waypoint] { get }
     var currentWaypointIndex: Int { get }
 }
 
-// MARK: - WaypointPlanner
+// MARK: - TangentTrackPlanner
 
 /// TangentTrack waypoint follower with path-tangent tracking for closed-loop courses.
 ///
 /// Finite waypoint missions still steer toward the current waypoint. Closed
 /// loops derive reference heading and curvature from the active path segment.
-final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
+final class TangentTrackPlanner: PlannerProtocol, PathDebugProviding {
 
     let name = "TangentTrack"
-    let config: WaypointPlannerConfig
+    let config: TangentTrackConfig
 
-    init(config: WaypointPlannerConfig = .init()) {
+    init(config: TangentTrackConfig = .init()) {
         self.config = config
     }
 
@@ -119,12 +119,13 @@ final class WaypointPlanner: PlannerProtocol, WaypointDebugProviding {
             waypoints = wps
             maxThrottle = throttle
             isClosedLoop = false
-        case .followFigureEight(let config, let throttle):
+        case .followFigureEight(let config, let throttle, let controller):
+            guard controller == .tangentTrack else { break }
             pendingFigureEightConfig = config
             maxThrottle = throttle
             isClosedLoop = true
         case .constantThrottle:
-            break // Not handled by WaypointPlanner
+            break // Not handled by TangentTrackPlanner
         }
     }
 

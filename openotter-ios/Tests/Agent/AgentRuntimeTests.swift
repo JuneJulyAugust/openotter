@@ -61,10 +61,26 @@ final class AgentRuntimeTests: XCTestCase {
 
     func testFigureEightCommandDispatchesWaypointGoal() {
         let response = runtime.handleMessage("/figure8")
-        XCTAssertEqual(response, "Starting figure-8 mission")
+        XCTAssertEqual(response, "Starting TangentTrack figure-8 mission")
 
-        if case .followFigureEight(let config, let maxThrottle) = goalReceiver.lastGoal {
+        if case .followFigureEight(let config, let maxThrottle, let controller) = goalReceiver.lastGoal {
             XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
+            XCTAssertEqual(controller, .tangentTrack)
+            XCTAssertEqual(config.segmentCount, 240)
+            XCTAssertEqual(config.length, 3.2, accuracy: 0.001)
+            XCTAssertEqual(config.width, 1.6, accuracy: 0.001)
+        } else {
+            XCTFail("Expected followFigureEight goal")
+        }
+    }
+
+    func testFigureEightLQRCommandDispatchesLQRGoal() {
+        let response = runtime.handleMessage("/figure8_lqr")
+        XCTAssertEqual(response, "Starting LQRTrack figure-8 mission")
+
+        if case .followFigureEight(let config, let maxThrottle, let controller) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
+            XCTAssertEqual(controller, .lqrTrack)
             XCTAssertEqual(config.segmentCount, 240)
             XCTAssertEqual(config.length, 3.2, accuracy: 0.001)
             XCTAssertEqual(config.width, 1.6, accuracy: 0.001)

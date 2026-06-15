@@ -1,7 +1,7 @@
 import XCTest
 @testable import openotter
 
-final class WaypointPlannerTests: XCTestCase {
+final class TangentTrackPlannerTests: XCTestCase {
 
     private let defaultPose = PoseEntry(
         timestamp: 0,
@@ -13,14 +13,14 @@ final class WaypointPlannerTests: XCTestCase {
     )
 
     func testEmptyGoalIsNeutral() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([], maxThrottle: 0.5))
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 1.0))
         XCTAssertEqual(cmd, .neutral)
     }
 
     func testTargetAheadHasZeroSteeringWithForwardHeading() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([Waypoint(x: 1.0, z: 0.0, acceptanceRadius: 0.2)], maxThrottle: 0.5))
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
@@ -30,7 +30,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     func testTargetToRobotRightProducesPositiveSteering() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([Waypoint(x: 0.5, z: 0.5, acceptanceRadius: 0.1)], maxThrottle: 0.6))
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
@@ -40,7 +40,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     func testTargetToRobotLeftProducesNegativeSteering() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([Waypoint(x: 0.5, z: -0.5, acceptanceRadius: 0.1)], maxThrottle: 0.6))
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
@@ -51,7 +51,7 @@ final class WaypointPlannerTests: XCTestCase {
 
     func testFigureEightGoalAnchorsAtFirstPoseAndStartsForward() {
         let anchor = PoseEntry(timestamp: 2.0, x: 2.0, y: 0, z: -1.0, yaw: 0, confidence: 1)
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followFigureEight(
             config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
             maxThrottle: 0.4
@@ -71,7 +71,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     func testSteeringOutputAllowsFullSafeRange() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([Waypoint(x: 0, z: 1, acceptanceRadius: 0.1)], maxThrottle: 0.6))
 
         let cmd = planner.plan(context: PlannerTestFactory.context(timestamp: 0.0, pose: defaultPose))
@@ -82,7 +82,7 @@ final class WaypointPlannerTests: XCTestCase {
 
     func testClosedLoopPlannerSkipsAheadWhenCarMissesCurrentWaypoint() {
         let anchor = PoseEntry(timestamp: 0, x: 0, y: 0, z: 0, yaw: 0, confidence: 1)
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followFigureEight(
             config: .init(segmentCount: 240, length: 4.0, width: 2.0, acceptanceRadius: 0.18),
             maxThrottle: 0.6
@@ -102,7 +102,7 @@ final class WaypointPlannerTests: XCTestCase {
 
     func testFigureEightMissionLoopsInsteadOfStoppingAfterOneLap() {
         let anchor = PoseEntry(timestamp: 0, x: 0, y: 0, z: 0, yaw: 0, confidence: 1)
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followFigureEight(
             config: .init(segmentCount: 24, length: 1.2, width: 0.8, acceptanceRadius: 0.08),
             maxThrottle: 0.6
@@ -121,7 +121,7 @@ final class WaypointPlannerTests: XCTestCase {
 
     func testFigureEightMissionDoesNotCompleteWhenAllWaypointsAreInsideAcceptanceRadius() {
         let anchor = PoseEntry(timestamp: 0, x: 0, y: 0, z: 0, yaw: 0, confidence: 1)
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followFigureEight(
             config: .init(segmentCount: 12, length: 0.2, width: 0.2, acceptanceRadius: 10.0),
             maxThrottle: 0.6
@@ -134,7 +134,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     func testFigureEightControllerStaysNearPathWithSlowYawResponse() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followFigureEight(
             config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
             maxThrottle: 0.4
@@ -209,7 +209,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     func testPlannerAdvancesToNextWaypointAfterReach() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([
             Waypoint(x: 0.4, z: 0.4, acceptanceRadius: 0.1),
             Waypoint(x: 0.4, z: -0.4, acceptanceRadius: 0.1)
@@ -226,7 +226,7 @@ final class WaypointPlannerTests: XCTestCase {
     }
 
     func testPlannerBecomesNeutralAfterAllWaypointsReached() {
-        let planner = WaypointPlanner()
+        let planner = TangentTrackPlanner()
         planner.setGoal(.followWaypoints([
             Waypoint(x: 0.2, z: 0.0, acceptanceRadius: 0.2),
             Waypoint(x: 0.4, z: 0.0, acceptanceRadius: 0.2)
@@ -253,7 +253,7 @@ final class WaypointPlannerTests: XCTestCase {
         let maxEnvelopeOvershoot: Float
     }
 
-    private func simulateFigureEight(planner: WaypointPlanner,
+    private func simulateFigureEight(planner: TangentTrackPlanner,
                                      stepCount: Int,
                                      yawGain: Float,
                                      throttleToMps: Float,
@@ -316,9 +316,9 @@ final class WaypointPlannerTests: XCTestCase {
     private func figureEightCommand(offsetAt index: Int,
                                     lateralOffset: Float,
                                     arkitSpeedMps: Double? = nil) -> ControlCommand {
-        var config = WaypointPlannerConfig()
+        var config = TangentTrackConfig()
         config.headingDerivativeGain = 0
-        let planner = WaypointPlanner(config: config)
+        let planner = TangentTrackPlanner(config: config)
         planner.setGoal(.followFigureEight(
             config: .init(segmentCount: 240, length: 3.2, width: 1.6, acceptanceRadius: 0.12),
             maxThrottle: 0.4

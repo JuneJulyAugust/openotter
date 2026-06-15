@@ -17,7 +17,7 @@ pose.yaw    heading angle, radians
 ```
 
 The current controller is named `TangentTrack`. The Swift implementation type is
-still `WaypointPlanner`, because it also handles ordinary finite waypoint
+still `TangentTrackPlanner`, because it also handles ordinary finite waypoint
 missions, but telemetry, tests, and design discussion use `TangentTrack` for
 this path-tangent PID/feedforward behavior.
 
@@ -85,7 +85,7 @@ world.x = anchor.x + local_x * forward_world.x + local_z * right_world.x
 world.z = anchor.z + local_x * forward_world.z + local_z * right_world.z
 ```
 
-This is why `/figure8` is now anchored inside `WaypointPlanner.plan(context:)`.
+This is why `/figure8` is now anchored inside `TangentTrackPlanner.plan(context:)`.
 The Telegram command does not know the current pose, but the planner does.
 
 ## 3. Figure-Eight Path Shape
@@ -797,14 +797,14 @@ The main limitations are:
 - the gains are tuned for the current basement path and may need logs for other
   surfaces.
 
-The next investigated controller is `LQRTrack`, which should control steering
-and speed from the same path reference using a small state-space model and a
-quadratic cost. `TangentTrack` remains the field-tested baseline for comparing
-that upgrade. The LQR controller design is in
-`docs/superpowers/specs/2026-06-15-lqr-track-design.md`, with math and
+`LQRTrack` is now implemented as an explicit experimental controller behind
+`/figure8_lqr`. It controls steering and speed from the same path reference
+using a small state-space model and a quadratic cost. `TangentTrack` remains
+the field-tested `/figure8` baseline for comparison. The LQR controller design
+is in `docs/superpowers/specs/2026-06-15-lqr-track-design.md`, with math and
 pseudocode in `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`.
 
-## 12. Future `LQRTrack` Comparison
+## 12. `LQRTrack` Comparison
 
 The current figure-eight controller follows the tangent of the current path
 segment and adds cross-track correction. `LQRTrack` should improve this by
@@ -823,7 +823,15 @@ steering and acceleration corrections that minimize a weighted sum of tracking
 error and actuator effort. The detailed LQR design is documented separately so
 the two controllers can be compared clearly.
 
-That upgrade should wait until `TangentTrack` has real basement data:
+The local Python prototype can compare both controllers quickly:
+
+```bash
+cd tools/trajectory-sim
+PYTHONPATH=src python3 -m unittest discover tests
+PYTHONPATH=src python3 -m openotter_sim.cli --controller both --output figure8-sim.svg
+```
+
+The next tuning questions should come from field data:
 
 - Does ARKit yaw drift too much?
 - Is 0.12 m acceptance radius too loose or too tight?
@@ -833,5 +841,7 @@ That upgrade should wait until `TangentTrack` has real basement data:
 - Does the full normalized steering range, with firmware PWM slew limiting,
   complete both lobes without servo chatter or board resets?
 - Does servo center need a trim offset?
+- Does `LQRTrack` reduce outside-lobe ballooning compared with `TangentTrack`
+  at the same max throttle?
 
 Those answers should tune the next controller instead of guessing.

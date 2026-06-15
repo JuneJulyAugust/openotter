@@ -13,11 +13,25 @@ struct Waypoint {
     }
 }
 
+enum FigureEightControllerKind: String, Equatable {
+    case tangentTrack
+    case lqrTrack
+
+    var displayName: String {
+        switch self {
+        case .tangentTrack: return "TangentTrack"
+        case .lqrTrack: return "LQRTrack"
+        }
+    }
+}
+
 /// What the planner is pursuing.
 enum PlannerGoal {
     case idle
     case followWaypoints([Waypoint], maxThrottle: Float)
-    case followFigureEight(config: FigureEightTrajectory.Config, maxThrottle: Float)
+    case followFigureEight(config: FigureEightTrajectory.Config,
+                           maxThrottle: Float,
+                           controller: FigureEightControllerKind = .tangentTrack)
     case constantThrottle(targetThrottle: Float)
 }
 
