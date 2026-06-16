@@ -4,6 +4,7 @@
 **Date:** 2026-06-15
 **Baseline controller:** `TangentTrack`
 **Experimental controller:** `LQRTrack`
+**Companion technical note:** `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`
 **References:**
 
 - PythonRobotics LQR speed/steer example:
@@ -13,46 +14,61 @@
 - Source function:
   `https://raw.githubusercontent.com/AtsushiSakai/PythonRobotics/master/PathTracking/lqr_speed_steer_control/lqr_speed_steer_control.py`
 
-## 1. Why A Second Controller
+## 1. Design Goal
 
-`TangentTrack` is the current field controller. It projects the car onto the
-figure-eight path, computes tangent heading and cross-track error, then uses
-PID-shaped steering plus curvature feedforward. That is practical and easy to
-debug, so it should remain the default baseline.
+`LQRTrack` is a second figure-eight controller for learning and comparison. It
+does not replace `TangentTrack`. The point is to test whether a model-based
+controller can keep the car closer to the red reference path while still
+commanding enough speed to avoid crawling.
 
-`LQRTrack` is the experimental controller now available for comparison. Its
-goal is not to be more complicated for its own sake. Its goal is to control
-the main tracking errors together:
+The field problem is coupled: steering and speed affect each other. If steering
+is late, the blue trajectory balloons outside the lobe. If throttle fades too
+much, the car turns but barely moves. `TangentTrack` handles those two problems
+with separate practical rules. `LQRTrack` handles them in one scoring problem:
+large tracking errors cost points, and large actuator commands also cost
+points. The controller chooses the steering and speed corrections with the best
+tradeoff.
 
-- lateral position error,
-- lateral error rate,
-- heading error,
-- heading error rate,
-- speed error.
+The design success criterion is modest and testable:
 
-That matters because the field traces show coupled behavior: when steering is
-late, the blue trajectory balloons outside the lobe; when throttle slows too
-much, the car can turn but crawls. LQR gives one framework for trading those
-errors against steering and throttle effort.
+- `/figure8` still runs the field-tested `TangentTrack` baseline.
+- `/figure8_lqr` runs `LQRTrack` on the same reference trajectory.
+- The map, simulation, and tests can compare both controllers on the same
+  figure-eight path.
+- The LQR controller clamps outputs and fails neutral if the math solve is not
+  trustworthy.
 
-## 2. Scope
+## 2. What LQRTrack Is And Is Not
 
-This design keeps `TangentTrack` as `/figure8` and adds `LQRTrack` as a
-separate selectable controller:
+The important design choice is separation. `TangentTrack` remains the default
+because it has already completed the real basement figure eight. `LQRTrack` is
+an explicit experiment because its model has assumptions that still need field
+tuning.
 
-| Command | Controller |
-| --- | --- |
-| `/figure8` | `TangentTrack` baseline |
-| `/figure8_lqr` | `LQRTrack` experiment |
+| Command | Controller | Purpose |
+| --- | --- | --- |
+| `/figure8` | `TangentTrack` | default field controller |
+| `/figure8_lqr` | `LQRTrack` | model-based controller experiment |
 
-Do not silently replace the known-good baseline. LQR needs field tuning because
-OpenOtter does not yet measure front wheel angle, and throttle is a normalized
-ESC command rather than a direct acceleration command.
+`LQRTrack` is not a perfect car model. OpenOtter does not measure front wheel
+angle, and the ESC throttle command is not a calibrated acceleration command.
+Instead, the controller uses ARKit pose feedback every tick. The model only
+needs to be good enough to choose useful steering and throttle corrections
+between feedback updates.
 
-## 3. Shared Path Reference
+The practical mental model is:
 
-Both controllers should use the same figure-eight path and coordinate
-convention:
+1. Measure where the car is relative to the path.
+2. Build a short list of errors.
+3. Use LQR to decide how much to correct steering and speed.
+4. Add path-curvature feedforward so the car starts turning before it drifts.
+5. Clamp the final steering and throttle before safety supervision.
+
+## 3. Shared Path Contract
+
+Both controllers must follow the same path. Otherwise controller comparisons
+are meaningless. `FigureEightTrajectory` owns the path shape, and
+`PathReference` owns projection onto that path.
 
 | Quantity | Convention |
 | --- | --- |
@@ -60,27 +76,59 @@ convention:
 | `PoseMapView` screen right | local $+Z$ right |
 | `length` | $3.2\ \mathrm{m}$ along $+Z/-Z$ |
 | `width` | $1.6\ \mathrm{m}$ along $+X/-X$ |
+| start point | center crossing at the car pose when the mission starts |
+| first branch | forward and right from the start crossing |
 
-`FigureEightTrajectory` remains the path generator. Both controllers use the
-same shared helper:
+`PathReference.project(...)` is the shared interface between the path and the
+controllers. It should answer one question: "At this tick, where is the car
+relative to the path it is supposed to follow?"
 
 ```text
 PathReference.project(pose, waypoints, currentIndex)
-  -> nearest/progress index
-  -> projected path point
-  -> tangent yaw
+  -> progress index
+  -> projected point on the path
+  -> tangent yaw at that point
   -> signed cross-track error
   -> curvature
-  -> target speed
 ```
 
-That lets `TangentTrack` and `LQRTrack` compare controllers without changing
-the trajectory.
+This shared contract keeps the experiment honest. If `LQRTrack` improves or
+regresses, the difference comes from the controller, not from a different
+trajectory.
 
-## 4. LQR State And Inputs
+## 4. Controller Data Flow
 
-Use the same core state as the PythonRobotics LQR speed/steer controller, with
-OpenOtter sign conventions:
+`LQRTrack` should sit at the same ownership level as `TangentTrack`: inside the
+iOS planner layer. Firmware should not know about the figure-eight path or the
+LQR math. Firmware remains the deterministic actuator layer.
+
+```text
+Telegram /figure8_lqr
+  -> KeywordInterpreter.figureEight(controller: .lqrTrack)
+  -> ActionDispatcher
+  -> PlannerGoal.followFigureEight(config, maxThrottle, controller: .lqrTrack)
+  -> PlannerOrchestrator switches to LQRTrackPlanner
+  -> LQRTrackPlanner asks PathReference for path-relative errors
+  -> LQRMath solves the small LQR problem
+  -> LQRTrackPlanner emits steering and throttle
+  -> SafetySupervisor may brake or neutralize
+  -> STM32 receives bounded actuator commands
+```
+
+The boundary is intentional:
+
+- `FigureEightTrajectory` generates the reference path.
+- `PathReference` computes path-relative geometry.
+- `LQRMath` owns matrix operations and Riccati solving.
+- `LQRTrackPlanner` owns controller state, actuator mapping, and planner output.
+- `SafetySupervisor` owns obstacle/sensor overrides.
+- STM32 firmware owns PWM clamping, watchdog neutral, and Park/Drive
+  arbitration.
+
+## 5. Error State
+
+LQR works by controlling a state vector. For OpenOtter, the state vector should
+contain the five errors that explain the field behavior:
 
 $$
 \mathbf{x} =
@@ -93,11 +141,36 @@ v_e
 \end{bmatrix}^{\top}
 $$
 
-where $e$ is the LQR lateral state, $\dot{e}$ is lateral error rate,
-$\theta_e$ is heading error to the path tangent, $\dot{\theta}_e$ is heading
-error rate, and $v_e = v_{\mathrm{measured}} - v_{\mathrm{target}}$.
+| Error | Plain-English meaning | Why it matters |
+| --- | --- | --- |
+| $e$ | sideways distance from the path | tells whether the car is outside the lobe |
+| $\dot{e}$ | whether sideways error is growing | catches drift before position error is huge |
+| $\theta_e$ | heading error from the path tangent | tells whether the car points along the red path |
+| $\dot{\theta}_e$ | whether heading error is growing | damps steering oscillation |
+| $v_e$ | measured speed minus target speed | tells whether the car is crawling or too fast |
 
-The input vector is:
+OpenOtter's path geometry reports $e_{\mathrm{ct}}>0$ when the car is right of
+the path. `LQRTrack` uses $e=-e_{\mathrm{ct}}$ internally so the LQR steering
+sign lines up with the normalized OpenOtter steering command:
+
+- positive normalized steering means right,
+- a car right of the path should usually steer left,
+- a positive heading error at the center crossing should steer right to align
+  with the first forward/right branch.
+
+This sign convention is not a detail. It is a safety-critical contract and
+must stay covered by tests.
+
+## 6. Model And Cost
+
+The model is the controller's small prediction rule. It says how the five
+errors are expected to change over one control tick:
+
+$$
+\mathbf{x}_{k+1}=A\mathbf{x}_k+B\mathbf{u}_k
+$$
+
+The input vector has two corrections:
 
 $$
 \mathbf{u} =
@@ -107,43 +180,10 @@ u_a
 \end{bmatrix}^{\top}
 $$
 
-where $u_s$ is steering feedback and $u_a$ is acceleration feedback.
+where $u_s$ is steering feedback and $u_a$ is acceleration feedback. OpenOtter
+later maps those abstract corrections to normalized steering and throttle.
 
-OpenOtter reference signs:
-
-- $e_{\mathrm{ct}} > 0$: car is right of the path.
-- $\theta_e = \psi - \psi_{\mathrm{ref}}$.
-- Positive normalized steering means right.
-- `LQRTrack` feeds $e = -e_{\mathrm{ct}}$ into the LQR state. This makes a
-  right-of-path error produce left steering while keeping positive heading
-  error as a right-steering correction.
-- If the path reference jumps far ahead during reacquisition, derivative
-  memory is reset so stale lateral-error rate does not dominate steering.
-
-The PythonRobotics example computes steering as curvature feedforward plus LQR
-feedback, and acceleration as the second LQR output. OpenOtter should keep that
-shape, but convert outputs into normalized actuator commands.
-
-## 5. Model
-
-Use a discrete linear bicycle-like model around the current path tangent and
-speed:
-
-$$
-\mathbf{x}_{k+1} = A\mathbf{x}_k + B\mathbf{u}_k
-$$
-
-$$
-J = \sum_{k=0}^{N}
-\left(
-\mathbf{x}_k^\top Q \mathbf{x}_k +
-\mathbf{u}_k^\top R \mathbf{u}_k
-\right),
-\qquad
-\mathbf{u} = -K\mathbf{x}
-$$
-
-The practical OpenOtter matrices start from the PythonRobotics structure:
+The design follows the PythonRobotics LQR speed/steer structure:
 
 $$
 A =
@@ -165,73 +205,84 @@ v/L & 0 \\
 \end{bmatrix}
 $$
 
-For OpenOtter, `L` is an effective wheelbase/tuning length, not a precise
-calibrated model. Start with the physical wheelbase if known; otherwise use a
-config value such as `0.30...0.50 m` and tune from logs.
+Here $\Delta t$ is tick duration, $v$ is measured speed, and $L$ is an
+effective wheelbase or tuning length. `L` should start near the physical
+wheelbase if known, but it is allowed to be a tuning value because the car does
+not report actual steering angle.
 
-## 6. Feedforward And Actuator Mapping
-
-LQR should not do all steering work from feedback. Keep curvature feedforward:
+LQR chooses commands by minimizing this score:
 
 $$
-s_{\mathrm{ff}} = -k_{\kappa}\kappa
+J = \sum_{k=0}^{N}
+\left(
+\mathbf{x}_k^\top Q \mathbf{x}_k +
+\mathbf{u}_k^\top R \mathbf{u}_k
+\right)
 $$
 
-Then add LQR feedback:
+The design meaning is simple:
+
+- $Q$ decides which errors are expensive.
+- $R$ decides which actuator efforts are expensive.
+- Larger $Q$ makes the controller fight that error harder.
+- Larger $R$ makes the controller use that actuator more gently.
+
+## 7. Feedforward And Actuator Mapping
+
+LQR feedback should not do all steering work. The path already tells us when a
+lobe is about to curve. That known bend becomes feedforward steering:
+
+$$
+s_{\mathrm{ff}}=-k_{\kappa}\kappa
+$$
+
+The LQR feedback then corrects real tracking error:
+
+$$
+\mathbf{f}=K\mathbf{x}
+$$
 
 $$
 s =
 \operatorname{clip}
 \left(
-s_{\mathrm{ff}} + k_s u_s,
+s_{\mathrm{ff}} + k_s f_0,
 -1,
 1
 \right)
 $$
 
-Speed control is harder because OpenOtter does not command acceleration
-directly. Use the LQR acceleration output as a throttle trim around a base
+Speed control uses the second LQR output as a throttle trim around a base
 throttle:
+
+$$
+\mathbf{u}=-\mathbf{f}
+$$
 
 $$
 \tau =
 \operatorname{clip}
 \left(
-\tau_{\mathrm{base}} + k_{\tau}u_a,
+\tau_{\mathrm{base}} + k_{\tau}u_1,
 0,
 \tau_{\max}
 \right)
 $$
 
-Initial target speed should stay conservative:
+The target speed should start conservatively:
 
 $$
-v_{\mathrm{target}} \in [0.18,\ 0.25]\ \mathrm{m/s},
-\qquad
-\tau_{\max} = \text{current Telegram speed, default }0.4
+v_{\mathrm{target}} = 0.20\ \mathrm{m/s}
 $$
 
-`targetSpeedMps` and `baseThrottle` should be logged. Without calibration, the
-controller must be robust if the same throttle produces different speed on
-tile, concrete, or carpet.
+The throttle ceiling remains the current Telegram speed, default $0.4$. This
+keeps operator intent visible: testing faster should be an explicit command,
+not a hidden controller multiplier.
 
-## 7. Q/R Tuning
+## 8. Initial Tuning Policy
 
-Start with diagonal weights. Larger `Q` means "care more about this error";
-larger `R` means "use less actuator effort."
-
-Recommended initial intent:
-
-| Weight | Initial intent |
-| --- | --- |
-| lateral-error $Q$ | high |
-| heading-error $Q$ | high |
-| speed-error $Q$ | medium |
-| error-rate $Q$ | low to medium |
-| steering-effort $R$ | medium |
-| throttle-effort $R$ | medium to high |
-
-Conservative first values:
+Start with diagonal weights. This keeps tuning understandable because each
+weight belongs mostly to one error or one actuator.
 
 $$
 Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8),
@@ -239,13 +290,19 @@ Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8),
 R = \operatorname{diag}(1.0,\ 2.0)
 $$
 
-If the car balloons outside the lobe, raise lateral/heading `Q` or lower
-steering `R`. If steering chatters or the servo ticks, raise steering `R`,
-increase derivative filtering, or reduce `steeringScale`. If the car crawls,
-raise target speed or lower throttle `R`, but keep the safety supervisor as the
-final arbiter.
+| Symptom | First tuning move | Reason |
+| --- | --- | --- |
+| blue trace balloons outside the lobe | raise lateral $Q$ or heading $Q$ | tracking error is too cheap |
+| steering chatters or servo ticks | raise steering $R$ or reduce $k_s$ | steering effort is too cheap |
+| car crawls while tracking is stable | raise target speed or lower throttle $R$ | speed error is too cheap |
+| throttle surges | raise throttle $R$ or reduce $k_{\tau}$ | acceleration effort is too cheap |
+| controller reacts badly after reacquiring path | reset derivative memory on large index jumps | old rates no longer describe the new reference |
 
-## 8. Implementation
+Tuning should use simulation first, then basement logs. Guessing from one map
+screenshot is tempting, but logs make it clear whether the problem is lateral
+error, heading error, speed error, saturation, or a sign mistake.
+
+## 9. Implementation Files
 
 Implemented code structure:
 
@@ -260,7 +317,7 @@ openotter-ios/Sources/Planner/Planners/LQRTrackPlanner.swift
   PlannerProtocol implementation for figure-eight LQR speed/steer.
 
 openotter-ios/Sources/Planner/PlannerProtocol.swift
-  Add controller selection to followFigureEight goals.
+  Adds figure-eight controller selection to planner goals.
 
 openotter-ios/Sources/Agent/KeywordInterpreter.swift
 openotter-ios/Sources/Agent/ActionDispatcher.swift
@@ -271,36 +328,34 @@ tools/trajectory-sim/
   and SVG comparison plots.
 ```
 
-Do not add a heavy math dependency. The state is only 5 values and the input is
-2 values, so a deterministic small-matrix implementation is enough for iOS.
+Do not add a heavy math dependency. The state has five values and the input
+has two values, so a deterministic small-matrix implementation is enough for
+iOS.
 
-## 9. Tests
+## 10. Tests And Rollout
 
-Initial implementation coverage:
+The tests should protect the design contracts, not just line coverage.
 
-- `LQRMathTests`: DARE converges for a known small system, output gain is
-  finite, matrix inverse rejects singular inputs.
-- `LQRTrackPlannerTests`: right-of-path error commands left steering, left
-  error commands right steering, reference reacquire resets derivative memory,
-  below target speed increases throttle, above target speed reduces throttle,
-  and the deterministic slow-yaw model makes progress inside the envelope.
-- `ActionDispatcherTests` and `AgentRuntimeTests`: `/figure8_lqr` routes to the
-  LQR controller without changing `/figure8`.
-- `tools/trajectory-sim/tests`: Python path shape, arc-length sampling,
-  TangentTrack/LQRTrack progress, speed feedback, and lateral sign behavior.
+| Test area | Contract |
+| --- | --- |
+| `LQRMathTests` | DARE solve converges, gain is finite, singular inverse fails safely |
+| `LQRTrackPlannerTests` | right-of-path error steers left, left error steers right |
+| `LQRTrackPlannerTests` | below target speed increases throttle, above target speed reduces it |
+| `LQRTrackPlannerTests` | reference reacquisition resets derivative memory |
+| `ActionDispatcherTests` | `/figure8_lqr` selects LQR without changing `/figure8` |
+| Python simulation tests | LQR makes progress on the same figure-eight path as TangentTrack |
 
-## 10. Rollout Criteria
-
-`LQRTrack` is safe to field-test as an explicit experiment after these remain
+`LQRTrack` is safe to field-test as an explicit experiment when these remain
 true:
 
-- simulator tests pass,
-- output steering is always finite and clamped to `[-1, 1]`,
-- throttle is always finite and clamped to `[0, maxThrottle]`,
-- DARE fallback is deterministic,
-- map overlay still shows the same reference trajectory and arrows,
+- outputs are finite,
+- steering is clamped to $[-1,1]$,
+- throttle is clamped to $[0,\tau_{\max}]$,
+- failed LQR solves output neutral for that tick,
+- map overlay shows the same reference trajectory and direction arrows,
 - `/figure8` still runs `TangentTrack`.
 
-If the LQR gain solve fails or produces non-finite output, the planner should
-emit neutral for that tick and log the failure. Do not silently send stale
-steering or throttle.
+The first field comparison should focus on four numbers: maximum lateral
+overshoot, 95th-percentile cross-track error, average speed, and steering
+saturation time. Those numbers tell whether LQR is actually improving the
+basement trajectory or merely looking more sophisticated in code.

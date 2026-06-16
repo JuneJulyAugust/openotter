@@ -4,51 +4,180 @@
 **Date:** 2026-06-15
 **Companion design:** `docs/superpowers/specs/2026-06-15-lqr-track-design.md`
 
-## 1. Plain-English Idea
+## 1. What This Document Teaches
 
-`TangentTrack` controls steering with a PID-like heading loop and shapes
-throttle with practical rules. `LQRTrack` controls steering and speed from one
-shared math problem.
+This note explains `LQRTrack` from first principles. It assumes comfort with
+algebra, graphs, and functions, but not college control theory.
 
-The controller keeps a short list of errors: lateral position, lateral error
-rate, heading error, heading error rate, and speed error.
+The shortest useful explanation is:
 
-LQR chooses steering and speed corrections that make those errors small while
-also avoiding excessive actuator effort. In high-school-math terms: it tries
-to minimize a weighted score where large errors and large commands cost more.
+1. The path gives a desired position, heading, curvature, and target speed.
+2. The car gives its measured position, heading, and speed.
+3. The controller turns those measurements into five errors.
+4. LQR chooses steering and speed corrections that reduce those errors without
+   using unnecessarily harsh commands.
+5. OpenOtter converts those corrections into normalized steering and throttle,
+   then lets the safety supervisor override them if needed.
 
-## 2. Cost Function
+`TangentTrack` and `LQRTrack` share the same red figure-eight path. The
+difference is how they decide the next steering and throttle command.
+`TangentTrack` uses hand-shaped PID/feedforward rules. `LQRTrack` uses a small
+prediction model plus a weighted score.
 
-The score LQR minimizes is:
+## 2. The Four Questions Per Control Tick
+
+Every tick should answer the same four questions in this order:
+
+1. **Where am I on the path?** Project the car position onto the reference
+   path and find the tangent direction.
+2. **What errors matter right now?** Measure sideways error, heading error,
+   speed error, and whether those errors are growing.
+3. **What correction best balances tracking and smoothness?** Use LQR to
+   trade off error reduction against steering/throttle effort.
+4. **What can the actuators safely receive?** Add curvature feedforward,
+   convert to normalized commands, clamp, and pass through safety supervision.
+
+This order is important. LQR does not replace path geometry, and it does not
+replace actuator limits. It sits between them.
+
+## 3. Coordinate And Sign Contract
+
+Most controller bugs in this feature have been sign bugs, so the coordinate
+contract comes first.
+
+| Quantity | OpenOtter convention |
+| --- | --- |
+| map screen up | $+x$ forward |
+| map screen right | $+z$ right |
+| yaw $\psi=0$ | car points along $+x$ |
+| positive yaw | car turns left in the ground-plane convention |
+| positive steering command | front wheel steers right |
+| figure-eight length | $3.2\ \mathrm{m}$ along $+Z/-Z$ |
+| figure-eight width | $1.6\ \mathrm{m}$ along $+X/-X$ |
+
+`PathReference` reports cross-track error as $e_{\mathrm{ct}}$. Positive
+$e_{\mathrm{ct}}$ means the car is right of the path. Internally, `LQRTrack`
+uses:
 
 $$
-J = \sum_{k=0}^{N}
+e=-e_{\mathrm{ct}}
+$$
+
+That negative sign is deliberate. A car right of the path usually needs a left
+steering correction, but OpenOtter's positive steering command means right.
+The sign conversion makes the LQR feedback align with the actuator convention.
+
+The heading error uses the car heading minus the path heading:
+
+$$
+\theta_e=\operatorname{wrapToPi}(\psi-\psi_{\mathrm{ref}})
+$$
+
+Here `wrapToPi` means "choose the equivalent angle between $-\pi$ and $+\pi$."
+For example, $181^\circ$ becomes $-179^\circ$ because the shortest turn is
+slightly right, not almost one full turn left.
+
+## 4. Step 1: Project The Car Onto The Path
+
+The red path is stored as waypoints. At a given tick, `PathReference` picks a
+segment from waypoint $P_0$ to waypoint $P_1$. The car's current ground-plane
+position is $p$.
+
+First define the segment vector:
+
+$$
+\mathbf{s}=P_1-P_0
+$$
+
+For 2D points, the dot product is:
+
+$$
+\mathbf{a}\cdot\mathbf{b}=a_xb_x+a_zb_z
+$$
+
+In plain terms, the dot product measures how much one vector points in the
+same direction as another. `PathReference` uses it to find how far along the
+segment the car's closest path point should be:
+
+$$
+\alpha =
+\operatorname{clip}
 \left(
-\mathbf{x}_k^\top Q \mathbf{x}_k +
-\mathbf{u}_k^\top R \mathbf{u}_k
+\frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
+0,
+1
 \right)
 $$
 
-Read it as:
+The `clip` keeps $\alpha$ on the segment:
 
-- `x` is the error list.
-- `u` is the command correction list.
-- `Q` says which errors are most important.
-- `R` says how much we dislike strong steering or throttle changes.
+- $\alpha=0$ means the closest point is $P_0$,
+- $\alpha=1$ means the closest point is $P_1$,
+- $\alpha=0.5$ means halfway between them.
 
-If lateral error matters more, raise its `Q`. If steering is too aggressive,
-raise steering `R`. The result is a gain matrix `K`:
+The projected point is:
 
 $$
-\mathbf{u} = -K\mathbf{x}
+P_{\mathrm{ref}}=P_0+\alpha\mathbf{s}
 $$
 
-This means the controller multiplies the current errors by a precomputed gain
-and sends the opposite correction.
+This projected point is the controller's "nearest useful spot" on the red
+path. The controller does not steer toward a random future waypoint; it steers
+relative to the path tangent at this projected spot.
 
-## 3. State Vector
+## 5. Step 2: Compute Path Heading, Side Error, And Curvature
 
-Use this state:
+The segment direction gives the path tangent heading:
+
+$$
+\psi_{\mathrm{ref}} =
+\operatorname{atan2}
+\left(
+-(P_{1,z}-P_{0,z}),
+P_{1,x}-P_{0,x}
+\right)
+$$
+
+The negative sign on the $z$ difference comes from OpenOtter's yaw convention.
+The result is the heading the car should have if it is perfectly aligned with
+this piece of the path.
+
+The unit vector pointing to the path's right side is:
+
+$$
+\mathbf{r}_{\mathrm{path}} =
+\begin{bmatrix}
+\sin\psi_{\mathrm{ref}} \\
+\cos\psi_{\mathrm{ref}}
+\end{bmatrix}
+$$
+
+The signed cross-track error is:
+
+$$
+e_{\mathrm{ct}} =
+(p-P_{\mathrm{ref}})\cdot\mathbf{r}_{\mathrm{path}}
+$$
+
+This equation compares the car's offset from the path with the path's right
+direction. Positive means the car is right of the path. Negative means it is
+left of the path.
+
+Curvature estimates how sharply the path is bending:
+
+$$
+\kappa \approx
+\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+{s_{\mathrm{arc}}}
+$$
+
+Curvature is large in tight turns and near zero on straight parts. `LQRTrack`
+uses curvature for feedforward steering: if the path is about to bend, start
+turning before lateral error grows.
+
+## 6. Step 3: Build The Five-Error State
+
+The controller state is just a list of five numbers:
 
 $$
 \mathbf{x} =
@@ -61,97 +190,56 @@ v_e
 \end{bmatrix}^{\top}
 $$
 
-Definitions:
+The table below is the most important part of the controller. If these five
+numbers are wrong, the LQR solve can be mathematically valid and still drive
+badly.
 
-| Term | Definition |
-| --- | --- |
-| $e$ | LQR lateral state, metres |
-| $\dot{e}$ | $(e - e_{\mathrm{prev}}) / \Delta t$ |
-| $\theta_e$ | $\operatorname{wrapToPi}(\psi - \psi_{\mathrm{ref}})$ |
-| $\dot{\theta}_e$ | $\operatorname{wrapToPi}(\theta_e - \theta_{e,\mathrm{prev}}) / \Delta t$ |
-| $v_e$ | $v_{\mathrm{measured}} - v_{\mathrm{target}}$ |
+| State value | Formula | Meaning |
+| --- | --- | --- |
+| $e$ | $-e_{\mathrm{ct}}$ | signed lateral error in LQR convention |
+| $\dot{e}$ | $(e-e_{\mathrm{prev}})/\Delta t$ | lateral error rate |
+| $\theta_e$ | $\operatorname{wrapToPi}(\psi-\psi_{\mathrm{ref}})$ | heading error |
+| $\dot{\theta}_e$ | $\operatorname{wrapToPi}(\theta_e-\theta_{e,\mathrm{prev}})/\Delta t$ | heading error rate |
+| $v_e$ | $v_{\mathrm{measured}}-v_{\mathrm{target}}$ | speed error |
 
-OpenOtter sign convention:
+The dots mean "rate of change." For example, $\dot{e}$ is positive when
+lateral error is increasing and negative when the car is recovering toward the
+path.
 
-- $e_{\mathrm{ct}} > 0$ means the car is right of the path.
-- The LQR state uses $e = -e_{\mathrm{ct}}$.
-- Positive normalized steering means steer right.
-- $\theta_e > 0$ means the car yaw is left of the path tangent.
+Derivative memory must be reset when the path index jumps far ahead during
+reacquisition. Otherwise the controller subtracts an old error from a new
+path segment and invents a fake large rate. That can produce an unnecessary
+steering kick.
 
-That sign conversion is deliberate. A car right of the path should usually
-steer left, while a positive heading error at the center crossing should steer
-right to align with the first forward/right branch. The sign tests verify this
-directly, because sign mistakes are easy and field-visible.
+## 7. Step 4: Predict One Tick Ahead
 
-## 4. Path Reference
+LQR needs a simple prediction model. The model does not need to be perfect. It
+only needs to express the main relationships:
 
-For each control tick, let $P_0$ and $P_1$ be the active path segment endpoints,
-$p$ be the car position, and $\mathbf{s}=P_1-P_0$. The projected reference
-point is:
+- lateral position changes when lateral error has a rate,
+- heading error creates sideways drift while the car is moving,
+- steering changes heading rate,
+- acceleration changes speed error.
 
-$$
-\alpha =
-\operatorname{clip}
-\left(
-\frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
-0,
-1
-\right)
-$$
+In compact form:
 
 $$
-P_{\mathrm{ref}} = P_0 + \alpha \mathbf{s}
+\mathbf{x}_{k+1}=A\mathbf{x}_k+B\mathbf{u}_k
 $$
 
-The reference yaw and path-right unit vector are:
+The input vector is:
 
 $$
-\psi_{\mathrm{ref}} =
-\operatorname{atan2}\left(-(P_{1,z}-P_{0,z}),\, P_{1,x}-P_{0,x}\right)
-$$
-
-$$
-\mathbf{r}_{\mathrm{path}} =
+\mathbf{u} =
 \begin{bmatrix}
-\sin(\psi_{\mathrm{ref}}) &
-\cos(\psi_{\mathrm{ref}})
+u_s &
+u_a
 \end{bmatrix}^{\top}
 $$
 
-Then the signed cross-track error and LQR lateral state are:
+where $u_s$ is steering feedback and $u_a$ is acceleration feedback.
 
-$$
-e_{\mathrm{ct}} = (p-P_{\mathrm{ref}})\cdot\mathbf{r}_{\mathrm{path}},
-\qquad
-e = -e_{\mathrm{ct}}
-$$
-
-Curvature is estimated from nearby heading change over arc length:
-
-$$
-\kappa \approx
-\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-{s_{\mathrm{arc}}}
-$$
-
-This uses the same app-map convention as `TangentTrack`:
-
-| Quantity | Convention |
-| --- | --- |
-| screen up | $+x$ forward |
-| screen right | $+z$ right |
-| figure-eight length | $3.2\ \mathrm{m}$ along $+Z/-Z$ |
-| figure-eight width | $1.6\ \mathrm{m}$ along $+X/-X$ |
-
-## 5. Linear Model
-
-LQR needs a simple prediction model:
-
-$$
-\mathbf{x}_{k+1} = A\mathbf{x}_k + B\mathbf{u}_k
-$$
-
-The initial model follows the PythonRobotics LQR speed/steer structure:
+The OpenOtter model follows the PythonRobotics LQR speed/steer structure:
 
 $$
 A =
@@ -161,8 +249,10 @@ A =
 0 & 0 & 1 & \Delta t & 0 \\
 0 & 0 & 0 & 0 & 0 \\
 0 & 0 & 0 & 0 & 1
-\end{bmatrix},
-\qquad
+\end{bmatrix}
+$$
+
+$$
 B =
 \begin{bmatrix}
 0 & 0 \\
@@ -173,106 +263,225 @@ v/L & 0 \\
 \end{bmatrix}
 $$
 
-where $\Delta t$ is the control time step, $v$ is measured speed, $L$ is the
-effective wheelbase/tuning length, $u_0$ is steering feedback, and $u_1$ is
-acceleration feedback.
+A few approximations make this model simple enough for real-time control:
 
-This is a simplified model. It does not know the actual front wheel angle. The
-controller corrects using ARKit pose feedback, so the model only needs to be
-good enough to choose useful corrections.
+$$
+\sin\theta_e \approx \theta_e
+$$
 
-## 6. Solving For K
+$$
+\tan u_s \approx u_s
+$$
 
-At each tick, or for each speed bucket, solve the discrete algebraic Riccati
-equation:
+Those are small-angle approximations. They say that for modest angles, the
+angle itself is a good enough substitute for sine or tangent. That is why the
+model can use multiplication instead of heavier trigonometry inside the LQR
+solve. Large errors are still handled by feedback on the next tick and by
+actuator clamps.
+
+A matrix is only a table of multipliers. Reading the first row of $A$:
+
+$$
+e_{\mathrm{next}}=1\cdot e+\Delta t\cdot\dot{e}
+$$
+
+That says "new sideways error equals current sideways error plus rate times
+time." This is the same idea as:
+
+$$
+\mathrm{new\ distance}=\mathrm{old\ distance}+\mathrm{speed}\cdot\mathrm{time}
+$$
+
+Reading the fourth row with $B$:
+
+$$
+\dot{\theta}_{e,\mathrm{next}}\approx\frac{v}{L}u_s
+$$
+
+That says steering changes heading rate more strongly when the car is moving
+faster, and less strongly when the effective wheelbase $L$ is larger.
+
+For OpenOtter, $L$ is a tuning length. It should start near the physical
+wheelbase if known, but it is not trusted as a precise model because the car
+does not report actual front wheel angle.
+
+## 8. Step 5: Define The Score LQR Minimizes
+
+The controller needs a way to decide whether one possible correction is better
+than another. LQR uses a weighted score:
+
+$$
+J = \sum_{k=0}^{N}
+\left(
+\mathbf{x}_k^\top Q \mathbf{x}_k +
+\mathbf{u}_k^\top R \mathbf{u}_k
+\right)
+$$
+
+This looks abstract, but with diagonal weights it is just weighted squared
+errors. For one tick:
+
+$$
+\mathbf{x}^{\top}Q\mathbf{x}
+=
+q_e e^2
++q_{\dot{e}}\dot{e}^2
++q_{\theta}\theta_e^2
++q_{\dot{\theta}}\dot{\theta}_e^2
++q_v v_e^2
+$$
+
+The command effort term is:
+
+$$
+\mathbf{u}^{\top}R\mathbf{u}
+=
+r_s u_s^2+r_a u_a^2
+$$
+
+Squaring has two useful effects:
+
+- positive and negative errors both cost something,
+- big errors cost much more than small errors.
+
+The weights decide personality:
+
+- large $q_e$ means "do not drift sideways from the path,"
+- large $q_{\theta}$ means "align heading with the path tangent,"
+- large $q_v$ means "keep speed close to target,"
+- large $r_s$ means "avoid aggressive steering,"
+- large $r_a$ means "avoid aggressive speed changes."
+
+This is the main tuning language for LQR.
+
+## 9. Step 6: Solve For The Gain Matrix
+
+After the model and score are defined, LQR computes a gain matrix $K$. At
+runtime, the controller uses:
+
+$$
+\mathbf{u}=-K\mathbf{x}
+$$
+
+This means "multiply the current errors by $K$, then command the opposite
+correction." If the errors are zero, the feedback correction is zero. If the
+errors grow, the correction grows in a way chosen by the model and the score.
+
+The Swift implementation solves the discrete algebraic Riccati equation. You
+do not need to tune this equation directly, but it is useful to know what it
+does. It computes a matrix $P$ that represents the future cost of being in a
+state. The iteration is:
 
 $$
 P_{i+1}
 = A^\top P_i A
 - A^\top P_i B
-\left(R + B^\top P_i B\right)^{-1}
+\left(R+B^\top P_i B\right)^{-1}
 B^\top P_i A
 + Q
 $$
 
-Iterate until `P_next` changes very little or a fixed iteration cap is reached.
-Then compute:
+Then the gain is:
 
 $$
 K =
-\left(R + B^\top P B\right)^{-1}
+\left(R+B^\top P B\right)^{-1}
 B^\top P A
 $$
 
-Because the matrix sizes are fixed and small, the Swift implementation can use
-small deterministic matrix helpers instead of adding a math package.
+Engineering interpretation:
 
-Safety rule:
+- $Q$ says how bad current errors are,
+- the model says how current commands affect future errors,
+- $P$ summarizes the future cost,
+- $K$ becomes the shortcut from current error to best feedback command.
 
-```text
-if any matrix value is NaN, infinite, or singular:
-    output neutral for this tick
-    log LQR solve failure
-```
+If the solve produces `NaN`, infinity, or a singular matrix, the planner should
+output neutral for that tick and log the failure. Sending stale LQR output is
+worse than skipping one tick.
 
-## 7. Feedforward Plus Feedback
+## 10. Step 7: Convert Feedback To Steering And Throttle
 
-The path curvature already tells us that the car should start turning before
-the error grows. Keep feedforward:
+The LQR feedback is not sent directly to firmware. It is combined with
+feedforward and actuator mapping.
 
-$$
-s_{\mathrm{ff}} = -k_{\kappa}\kappa
-$$
-
-Then add LQR feedback. The discrete LQR solve returns $K$, and the conventional
-control law is $\mathbf{u}=-K\mathbf{x}$. Because OpenOtter steering command
-sign is opposite the bicycle steering angle sign used in the model, the
-normalized steering command uses the converted feedback sign:
+First compute feedback:
 
 $$
-\mathbf{f} = K\mathbf{x},
-\qquad
-s_{\mathrm{fb}} = k_s f_0
+\mathbf{f}=K\mathbf{x}
 $$
+
+The conventional LQR command is:
+
+$$
+\mathbf{u}=-\mathbf{f}
+$$
+
+For steering, OpenOtter uses the converted sign that matches the normalized
+steering command:
+
+$$
+s_{\mathrm{fb}}=k_s f_0
+$$
+
+Curvature feedforward is:
+
+$$
+s_{\mathrm{ff}}=-k_{\kappa}\kappa
+$$
+
+The final steering command is:
 
 $$
 s =
 \operatorname{clip}
 \left(
-s_{\mathrm{ff}} + s_{\mathrm{fb}},
+s_{\mathrm{ff}}+s_{\mathrm{fb}},
 -1,
 1
 \right)
 $$
 
-Speed control uses the acceleration output as a throttle trim:
-
-$$
-\mathbf{u} = -\mathbf{f}
-$$
+For throttle, the second LQR command is treated as an acceleration-like trim:
 
 $$
 \tau =
 \operatorname{clip}
 \left(
-\tau_{\mathrm{base}} + k_{\tau}u_1,
+\tau_{\mathrm{base}}+k_{\tau}u_1,
 0,
 \tau_{\max}
 \right)
 $$
 
-OpenOtter does not command acceleration directly, so `throttleAccelScale` is a
-tuning constant. Start small and tune from logs.
+This mapping is intentionally conservative. OpenOtter commands normalized
+throttle, not physical acceleration, so $k_{\tau}$ starts small and must be
+tuned from logs.
 
-## 8. Target Speed
+## 11. Target Speed And Base Throttle
 
-Start with a simple speed profile:
+Start with a stable target speed:
 
 $$
-v_{\mathrm{target}} = 0.20\ \mathrm{m/s}
+v_{\mathrm{target}}=0.20\ \mathrm{m/s}
 $$
 
-Later, the speed profile can slow slightly at high curvature:
+The base throttle maps target speed into a reasonable command before LQR trim:
+
+```text
+baseThrottleForTargetSpeed(targetSpeed, maxThrottle):
+    lowSpeed = 0.05
+    nominalSpeed = 0.20
+    minimumMovingThrottle = maxThrottle * 0.35
+
+    if targetSpeed <= lowSpeed:
+        return 0
+
+    fraction = clamp(targetSpeed / nominalSpeed, 0, 1)
+    return max(minimumMovingThrottle, maxThrottle * fraction)
+```
+
+Later, speed can slow down on high curvature:
 
 $$
 \ell_{\kappa} =
@@ -286,15 +495,17 @@ $$
 
 $$
 v_{\mathrm{target}}
-= v_{\max} - (v_{\max}-v_{\min})\ell_{\kappa}
+=v_{\max}-(v_{\max}-v_{\min})\ell_{\kappa}
 $$
 
-Do not start with aggressive speed scheduling. First prove that LQR can follow
-the same 3.2 m by 1.6 m figure eight at a stable speed.
+Do not start with aggressive curvature speed scheduling. First prove that
+`LQRTrack` can follow the same $3.2\ \mathrm{m}$ by $1.6\ \mathrm{m}$ figure
+eight at one stable target speed.
 
-## 9. Pseudocode
+## 12. Full Planner Pseudocode
 
-### Planner Tick
+The pseudocode below shows the whole loop in the same order as the explanation
+above.
 
 ```text
 plan(context):
@@ -317,12 +528,14 @@ plan(context):
     )
 
     currentIndex = reference.index
+
     dt = clamp(context.timestamp - previousTimestamp, 0.02, 0.25)
     measuredSpeed = bestFinite(context.motorSpeedMps, context.arkitSpeedMps) or 0
     targetSpeed = targetSpeedFor(reference.curvature)
 
     e = -reference.crossTrackError
     thetaE = wrapToPi(context.pose.yaw - reference.tangentYaw)
+
     if reference.index jumps more than 8 samples from previousReferenceIndex:
         previousE = e
         previousThetaE = thetaE
@@ -341,8 +554,10 @@ plan(context):
 
     feedback = K * state
     u = -feedback
+
     steeringFF = -curvatureFeedforwardGain * reference.curvature
-    steering = clamp(steeringFF + steeringScale * feedback[0], -1, 1)
+    steeringFB = steeringScale * feedback[0]
+    steering = clamp(steeringFF + steeringFB, -1, 1)
 
     baseThrottle = baseThrottleForTargetSpeed(targetSpeed, maxThrottle)
     throttle = clamp(baseThrottle + throttleAccelScale * u[1], 0, maxThrottle)
@@ -359,71 +574,61 @@ plan(context):
     )
 ```
 
-### Base Throttle
+## 13. Initial Values
 
-```text
-baseThrottleForTargetSpeed(targetSpeed, maxThrottle):
-    lowSpeed = 0.05
-    nominalSpeed = 0.20
-    minimumMovingThrottle = maxThrottle * 0.35
+The initial values are intentionally conservative. They are not final truth;
+they are a safe starting point for simulation and low-risk field tests.
 
-    if targetSpeed <= lowSpeed:
-        return 0
+| Parameter | Initial value | Why |
+| --- | --- | --- |
+| $\Delta t$ clamp | $0.02 \ldots 0.25\ \mathrm{s}$ | avoids divide-by-zero and huge stale steps |
+| $L$ | $0.35\ \mathrm{m}$ | effective wheelbase/tuning length |
+| $v_{\mathrm{target}}$ | $0.20\ \mathrm{m/s}$ | faster than crawling, still controlled |
+| $\tau_{\max}$ | Telegram speed, default $0.4$ | keeps operator speed intent explicit |
+| $k_s$ | $1.0$ | direct steering feedback scale |
+| $k_{\tau}$ | $0.15$ | small throttle trim until acceleration is calibrated |
+| $k_{\kappa}$ | $0.10\ \mathrm{m}$ | same starting feedforward scale as TangentTrack |
 
-    fraction = clamp(targetSpeed / nominalSpeed, 0, 1)
-    return max(minimumMovingThrottle, maxThrottle * fraction)
-```
-
-### DARE Solver
-
-```text
-solveLQR(A, B, Q, R):
-    P = Q
-
-    repeat up to 150 iterations:
-        S = R + transpose(B) * P * B
-        if S cannot be inverted:
-            return invalid
-
-        Pnext = transpose(A) * P * A
-              - transpose(A) * P * B * inverse(S) * transpose(B) * P * A
-              + Q
-
-        if maxAbs(Pnext - P) < 0.01:
-            break
-
-        P = Pnext
-
-    K = inverse(R + transpose(B) * P * B) * transpose(B) * P * A
-    return K
-```
-
-## 10. Initial Tuning Values
-
-| Parameter | Initial value |
-| --- | --- |
-| $\Delta t$ clamp | $0.02 \ldots 0.25\ \mathrm{s}$ |
-| $L$ | $0.35\ \mathrm{m}$ |
-| $v_{\mathrm{target}}$ | $0.20\ \mathrm{m/s}$ |
-| $\tau_{\max}$ | Telegram speed, default $0.4$ |
-| $k_s$ | $1.0$ |
-| $k_{\tau}$ | $0.15$ |
-| $k_{\kappa}$ | $0.10\ \mathrm{m}$ |
+Initial weights:
 
 $$
-Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8),
-\qquad
+Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8)
+$$
+
+$$
 R = \operatorname{diag}(1.0,\ 2.0)
 $$
 
-If the simulation understeers and the blue trace grows outside the reference,
-increase lateral/heading `Q` or reduce steering `R`. If the steering servo
-ticks, reduce `steeringScale` or increase steering `R`. If the car crawls while
-tracking is stable, increase `targetSpeedMps` gradually.
+Expanded, the state cost is:
 
-## 11. Field Debug Values To Log
+$$
+3.0e^2
++0.2\dot{e}^2
++2.5\theta_e^2
++0.2\dot{\theta}_e^2
++0.8v_e^2
+$$
 
-Log these per tick for comparison with `TangentTrack`:
+The intent is: prioritize lateral and heading error, care moderately about
+speed, and keep rate terms present but not dominant.
+
+## 14. How To Tune From Symptoms
+
+Tuning should start in `tools/trajectory-sim`, then move to slow basement
+tests. Change one idea at a time. If two knobs move together, it becomes hard
+to know which one helped.
+
+| Field symptom | Likely meaning | First change |
+| --- | --- | --- |
+| blue path is consistently outside lobes | lateral error is too cheap | increase $q_e$ |
+| car points across the path instead of along it | heading error is too cheap | increase $q_{\theta}$ |
+| steering is too busy or ticks | steering effort is too cheap | increase $r_s$ or reduce $k_s$ |
+| car follows path but crawls | speed error is too cheap | increase $v_{\mathrm{target}}$ or $q_v$ |
+| throttle surges | throttle effort is too cheap | increase $r_a$ or reduce $k_{\tau}$ |
+| first seconds after path reacquisition are violent | stale derivatives are leaking in | reset previous $e$ and $\theta_e$ on large index jumps |
+| controller drives the wrong way across the center | sign convention is wrong | inspect $e_{\mathrm{ct}}$, $e$, $\theta_e$, and final steering sign |
+
+The most useful debug values per tick are:
 
 ```text
 controllerName
@@ -443,5 +648,32 @@ finalThrottle
 lqrSolveStatus
 ```
 
-The most useful comparison metrics are 95th-percentile cross-track error,
-maximum envelope overshoot, average speed, and steering saturation time.
+For comparing `TangentTrack` and `LQRTrack`, look at metrics instead of one
+screenshot:
+
+- maximum envelope overshoot,
+- 95th-percentile cross-track error,
+- average speed,
+- steering saturation time,
+- number of neutral outputs caused by invalid LQR solves.
+
+## 15. Practical Limitations
+
+`LQRTrack` is useful, but it is not magic. The first implementation has three
+known limits.
+
+First, the model does not know the front wheel angle. It commands steering and
+watches ARKit pose feedback. If the steering linkage binds or servo response
+lags, the model will be optimistic.
+
+Second, throttle is not calibrated acceleration. A throttle command that gives
+$0.20\ \mathrm{m/s}$ on one floor may give a different speed on carpet or
+concrete. That is why speed feedback and logs matter.
+
+Third, ARKit pose is the main feedback signal. If yaw jumps or drifts, the
+controller will react to that measurement. The safety supervisor and firmware
+watchdogs remain mandatory layers, not optional backup.
+
+The reason to keep `LQRTrack` behind `/figure8_lqr` is exactly this: it gives
+us a clean experimental controller without risking the already-useful
+`TangentTrack` baseline.
