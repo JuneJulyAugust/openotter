@@ -70,7 +70,7 @@ The sign conversion makes the LQR feedback align with the actuator convention.
 The heading error uses the car heading minus the path heading:
 
 $$
-\theta_e=\operatorname{wrapToPi}(\psi-\psi_{\mathrm{ref}})
+\theta_e=\mathrm{wrapToPi}(\psi-\psi_{\mathrm{ref}})
 $$
 
 Here `wrapToPi` means "choose the equivalent angle between $-\pi$ and $+\pi$."
@@ -101,7 +101,7 @@ segment the car's closest path point should be:
 
 $$
 \alpha =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
 0,
@@ -131,7 +131,7 @@ The segment direction gives the path tangent heading:
 
 $$
 \psi_{\mathrm{ref}} =
-\operatorname{atan2}
+\mathrm{atan2}
 \left(
 -(P_{1,z}-P_{0,z}),
 P_{1,x}-P_{0,x}
@@ -167,7 +167,7 @@ Curvature estimates how sharply the path is bending:
 
 $$
 \kappa \approx
-\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+\frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
 {s_{\mathrm{arc}}}
 $$
 
@@ -198,8 +198,8 @@ badly.
 | --- | --- | --- |
 | $e$ | $-e_{\mathrm{ct}}$ | signed lateral error in LQR convention |
 | $\dot{e}$ | $(e-e_{\mathrm{prev}})/\Delta t$ | lateral error rate |
-| $\theta_e$ | $\operatorname{wrapToPi}(\psi-\psi_{\mathrm{ref}})$ | heading error |
-| $\dot{\theta}_e$ | $\operatorname{wrapToPi}(\theta_e-\theta_{e,\mathrm{prev}})/\Delta t$ | heading error rate |
+| $\theta_e$ | $\mathrm{wrapToPi}(\psi-\psi_{\mathrm{ref}})$ | heading error |
+| $\dot{\theta}_e$ | $\mathrm{wrapToPi}(\theta_e-\theta_{e,\mathrm{prev}})/\Delta t$ | heading error rate |
 | $v_e$ | $v_{\mathrm{measured}}-v_{\mathrm{target}}$ | speed error |
 
 The dots mean "rate of change." For example, $\dot{e}$ is positive when
@@ -434,7 +434,7 @@ The final steering command is:
 
 $$
 s =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 s_{\mathrm{ff}}+s_{\mathrm{fb}},
 -1,
@@ -446,7 +446,7 @@ For throttle, the second LQR command is treated as an acceleration-like trim:
 
 $$
 \tau =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \tau_{\mathrm{base}}+k_{\tau}u_1,
 0,
@@ -485,7 +485,7 @@ Later, speed can slow down on high curvature:
 
 $$
 \ell_{\kappa} =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \frac{|\kappa|}{\kappa_{\mathrm{slow}}},
 0,
@@ -592,11 +592,11 @@ they are a safe starting point for simulation and low-risk field tests.
 Initial weights:
 
 $$
-Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8)
+Q = \mathrm{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8)
 $$
 
 $$
-R = \operatorname{diag}(1.0,\ 2.0)
+R = \mathrm{diag}(1.0,\ 2.0)
 $$
 
 Expanded, the state cost is:

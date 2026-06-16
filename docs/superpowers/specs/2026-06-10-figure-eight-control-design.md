@@ -141,9 +141,9 @@ $$
 $$
 
 $$
-\psi_{\mathrm{desired}} = \operatorname{atan2}(-\Delta z,\Delta x),
+\psi_{\mathrm{desired}} = \mathrm{atan2}(-\Delta z,\Delta x),
 \qquad
-e_{\psi} = \operatorname{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
+e_{\psi} = \mathrm{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
 $$
 
 For the closed-loop figure-eight, the controller now follows the current path
@@ -154,7 +154,7 @@ position, and $\mathbf{s}=P_1-P_0$. The segment projection is:
 
 $$
 \alpha =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
 0,
@@ -166,7 +166,7 @@ $$
 
 $$
 \psi_{\mathrm{ref}} =
-\operatorname{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
+\mathrm{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
 $$
 
 $$
@@ -183,23 +183,23 @@ The desired yaw combines path tangent and lateral correction:
 $$
 \psi_{\mathrm{desired}} =
 \psi_{\mathrm{ref}} +
-\operatorname{atan2}
+\mathrm{atan2}
 \left(k_{\mathrm{ct}}e_{\mathrm{ct}},\,d_{\mathrm{soft}}\right)
 $$
 
 $$
 e_{\psi,\mathrm{steer}} =
-\operatorname{wrapToPi}(\psi_{\mathrm{desired}}-\psi),
+\mathrm{wrapToPi}(\psi_{\mathrm{desired}}-\psi),
 \qquad
 e_{\psi,\mathrm{path}} =
-\operatorname{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
+\mathrm{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
 $$
 
 Steering is PID-shaped heading feedback plus feedforward:
 
 $$
 \kappa \approx
-\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+\frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
 {s_{\mathrm{arc}}},
 \qquad
 s_{\mathrm{ff}} = -k_{\kappa}\kappa
@@ -214,7 +214,7 @@ $$
 
 $$
 s =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 s_{\mathrm{ff}} - u_{\mathrm{pid}},
 -s_{\max},

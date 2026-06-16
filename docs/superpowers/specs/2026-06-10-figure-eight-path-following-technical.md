@@ -292,7 +292,7 @@ The controller projects the car position onto this segment:
 
 $$
 \alpha =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
 0,
@@ -308,7 +308,7 @@ Then it derives the reference heading from the segment tangent:
 
 $$
 \psi_{\mathrm{ref}} =
-\operatorname{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
+\mathrm{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
 $$
 
 This is the key upgrade. `referenceYaw` is the direction of the path, not the
@@ -336,7 +336,7 @@ the desired yaw left:
 
 $$
 \Delta\psi_{\mathrm{ct}} =
-\operatorname{atan2}
+\mathrm{atan2}
 \left(
 k_{\mathrm{ct}}e_{\mathrm{ct}},
 d_{\mathrm{soft}}
@@ -345,17 +345,17 @@ $$
 
 $$
 \psi_{\mathrm{desired}} =
-\operatorname{wrapToPi}(\psi_{\mathrm{ref}}+\Delta\psi_{\mathrm{ct}})
+\mathrm{wrapToPi}(\psi_{\mathrm{ref}}+\Delta\psi_{\mathrm{ct}})
 $$
 
 $$
 e_{\psi,\mathrm{steer}} =
-\operatorname{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
+\mathrm{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
 $$
 
 $$
 e_{\psi,\mathrm{path}} =
-\operatorname{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
+\mathrm{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
 $$
 
 The `atan2` correction has a useful property: small side errors behave almost
@@ -387,7 +387,7 @@ $$
 
 $$
 s =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 s_{\mathrm{ff}} - u_{\mathrm{pid}},
 -s_{\max},
@@ -449,7 +449,7 @@ controller estimates path curvature from heading change over a short arc:
 
 $$
 \kappa \approx
-\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+\frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
 s_{\mathrm{arc}}}
 $$
 
@@ -498,7 +498,7 @@ Then steering and lateral load scale the command:
 
 $$
 \ell_s =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \frac{|s|}{s_{\mathrm{full}}},
 0,
@@ -506,7 +506,7 @@ $$
 \right),
 \qquad
 \ell_{\mathrm{lat}} =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \frac{|e_{\mathrm{ct}}|}{d_{\mathrm{lat}}},
 0,
@@ -937,13 +937,17 @@ controlling a vector of errors together:
 $$
 \mathbf{x}_{\mathrm{LQR}} =
 \begin{bmatrix}
-\text{lateral error} &
-\text{lateral error rate} &
-\text{heading error} &
-\text{heading error rate} &
-\text{speed error}
+e &
+\dot{e} &
+\theta_e &
+\dot{\theta}_e &
+v_e
 \end{bmatrix}^{\top}
 $$
+
+where $e$ is lateral error, $\dot{e}$ is lateral error rate, $\theta_e$ is
+heading error, $\dot{\theta}_e$ is heading error rate, and $v_e$ is speed
+error.
 
 Instead of hand-tuning separate steering and throttle rules, LQR chooses the
 steering and acceleration corrections that minimize a weighted sum of tracking

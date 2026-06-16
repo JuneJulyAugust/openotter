@@ -244,7 +244,7 @@ $$
 
 $$
 s =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 s_{\mathrm{ff}} + k_s f_0,
 -1,
@@ -261,7 +261,7 @@ $$
 
 $$
 \tau =
-\operatorname{clip}
+\mathrm{clip}
 \left(
 \tau_{\mathrm{base}} + k_{\tau}u_1,
 0,
@@ -285,9 +285,9 @@ Start with diagonal weights. This keeps tuning understandable because each
 weight belongs mostly to one error or one actuator.
 
 $$
-Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8),
+Q = \mathrm{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8),
 \qquad
-R = \operatorname{diag}(1.0,\ 2.0)
+R = \mathrm{diag}(1.0,\ 2.0)
 $$
 
 | Symptom | First tuning move | Reason |

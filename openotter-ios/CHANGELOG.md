@@ -132,9 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.1] - 2026-03-30
 
 ### Added
-- **Motor Calibration**: Integrated physical wheel calibration logic ($88\text{mm}$ diameter) to convert raw motor RPM to vehicle speed in $\text{m/s}$.
+- **Motor Calibration**: Integrated physical wheel calibration logic ($88\ \mathrm{mm}$ diameter) to convert raw motor RPM to vehicle speed in $\mathrm{m/s}$.
 - **Robust Filtering**: Implemented a window-based `MovingAverageFilter` to smooth noisy motor RPM data with minimal latency.
-- **Speed Telemetry**: Added $\text{m/s}$ speed display to both `SelfDrivingView` and `STM32ControlView`.
+- **Speed Telemetry**: Added $\mathrm{m/s}$ speed display to both `SelfDrivingView` and `STM32ControlView`.
 
 ### Changed
 - Reorganized project resources by moving `motor_wheel_calibration.csv` to the `Resources/` directory.
