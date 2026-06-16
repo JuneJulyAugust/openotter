@@ -444,6 +444,7 @@ For every feature, fix, or refactor, process the request through this checklist.
 
    * Run targeted tests.
    * Run broader tests when relevant.
+   * If any Markdown file contains or changes math, run `tools/check-github-math.sh`.
    * Report what passed, failed, or was not run.
 
 8. **Explain the result**
@@ -451,6 +452,28 @@ For every feature, fix, or refactor, process the request through this checklist.
    * Summarize behavior change.
    * Mention tradeoffs or risks.
    * Avoid overstating certainty.
+
+---
+
+### GitHub Markdown Math Rule
+
+GitHub's Markdown math renderer is stricter than local LaTeX habits. When
+writing or editing Markdown math:
+
+* Do not use `\operatorname{...}`. Use `\mathrm{...}` for named functions:
+  `\mathrm{atan2}`, `\mathrm{clip}`, `\mathrm{wrapToPi}`, `\mathrm{diag}`.
+* Do not use `\text{...}` inside math blocks. Use prose, tables, or symbols
+  with nearby definitions instead.
+* Keep display math delimited with balanced `$$` lines.
+* Before committing Markdown math changes, run:
+
+```bash
+tools/check-github-math.sh
+```
+
+If the script fails, fix the Markdown before committing. This rule exists
+because GitHub renders unsupported macros as visible error boxes and raw
+`$$...$$` source.
 
 ---
 

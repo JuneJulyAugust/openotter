@@ -8,7 +8,29 @@ status=0
 
 echo "Checking Markdown for GitHub math macros that fail to render..."
 
-if rg -n --glob '*.md' '\\operatorname|\\text\{' .; then
+macro_output=""
+while IFS= read -r file; do
+  file_output="$(
+    perl -ne '
+    $line++;
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+    if (/\\operatorname|\\text\{/) {
+      print "$ARGV:$line:$_";
+    }
+    ' "$file"
+  )"
+  if [[ -n "$file_output" ]]; then
+    macro_output+="$file_output"$'\n'
+  fi
+done < <(rg --files --glob '*.md')
+
+if [[ -n "$macro_output" ]]; then
+  printf '%s\n' "$macro_output"
   cat <<'MSG'
 
 Unsupported math macro found.
@@ -28,12 +50,28 @@ fi
 
 echo "Checking Markdown display-math delimiter balance..."
 
+delimiter_output=""
 while IFS= read -r file; do
-  count="$(awk '{ n += gsub(/\$\$/, "") } END { print n + 0 }' "$file")"
+  count="$(
+    perl -ne '
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+    $count += () = /\$\$/g;
+    END { print $count + 0; }
+    ' "$file"
+  )"
   if (( count % 2 != 0 )); then
-    echo "$file: odd number of display-math delimiters ($count)"
-    status=1
+    delimiter_output+="$file: odd number of display-math delimiters ($count)"$'\n'
   fi
 done < <(rg --files --glob '*.md')
+
+if [[ -n "$delimiter_output" ]]; then
+  printf '%s\n' "$delimiter_output"
+  status=1
+fi
 
 exit "$status"
