@@ -40,10 +40,10 @@ errors against steering and throttle effort.
 This design keeps `TangentTrack` as `/figure8` and adds `LQRTrack` as a
 separate selectable controller:
 
-```text
-/figure8      -> TangentTrack baseline
-/figure8_lqr  -> LQRTrack experiment
-```
+| Command | Controller |
+| --- | --- |
+| `/figure8` | `TangentTrack` baseline |
+| `/figure8_lqr` | `LQRTrack` experiment |
 
 Do not silently replace the known-good baseline. LQR needs field tuning because
 OpenOtter does not yet measure front wheel angle, and throttle is a normalized
@@ -54,12 +54,12 @@ ESC command rather than a direct acceleration command.
 Both controllers should use the same figure-eight path and coordinate
 convention:
 
-```text
-PoseMapView screen up    = local +X forward
-PoseMapView screen right = local +Z right
-length = 3.2 m along +Z/-Z
-width  = 1.6 m along +X/-X
-```
+| Quantity | Convention |
+| --- | --- |
+| `PoseMapView` screen up | local $+X$ forward |
+| `PoseMapView` screen right | local $+Z$ right |
+| `length` | $3.2\ \mathrm{m}$ along $+Z/-Z$ |
+| `width` | $1.6\ \mathrm{m}$ along $+X/-X$ |
 
 `FigureEightTrajectory` remains the path generator. Both controllers use the
 same shared helper:
@@ -82,27 +82,39 @@ the trajectory.
 Use the same core state as the PythonRobotics LQR speed/steer controller, with
 OpenOtter sign conventions:
 
-```text
-x = [
-  e,          # LQR lateral state, metres
-  e_dot,      # lateral error rate, metres/second
-  theta_e,    # heading error to path tangent, radians
-  theta_dot,  # heading error rate, radians/second
-  v_e         # measured speed - target speed, metres/second
-]
+$$
+\mathbf{x} =
+\begin{bmatrix}
+e &
+\dot{e} &
+\theta_e &
+\dot{\theta}_e &
+v_e
+\end{bmatrix}^{\top}
+$$
 
-u = [
-  steering_feedback,
-  acceleration_feedback
-]
-```
+where $e$ is the LQR lateral state, $\dot{e}$ is lateral error rate,
+$\theta_e$ is heading error to the path tangent, $\dot{\theta}_e$ is heading
+error rate, and $v_e = v_{\mathrm{measured}} - v_{\mathrm{target}}$.
+
+The input vector is:
+
+$$
+\mathbf{u} =
+\begin{bmatrix}
+u_s &
+u_a
+\end{bmatrix}^{\top}
+$$
+
+where $u_s$ is steering feedback and $u_a$ is acceleration feedback.
 
 OpenOtter reference signs:
 
-- `crossTrackError > 0`: car is right of the path.
-- `theta_e = pose.yaw - referenceYaw`.
+- $e_{\mathrm{ct}} > 0$: car is right of the path.
+- $\theta_e = \psi - \psi_{\mathrm{ref}}$.
 - Positive normalized steering means right.
-- `LQRTrack` feeds `e = -crossTrackError` into the LQR state. This makes a
+- `LQRTrack` feeds $e = -e_{\mathrm{ct}}$ into the LQR state. This makes a
   right-of-path error produce left steering while keeping positive heading
   error as a right-steering correction.
 - If the path reference jumps far ahead during reacquisition, derivative
@@ -117,29 +129,41 @@ shape, but convert outputs into normalized actuator commands.
 Use a discrete linear bicycle-like model around the current path tangent and
 speed:
 
-```text
-x[k + 1] = A x[k] + B u[k]
-cost = sum(x^T Q x + u^T R u)
-u = -K x
-```
+$$
+\mathbf{x}_{k+1} = A\mathbf{x}_k + B\mathbf{u}_k
+$$
 
-The practical OpenOtter matrices can start from the PythonRobotics structure:
+$$
+J = \sum_{k=0}^{N}
+\left(
+\mathbf{x}_k^\top Q \mathbf{x}_k +
+\mathbf{u}_k^\top R \mathbf{u}_k
+\right),
+\qquad
+\mathbf{u} = -K\mathbf{x}
+$$
 
-```text
+The practical OpenOtter matrices start from the PythonRobotics structure:
+
+$$
 A =
-[1, dt, 0,  0, 0]
-[0, 0,  v,  0, 0]
-[0, 0,  1, dt, 0]
-[0, 0,  0,  0, 0]
-[0, 0,  0,  0, 1]
-
+\begin{bmatrix}
+1 & \Delta t & 0 & 0 & 0 \\
+0 & 0 & v & 0 & 0 \\
+0 & 0 & 1 & \Delta t & 0 \\
+0 & 0 & 0 & 0 & 0 \\
+0 & 0 & 0 & 0 & 1
+\end{bmatrix},
+\qquad
 B =
-[0,       0]
-[0,       0]
-[0,       0]
-[v/L,     0]
-[0,      dt]
-```
+\begin{bmatrix}
+0 & 0 \\
+0 & 0 \\
+0 & 0 \\
+v/L & 0 \\
+0 & \Delta t
+\end{bmatrix}
+$$
 
 For OpenOtter, `L` is an effective wheelbase/tuning length, not a precise
 calibrated model. Start with the physical wheelbase if known; otherwise use a
@@ -149,33 +173,43 @@ config value such as `0.30...0.50 m` and tune from logs.
 
 LQR should not do all steering work from feedback. Keep curvature feedforward:
 
-```text
-steering_ff = -curvatureFeedforwardGain * curvature
-```
+$$
+s_{\mathrm{ff}} = -k_{\kappa}\kappa
+$$
 
 Then add LQR feedback:
 
-```text
-steering = clamp(steering_ff + steeringScale * steering_feedback, -1, 1)
-```
+$$
+s =
+\operatorname{clip}
+\left(
+s_{\mathrm{ff}} + k_s u_s,
+-1,
+1
+\right)
+$$
 
 Speed control is harder because OpenOtter does not command acceleration
 directly. Use the LQR acceleration output as a throttle trim around a base
 throttle:
 
-```text
-baseThrottle = throttleForTargetSpeed(targetSpeedMps)
-throttle = clamp(baseThrottle + throttleAccelScale * acceleration_feedback,
-                 0,
-                 maxThrottle)
-```
+$$
+\tau =
+\operatorname{clip}
+\left(
+\tau_{\mathrm{base}} + k_{\tau}u_a,
+0,
+\tau_{\max}
+\right)
+$$
 
 Initial target speed should stay conservative:
 
-```text
-targetSpeedMps = 0.18...0.25 m/s
-maxThrottle = current Telegram speed, default 0.4
-```
+$$
+v_{\mathrm{target}} \in [0.18,\ 0.25]\ \mathrm{m/s},
+\qquad
+\tau_{\max} = \text{current Telegram speed, default }0.4
+$$
 
 `targetSpeedMps` and `baseThrottle` should be logged. Without calibration, the
 controller must be robust if the same throttle produces different speed on
@@ -188,21 +222,22 @@ larger `R` means "use less actuator effort."
 
 Recommended initial intent:
 
-```text
-Q lateral error       high
-Q heading error       high
-Q speed error         medium
-Q error rates         low to medium
-R steering effort     medium
-R throttle effort     medium to high
-```
+| Weight | Initial intent |
+| --- | --- |
+| lateral-error $Q$ | high |
+| heading-error $Q$ | high |
+| speed-error $Q$ | medium |
+| error-rate $Q$ | low to medium |
+| steering-effort $R$ | medium |
+| throttle-effort $R$ | medium to high |
 
 Conservative first values:
 
-```text
-Q = diag([3.0, 0.2, 2.5, 0.2, 0.8])
-R = diag([1.0, 2.0])
-```
+$$
+Q = \operatorname{diag}(3.0,\ 0.2,\ 2.5,\ 0.2,\ 0.8),
+\qquad
+R = \operatorname{diag}(1.0,\ 2.0)
+$$
 
 If the car balloons outside the lobe, raise lateral/heading `Q` or lower
 steering `R`. If steering chatters or the servo ticks, raise steering `R`,

@@ -88,33 +88,42 @@ curvature feedforward.
 
 OpenOtter planner code uses the ARKit ground plane as:
 
-```text
-+x = robot forward
-+z = robot right
-yaw 0 = facing +x
-```
+| Axis | Meaning |
+| --- | --- |
+| $+x$ | robot forward |
+| $+z$ | robot right |
+| $\psi = 0$ | facing $+x$ |
 
 Yaw rotates the robot's local axes into world coordinates:
 
-```text
-forward_world = ( cos(yaw), -sin(yaw))
-right_world   = ( sin(yaw),  cos(yaw))
-```
+$$
+\mathbf{f}_{\mathrm{world}} =
+\begin{bmatrix}
+\cos\psi \\
+-\sin\psi
+\end{bmatrix},
+\qquad
+\mathbf{r}_{\mathrm{world}} =
+\begin{bmatrix}
+\sin\psi \\
+\cos\psi
+\end{bmatrix}
+$$
 
 Firmware PWM convention is:
 
-```text
-steering -1.0 -> 1000 us -> full left
-steering  0.0 -> 1500 us -> centered
-steering +1.0 -> 2000 us -> full right
-```
+| Normalized steering | PWM | Meaning |
+| --- | --- | --- |
+| $-1.0$ | $1000\ \mu\mathrm{s}$ | full left |
+| $0.0$ | $1500\ \mu\mathrm{s}$ | centered |
+| $+1.0$ | $2000\ \mu\mathrm{s}$ | full right |
 
 `PoseMapView` renders the same ground plane as:
 
-```text
-z = screen right
-+x = screen up / forward
-```
+| Ground-plane direction | App-map direction |
+| --- | --- |
+| $+z$ | screen right |
+| $+x$ | screen up / forward |
 
 Therefore a horizontal figure-eight on the app map uses `+Z/-Z` as the long
 left/right axis and `+X/-X` as the shorter forward/back width. A target at
@@ -125,42 +134,93 @@ robot-right must produce **positive** steering. These invariants are locked by
 
 The baseline finite-waypoint controller still points at the current waypoint:
 
-```text
-dx = target.x - pose.x
-dz = target.z - pose.z
-desired_yaw = atan2(-dz, dx)
-heading_error = wrap_to_pi(desired_yaw - pose.yaw)
-```
+$$
+\Delta x = x_{\mathrm{target}} - x,
+\qquad
+\Delta z = z_{\mathrm{target}} - z
+$$
+
+$$
+\psi_{\mathrm{desired}} = \operatorname{atan2}(-\Delta z,\Delta x),
+\qquad
+e_{\psi} = \operatorname{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
+$$
 
 For the closed-loop figure-eight, the controller now follows the current path
 segment instead of chasing a future point:
 
-```text
-P0 = waypoint[currentWaypointIndex]
-P1 = waypoint[currentWaypointIndex + 1]
-segment = P1 - P0
+Let $P_0$ and $P_1$ be the current path segment endpoints, $p$ be the car
+position, and $\mathbf{s}=P_1-P_0$. The segment projection is:
 
-referencePoint = projection of pose onto segment
-referenceYaw = atan2(-(P1.z - P0.z), P1.x - P0.x)
-crossTrackError = dot(pose - referencePoint, pathRight(referenceYaw))
+$$
+\alpha =
+\operatorname{clip}
+\left(
+\frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
+0,
+1
+\right),
+\qquad
+P_{\mathrm{ref}} = P_0 + \alpha\mathbf{s}
+$$
 
-desiredYaw = referenceYaw + atan2(crossTrackGain * crossTrackError,
-                                  crossTrackSofteningDistance)
-steeringYawError = wrapToPi(desiredYaw - pose.yaw)
-pathHeadingError = wrapToPi(referenceYaw - pose.yaw)
-```
+$$
+\psi_{\mathrm{ref}} =
+\operatorname{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
+$$
+
+$$
+e_{\mathrm{ct}} =
+(p-P_{\mathrm{ref}})\cdot
+\begin{bmatrix}
+\sin\psi_{\mathrm{ref}} \\
+\cos\psi_{\mathrm{ref}}
+\end{bmatrix}
+$$
+
+The desired yaw combines path tangent and lateral correction:
+
+$$
+\psi_{\mathrm{desired}} =
+\psi_{\mathrm{ref}} +
+\operatorname{atan2}
+\left(k_{\mathrm{ct}}e_{\mathrm{ct}},\,d_{\mathrm{soft}}\right)
+$$
+
+$$
+e_{\psi,\mathrm{steer}} =
+\operatorname{wrapToPi}(\psi_{\mathrm{desired}}-\psi),
+\qquad
+e_{\psi,\mathrm{path}} =
+\operatorname{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
+$$
 
 Steering is PID-shaped heading feedback plus feedforward:
 
-```text
-curvature = smoothed heading change over nearby path samples / arc length
-feedforward = -curvatureFeedforwardGain * curvature
+$$
+\kappa \approx
+\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+{s_{\mathrm{arc}}},
+\qquad
+s_{\mathrm{ff}} = -k_{\kappa}\kappa
+$$
 
-pid = Kp * steeringYawError
-    + Ki * integral(steeringYawError)
-    + Kd * derivative(steeringYawError)
-steering = clamp(feedforward - pid, -maxSteering, +maxSteering)
-```
+$$
+u_{\mathrm{pid}} =
+K_p e_{\psi,\mathrm{steer}} +
+K_i \int e_{\psi,\mathrm{steer}}\,dt +
+K_d \frac{d e_{\psi,\mathrm{steer}}}{dt}
+$$
+
+$$
+s =
+\operatorname{clip}
+\left(
+s_{\mathrm{ff}} - u_{\mathrm{pid}},
+-s_{\max},
+s_{\max}
+\right)
+$$
 
 The controller deliberately keeps two heading errors:
 
@@ -173,17 +233,17 @@ because the recovery heading is aggressive.
 
 Current defaults:
 
-```text
-maxSteeringFraction = 1.0
-steeringThrottleScaleAtLimit = 0.70
-steeringThrottleFullLoadFraction = 0.45
-crossTrackGain = 2.2
-crossTrackSofteningDistance = 0.18 m
-curvatureFeedforwardGain = 0.10 m
-Kp = 0.9 / (pi / 2)
-Ki = 0.0
-Kd = 0.02
-```
+| Parameter | Value |
+| --- | --- |
+| $s_{\max}$ | $1.0$ |
+| steering throttle scale at limit | $0.70$ |
+| steering full-load fraction | $0.45$ |
+| $k_{\mathrm{ct}}$ | $2.2$ |
+| $d_{\mathrm{soft}}$ | $0.18\ \mathrm{m}$ |
+| $k_{\kappa}$ | $0.10\ \mathrm{m}$ |
+| $K_p$ | $0.9/(\pi/2)$ |
+| $K_i$ | $0.0$ |
+| $K_d$ | $0.02$ |
 
 The integral term is deliberately present but disabled by default. Without a
 front wheel angle sensor and with steering saturation possible, integral should
@@ -194,16 +254,26 @@ path tangent error, slows when the car is both off the centerline and
 steering-loaded, and blends in anti-stall throttle when speed feedback says the
 car is stuck or nearly stuck:
 
-```text
-base = maxThrottle * max(0.35, 1 - abs(pathHeadingError) / pi)
-steeringLoad = abs(steering) / steeringThrottleFullLoadFraction
-scale = 1 - (1 - 0.70) * steeringLoad * lateralLoad
-throttle = base * scale
+$$
+\tau_{\mathrm{base}} =
+\tau_{\max}
+\max\left(0.35,\ 1-\frac{|e_{\psi,\mathrm{path}}|}{\pi}\right)
+$$
 
-if measuredSpeed < 0.12 m/s and abs(pathHeadingError) < 90 degrees:
-    breakaway = maxThrottle * 0.75
-    throttle = blend(throttle, breakaway, speed below threshold)
-```
+$$
+\ell_s = \frac{|s|}{0.45},
+\qquad
+\tau_{\mathrm{scale}} =
+1-(1-0.70)\ell_s\ell_{\mathrm{lat}}
+$$
+
+$$
+\tau = \tau_{\mathrm{base}}\tau_{\mathrm{scale}}
+$$
+
+When $v_{\mathrm{measured}} < 0.12\ \mathrm{m/s}$ and
+$|e_{\psi,\mathrm{path}}| < \pi/2$, the controller blends toward
+$0.75\tau_{\max}$ as anti-stall breakaway throttle.
 
 For closed-loop figure-eight missions, the planner also scans a short window
 of future waypoints and advances to the closest one. This prevents the car from
@@ -214,11 +284,17 @@ orbiting around a waypoint it physically missed.
 The path is a smoother Bernoulli-style lemniscate, then resampled by arc length
 into evenly spaced controller waypoints:
 
-```text
-theta = t + pi / 2
-raw_x = -cos(theta) / (1 + sin(theta)^2)
-raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
-```
+$$
+\theta = t + \frac{\pi}{2}
+$$
+
+$$
+x_{\mathrm{raw}} =
+\frac{-\cos\theta}{1+\sin^2\theta},
+\qquad
+z_{\mathrm{raw}} =
+\frac{-\sin\theta\cos\theta}{1+\sin^2\theta}
+$$
 
 The raw curve is normalized to the requested 3.2 m by 1.6 m app-map envelope:
 3.2 m left/right along local `+Z/-Z`, and 1.6 m forward/back along local
@@ -240,12 +316,15 @@ That means:
 
 The mission starts at the center crossing of the figure eight:
 
-```text
-t = 0
-local_x = 0
-local_z = 0
-waypoint index = 0
-```
+$$
+t=0,
+\qquad
+x_{\mathrm{local}}=0,
+\qquad
+z_{\mathrm{local}}=0,
+\qquad
+i_{\mathrm{waypoint}}=0
+$$
 
 This local point is transformed into world coordinates using the car pose from
 the first control tick. In other words, `/figure8` treats the car's current
@@ -253,14 +332,13 @@ pose as the crossing point of the track.
 
 Good physical setup:
 
-```text
 1. Put the car at the desired center crossing of the 8.
 2. Point the car's nose along the desired forward/back width axis of the 8.
-3. The long 3.2 m axis will run left/right across the car on the app map.
-4. Leave about 0.8 m clear in front and behind the car.
-5. Leave about 1.6 m clear on each side.
-6. Send /figure8.
-```
+3. The long $3.2\ \mathrm{m}$ axis will run left/right across the car on the
+   app map.
+4. Leave about $0.8\ \mathrm{m}$ clear in front and behind the car.
+5. Leave about $1.6\ \mathrm{m}$ clear on each side.
+6. Send `/figure8`.
 
 The orange map marker is this start/crossing point. Its arrow shows the first
 desired motion. The green ego heading should roughly agree with that arrow
@@ -270,11 +348,11 @@ usually bulge outside the reference.
 
 The first segment moves into the forward/right branch:
 
-```text
-waypoint 1:
-  local_x > 0   # forward
-  local_z > 0   # right
-```
+$$
+x_{\mathrm{local},1} > 0,
+\qquad
+z_{\mathrm{local},1} > 0
+$$
 
 At `segmentCount / 2`, the path crosses the same center point again, then
 enters the opposite lobe. The plot below is generated from the same 240
@@ -284,16 +362,16 @@ waypoint samples that the controller follows:
 
 Current default command parameters:
 
-```text
-segmentCount      = 240
-length            = 3.2 m
-width             = 1.6 m
-acceptanceRadius  = 0.12 m
-figure8 throttle  = current Telegram speed, with no hidden boost
-default /figure8  = 0.4
-max steering      = 1.0
-progress search   = 32 future samples
-```
+| Parameter | Default |
+| --- | --- |
+| `segmentCount` | $240$ |
+| `length` | $3.2\ \mathrm{m}$ |
+| `width` | $1.6\ \mathrm{m}$ |
+| `acceptanceRadius` | $0.12\ \mathrm{m}$ |
+| figure-eight throttle | current Telegram speed, with no hidden boost |
+| default `/figure8` throttle | $0.4$ |
+| maximum steering | $1.0$ |
+| progress search | $32$ future samples |
 
 `length` and `width` are app-map envelope parameters, not mathematical `x` and
 `z` dimensions: `length` is the horizontal `+Z/-Z` span, and `width` is the

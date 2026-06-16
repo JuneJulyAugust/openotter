@@ -10,11 +10,11 @@ The car does not know its front wheel angle. That removes a common feedback
 signal, but it does not prevent feedback control. The iOS app still has an
 estimated car pose from ARKit:
 
-```text
-pose.x      ground-plane x position, metres
-pose.z      ground-plane z position, metres
-pose.yaw    heading angle, radians
-```
+| Field | Meaning |
+| --- | --- |
+| `pose.x` | ground-plane $x$ position, metres |
+| `pose.z` | ground-plane $z$ position, metres |
+| `pose.yaw` | heading angle $\psi$, radians |
 
 The current controller is named `TangentTrack`. The Swift implementation type is
 still `TangentTrackPlanner`, because it also handles ordinary finite waypoint
@@ -41,17 +41,17 @@ command.
 
 OpenOtter planner code uses a 2D ground-plane model:
 
-```text
-+x = robot forward when yaw = 0
-+z = robot right when yaw = 0
-```
+| Axis | Meaning |
+| --- | --- |
+| $+x$ | robot forward when $\psi=0$ |
+| $+z$ | robot right when $\psi=0$ |
 
 `PoseMapView` renders those axes as:
 
-```text
-screen up    = +x forward
-screen right = +z right
-```
+| Screen direction | World/local direction |
+| --- | --- |
+| up | $+x$ forward |
+| right | $+z$ right |
 
 So a "horizontal" figure eight in the app map is long in local `+Z/-Z` and
 shorter in local `+X/-X`. This is easy to mix up because the math variable
@@ -63,27 +63,54 @@ flat floor. Height, roll, and pitch are ignored by this controller.
 For a given yaw angle, the car's local forward and right directions in world
 coordinates are:
 
-```text
-forward_world = ( cos(yaw), -sin(yaw))
-right_world   = ( sin(yaw),  cos(yaw))
-```
+$$
+\mathbf{f}_{\mathrm{world}} =
+\begin{bmatrix}
+\cos\psi \\
+-\sin\psi
+\end{bmatrix},
+\qquad
+\mathbf{r}_{\mathrm{world}} =
+\begin{bmatrix}
+\sin\psi \\
+\cos\psi
+\end{bmatrix}
+$$
 
 These formulas are just a rotation. At `yaw = 0`, `cos(0) = 1` and
 `sin(0) = 0`, so:
 
-```text
-forward_world = (1, 0)
-right_world   = (0, 1)
-```
+$$
+\mathbf{f}_{\mathrm{world}} =
+\begin{bmatrix}
+1 \\
+0
+\end{bmatrix},
+\qquad
+\mathbf{r}_{\mathrm{world}} =
+\begin{bmatrix}
+0 \\
+1
+\end{bmatrix}
+$$
 
 That matches the planner convention.
 
 To convert a point from car-local coordinates into ARKit world coordinates:
 
-```text
-world.x = anchor.x + local_x * forward_world.x + local_z * right_world.x
-world.z = anchor.z + local_x * forward_world.z + local_z * right_world.z
-```
+$$
+x_{\mathrm{world}} =
+x_{\mathrm{anchor}} +
+x_{\mathrm{local}} f_x +
+z_{\mathrm{local}} r_x
+$$
+
+$$
+z_{\mathrm{world}} =
+z_{\mathrm{anchor}} +
+x_{\mathrm{local}} f_z +
+z_{\mathrm{local}} r_z
+$$
 
 This is why `/figure8` is now anchored inside `TangentTrackPlanner.plan(context:)`.
 The Telegram command does not know the current pose, but the planner does.
@@ -92,11 +119,17 @@ The Telegram command does not know the current pose, but the planner does.
 
 The path generator uses a smoother Bernoulli-style figure eight:
 
-```text
-theta = t + pi / 2
-raw_x = -cos(theta) / (1 + sin(theta)^2)
-raw_z = -sin(theta) * cos(theta) / (1 + sin(theta)^2)
-```
+$$
+\theta = t + \frac{\pi}{2}
+$$
+
+$$
+x_{\mathrm{raw}} =
+\frac{-\cos\theta}{1+\sin^2\theta},
+\qquad
+z_{\mathrm{raw}} =
+\frac{-\sin\theta\cos\theta}{1+\sin^2\theta}
+$$
 
 where `t` moves from `0` to `2 * pi`. The `pi / 2` shift makes `t = 0`
 the center crossing, and the negative signs make the first segment move
@@ -113,14 +146,14 @@ Intuition:
 
 The current command defaults are:
 
-```text
-segmentCount      = 240
-length            = 3.2 m
-width             = 1.6 m
-acceptanceRadius  = 0.12 m
-maxThrottle       = current Telegram speed, with no hidden boost
-default /figure8  = 0.4
-```
+| Parameter | Default |
+| --- | --- |
+| `segmentCount` | $240$ |
+| `length` | $3.2\ \mathrm{m}$ |
+| `width` | $1.6\ \mathrm{m}$ |
+| `acceptanceRadius` | $0.12\ \mathrm{m}$ |
+| `maxThrottle` | current Telegram speed, with no hidden boost |
+| default `/figure8` throttle | $0.4$ |
 
 `segmentCount` turns the smooth curve into a list of waypoints. With 240
 segments, neighboring waypoints are close enough for smooth steering, but not
@@ -136,21 +169,17 @@ The requested shape is a horizontal infinity track: two side-by-side lobes
 that cross in the center, like the reference image. The current generator keeps
 that literal shape in the app map:
 
-```text
-+z/-z = long left/right axis of the figure eight
-+x/-x = shorter forward/back width of the figure eight
-```
+| App-map axis | Figure-eight role |
+| --- | --- |
+| $+z/-z$ | long left/right axis |
+| $+x/-x$ | shorter forward/back width |
 
 Waypoint `0` is the center crossing at the car's pose when `/figure8` starts.
 The first few waypoints move forward and right into the first lobe. Halfway
 through the waypoint list, the path returns to the center crossing and enters
 the other lobe.
 
-The initial tangent is diagonal:
-
-```text
-tangent points forward and right
-```
+The initial tangent is diagonal: it points forward and right.
 
 With full normalized steering authority, firmware-side PWM clamping/slew,
 smoother curve, smaller path, and arc-length spacing, that diagonal start is
@@ -183,12 +212,12 @@ That means:
 With the current `3.2 m x 1.6 m` default, reserve roughly this clear area around
 the starting pose:
 
-```text
-0.8 m forward from the start crossing
-0.8 m behind the start crossing
-1.6 m to the left
-1.6 m to the right
-```
+| Direction from start crossing | Clearance |
+| --- | --- |
+| forward | $0.8\ \mathrm{m}$ |
+| behind | $0.8\ \mathrm{m}$ |
+| left | $1.6\ \mathrm{m}$ |
+| right | $1.6\ \mathrm{m}$ |
 
 If you want the long left/right axis of the 8 to face a different physical
 direction in the basement, rotate the car so its `+Z/-Z` side axis lines up
@@ -207,19 +236,24 @@ entering the first lobe.
 
 The controller stores:
 
-```text
-waypoints
-currentWaypointIndex
-isClosedLoop
-```
+| State | Purpose |
+| --- | --- |
+| `waypoints` | sampled reference path |
+| `currentWaypointIndex` | active path progress index |
+| `isClosedLoop` | whether the planner wraps at the end |
 
 On each tick, it checks whether the car is close enough to the current
 waypoint:
 
-```text
-distance = sqrt((target.x - pose.x)^2 + (target.z - pose.z)^2)
-reached = distance < target.acceptanceRadius
-```
+$$
+d =
+\sqrt{(x_{\mathrm{target}}-x)^2+(z_{\mathrm{target}}-z)^2}
+$$
+
+$$
+\mathrm{reached} =
+d < r_{\mathrm{accept}}
+$$
 
 If reached, the controller advances to the next waypoint.
 
@@ -230,18 +264,10 @@ controller keeps turning back toward that stale waypoint. On a tight lobe that
 looks exactly like the map screenshot: the car circles one loop and never
 commits to the crossing.
 
-For normal finite waypoint missions:
-
-```text
-after final waypoint -> output neutral
-```
-
-For figure-eight missions:
-
-```text
-after final waypoint -> wrap back to waypoint 0
-if a future waypoint in the progress window is closer -> skip ahead to it
-```
+For normal finite waypoint missions, reaching the final waypoint makes the
+planner output neutral. For figure-eight missions, reaching the final waypoint
+wraps progress back to waypoint $0$; if a future waypoint in the progress
+window is closer than the current one, the planner skips ahead to it.
 
 That makes `/figure8` continue until the operator sends Stop/Park.
 
@@ -254,24 +280,36 @@ when the car's yaw response is slow.
 
 For the active path segment:
 
-```text
-P0 = waypoint[currentWaypointIndex]
-P1 = waypoint[currentWaypointIndex + 1]
-segment = P1 - P0
-```
+$$
+P_0 = \mathrm{waypoint}[i],
+\qquad
+P_1 = \mathrm{waypoint}[i+1],
+\qquad
+\mathbf{s}=P_1-P_0
+$$
 
 The controller projects the car position onto this segment:
 
-```text
-alpha = clamp(dot(pose - P0, segment) / dot(segment, segment), 0, 1)
-referencePoint = P0 + alpha * segment
-```
+$$
+\alpha =
+\operatorname{clip}
+\left(
+\frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
+0,
+1
+\right)
+$$
+
+$$
+P_{\mathrm{ref}} = P_0 + \alpha\mathbf{s}
+$$
 
 Then it derives the reference heading from the segment tangent:
 
-```text
-referenceYaw = atan2(-(P1.z - P0.z), P1.x - P0.x)
-```
+$$
+\psi_{\mathrm{ref}} =
+\operatorname{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
+$$
 
 This is the key upgrade. `referenceYaw` is the direction of the path, not the
 bearing from the car to a future dot. If the path is turning through the lobe,
@@ -279,22 +317,46 @@ the controller knows the heading it should be trying to achieve.
 
 The signed side error is measured in the path's local right direction:
 
-```text
-pathRight = (sin(referenceYaw), cos(referenceYaw))
-crossTrackError = dot(pose - referencePoint, pathRight)
-```
+$$
+\mathbf{r}_{\mathrm{path}} =
+\begin{bmatrix}
+\sin\psi_{\mathrm{ref}} \\
+\cos\psi_{\mathrm{ref}}
+\end{bmatrix}
+$$
+
+$$
+e_{\mathrm{ct}} =
+(p-P_{\mathrm{ref}})\cdot\mathbf{r}_{\mathrm{path}}
+$$
 
 Positive `crossTrackError` means the car is right of the path. Positive yaw is
 left in OpenOtter's ground frame, so a positive cross-track error should bias
 the desired yaw left:
 
-```text
-crossTrackCorrection = atan2(crossTrackHeadingGain * crossTrackError,
-                             crossTrackSofteningDistance)
-desiredYaw = wrapToPi(referenceYaw + crossTrackCorrection)
-steeringYawError = wrapToPi(desiredYaw - pose.yaw)
-pathHeadingError = wrapToPi(referenceYaw - pose.yaw)
-```
+$$
+\Delta\psi_{\mathrm{ct}} =
+\operatorname{atan2}
+\left(
+k_{\mathrm{ct}}e_{\mathrm{ct}},
+d_{\mathrm{soft}}
+\right)
+$$
+
+$$
+\psi_{\mathrm{desired}} =
+\operatorname{wrapToPi}(\psi_{\mathrm{ref}}+\Delta\psi_{\mathrm{ct}})
+$$
+
+$$
+e_{\psi,\mathrm{steer}} =
+\operatorname{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
+$$
+
+$$
+e_{\psi,\mathrm{path}} =
+\operatorname{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
+$$
 
 The `atan2` correction has a useful property: small side errors behave almost
 linearly, but large side errors saturate smoothly instead of demanding an
@@ -316,47 +378,56 @@ almost stop."
 The steering output uses a PID-shaped heading controller plus a curvature
 feedforward term:
 
-```text
-pidCorrection =
-    steeringGain * steeringYawError
-  + headingIntegralGain * integral(steeringYawError)
-  + headingDerivativeGain * derivative(steeringYawError)
+$$
+u_{\mathrm{pid}} =
+K_p e_{\psi,\mathrm{steer}} +
+K_i \int e_{\psi,\mathrm{steer}}\,dt +
+K_d \frac{d e_{\psi,\mathrm{steer}}}{dt}
+$$
 
-steering = clamp(curvatureFeedforward - pidCorrection,
-                 -maxSteeringFraction,
-                 +maxSteeringFraction)
-```
+$$
+s =
+\operatorname{clip}
+\left(
+s_{\mathrm{ff}} - u_{\mathrm{pid}},
+-s_{\max},
+s_{\max}
+\right)
+$$
 
 The sign is deliberate:
 
-```text
-positive steeringYawError -> path heading is left of car -> negative steering
-negative steeringYawError -> path heading is right of car -> positive steering
-positive path curvature -> path turns left          -> negative feedforward
-```
+| Condition | Command effect |
+| --- | --- |
+| $e_{\psi,\mathrm{steer}} > 0$ | path heading is left of car, command negative steering |
+| $e_{\psi,\mathrm{steer}} < 0$ | path heading is right of car, command positive steering |
+| $\kappa > 0$ | path turns left, command negative feedforward |
 
 Current constants:
 
-```text
-steeringFractionAt90Deg = 0.9
-steeringGain = steeringFractionAt90Deg / (pi / 2)
-maxSteeringFraction = 1.0
-steeringThrottleFullLoadFraction = 0.45
-crossTrackHeadingGain = 2.2
-crossTrackSofteningDistance = 0.18 m
-headingIntegralGain = 0.0
-headingDerivativeGain = 0.02
-headingIntegralLimit = 0.5 rad*s
-curvatureFeedforwardGain = 0.10 m
-curvatureSampleSpan = 3 waypoints each side
-```
+| Parameter | Value |
+| --- | --- |
+| steering fraction at $90^\circ$ | $0.9$ |
+| $K_p$ | $0.9/(\pi/2)$ |
+| $s_{\max}$ | $1.0$ |
+| steering throttle full-load fraction | $0.45$ |
+| $k_{\mathrm{ct}}$ | $2.2$ |
+| $d_{\mathrm{soft}}$ | $0.18\ \mathrm{m}$ |
+| $K_i$ | $0.0$ |
+| $K_d$ | $0.02$ |
+| heading integral limit | $0.5\ \mathrm{rad\,s}$ |
+| $k_{\kappa}$ | $0.10\ \mathrm{m}$ |
+| curvature sample span | $3$ waypoints each side |
 
 That means:
 
-```text
-90 degree heading error -> raw feedback about 0.9
-larger errors plus feedforward -> steering capped to +/-1.0
-```
+$$
+|e_{\psi,\mathrm{steer}}| = \frac{\pi}{2}
+\quad\Rightarrow\quad
+|K_p e_{\psi,\mathrm{steer}}| \approx 0.9
+$$
+
+Larger errors plus feedforward are capped to $s\in[-1,1]$.
 
 This is a practical choice:
 
@@ -376,10 +447,15 @@ place so a small integral gain can be enabled later from logs.
 Curvature feedforward is the control engineer's suggestion in simple form. The
 controller estimates path curvature from heading change over a short arc:
 
-```text
-curvature = wrapToPi(headingAfter - headingBefore) / arcLength
-curvatureFeedforward = -curvatureFeedforwardGain * curvature
-```
+$$
+\kappa \approx
+\frac{\operatorname{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+s_{\mathrm{arc}}}
+$$
+
+$$
+s_{\mathrm{ff}} = -k_{\kappa}\kappa
+$$
 
 This tells the car to start turning before pose error grows. It is not a
 vehicle model; it is a practical "we know the path bends here" steering bias.
@@ -400,41 +476,83 @@ enough throttle to break static friction.
 
 The throttle law is:
 
-```text
-absError = abs(pathHeadingError)
+Let $a = |e_{\psi,\mathrm{path}}|$. If
+$a > e_{\psi,\mathrm{powered,max}}$, the throttle command is zero:
 
-if absError > maxPoweredHeadingError:
-    throttle = 0
-else:
-    fade = 1 - absError / pi
-    baseThrottle = maxThrottle * max(minimumThrottleFraction, fade)
+$$
+\tau = 0
+$$
 
-    steeringLoad = abs(steering) / steeringThrottleFullLoadFraction
-    lateralLoad = abs(crossTrackError) / lateralThrottleSlowdownDistance
-    slowdown = steeringLoad * lateralLoad
-    scale = 1 - (1 - steeringThrottleScaleAtLimit) * clamp(slowdown, 0, 1)
+Otherwise, the base throttle fades with path-heading error:
 
-    throttle = baseThrottle * scale
+$$
+f_{\psi} = 1-\frac{a}{\pi}
+$$
 
-    if throttle > 0
-       and abs(pathHeadingError) < pi / 2
-       and measuredSpeed < antiStallSpeedThresholdMps:
+$$
+\tau_{\mathrm{base}} =
+\tau_{\max}\max(f_{\min}, f_{\psi})
+$$
 
-        breakawayThrottle = maxThrottle * antiStallThrottleFraction
-        blend = 1 - measuredSpeed / antiStallSpeedThresholdMps
-        throttle = throttle + (breakawayThrottle - throttle) * blend
-```
+Then steering and lateral load scale the command:
+
+$$
+\ell_s =
+\operatorname{clip}
+\left(
+\frac{|s|}{s_{\mathrm{full}}},
+0,
+1
+\right),
+\qquad
+\ell_{\mathrm{lat}} =
+\operatorname{clip}
+\left(
+\frac{|e_{\mathrm{ct}}|}{d_{\mathrm{lat}}},
+0,
+1
+\right)
+$$
+
+$$
+\tau_{\mathrm{scale}} =
+1-(1-\tau_{\mathrm{scale,min}})\ell_s\ell_{\mathrm{lat}}
+$$
+
+$$
+\tau_{\mathrm{shaped}} =
+\tau_{\mathrm{base}}\tau_{\mathrm{scale}}
+$$
+
+For low-speed anti-stall, if $\tau_{\mathrm{shaped}}>0$,
+$a<\pi/2$, and $v_{\mathrm{measured}} < v_{\mathrm{stall}}$, the command
+blends toward breakaway throttle:
+
+$$
+\tau_{\mathrm{breakaway}} =
+\tau_{\max} f_{\mathrm{breakaway}}
+$$
+
+$$
+\beta = 1-\frac{v_{\mathrm{measured}}}{v_{\mathrm{stall}}}
+$$
+
+$$
+\tau =
+\tau_{\mathrm{shaped}} +
+\left(\tau_{\mathrm{breakaway}}-\tau_{\mathrm{shaped}}\right)\beta
+$$
 
 Current constants:
 
-```text
-minimumThrottleFraction = 0.35
-maxPoweredHeadingError  = 5 * pi / 6   # 150 degrees
-steeringThrottleScaleAtLimit = 0.70
-lateralThrottleSlowdownDistance = 0.20 m
-antiStallThrottleFraction = 0.75
-antiStallSpeedThresholdMps = 0.12
-```
+| Parameter | Value |
+| --- | --- |
+| $f_{\min}$ | $0.35$ |
+| $e_{\psi,\mathrm{powered,max}}$ | $5\pi/6$ or $150^\circ$ |
+| $\tau_{\mathrm{scale,min}}$ | $0.70$ |
+| $d_{\mathrm{lat}}$ | $0.20\ \mathrm{m}$ |
+| $f_{\mathrm{breakaway}}$ | $0.75$ |
+| $v_{\mathrm{stall}}$ | $0.12\ \mathrm{m/s}$ |
 
 What this does:
 
@@ -452,11 +570,17 @@ What this does:
 
 With the default Telegram speed:
 
-```text
-maxThrottle = 0.4
-minimum moving throttle = 0.4 * 0.35 = 0.14
-anti-stall breakaway throttle = 0.4 * 0.75 = 0.30
-```
+$$
+\tau_{\max} = 0.4
+$$
+
+$$
+\tau_{\mathrm{minimum}} = 0.4 \cdot 0.35 = 0.14
+$$
+
+$$
+\tau_{\mathrm{breakaway}} = 0.4 \cdot 0.75 = 0.30
+$$
 
 There is no hidden `/figure8` throttle multiplier. If the operator wants to
 test faster, they should explicitly send `speed 0.5`, `speed 0.6`, or another
@@ -467,17 +591,17 @@ authority over forward and reverse braking.
 
 The planner emits a desired command:
 
-```text
-ControlCommand(steering, throttle, source)
-```
+$$
+\mathrm{ControlCommand}(s,\tau,\mathrm{source})
+$$
 
 Then `PlannerOrchestrator` passes it through `SafetySupervisor`. The supervisor
 may return:
 
-```text
-same command       if safe
-brake/neutral      if obstacle or sensor condition requires braking
-```
+| Safety result | Meaning |
+| --- | --- |
+| same command | path-following command is allowed |
+| brake or neutral | obstacle or sensor condition requires braking |
 
 This separation matters:
 
@@ -810,13 +934,16 @@ The current figure-eight controller follows the tangent of the current path
 segment and adds cross-track correction. `LQRTrack` should improve this by
 controlling a vector of errors together:
 
-```text
-state = [lateral error,
-         lateral error rate,
-         heading error,
-         heading error rate,
-         speed error]
-```
+$$
+\mathbf{x}_{\mathrm{LQR}} =
+\begin{bmatrix}
+\text{lateral error} &
+\text{lateral error rate} &
+\text{heading error} &
+\text{heading error rate} &
+\text{speed error}
+\end{bmatrix}^{\top}
+$$
 
 Instead of hand-tuning separate steering and throttle rules, LQR chooses the
 steering and acceleration corrections that minimize a weighted sum of tracking
