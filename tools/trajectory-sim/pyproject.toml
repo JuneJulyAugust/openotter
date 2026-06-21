@@ -8,10 +8,9 @@ version = "0.1.0"
 description = "Local OpenOtter trajectory-following simulation and controller prototyping"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["matplotlib>=3.8"]
 
 [project.optional-dependencies]
-plot = ["matplotlib>=3.8"]
 dev = ["pytest>=8", "ruff>=0.5"]
 
 [project.scripts]

@@ -1018,6 +1018,7 @@ The local Python prototype can compare both controllers quickly:
 ```bash
 cd tools/trajectory-sim
 PYTHONPATH=src python3 -m unittest discover tests
+PYTHONPATH=src python3 -m openotter_sim.cli --controller both --output figure8-sim.png
 ```
 
 The documentation diagrams are generated separately as high-resolution PNGs:
