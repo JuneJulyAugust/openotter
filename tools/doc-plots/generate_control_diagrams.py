@@ -18,8 +18,10 @@ from matplotlib.patches import Arc, Polygon
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIGURE_DIR = REPO_ROOT / "docs" / "superpowers" / "specs" / "figures"
 DPI = 220
-CAR_MARKER_COLOR = "#0f172a"
-CAR_MARKER_ALPHA = 0.50
+CAR_BODY_COLOR = "#00bfff"
+CAR_BODY_ALPHA = 0.50
+CAR_WHEEL_COLOR = "#000000"
+CAR_WHEEL_ALPHA = 0.50
 
 
 def forward_vector(yaw: float) -> tuple[float, float]:
@@ -164,12 +166,13 @@ def draw_car(
     center = np.asarray(center, dtype=float)
     forward = np.asarray(forward_vector(yaw))
     right = np.asarray(right_vector(yaw))
-    car_color = to_rgba(CAR_MARKER_COLOR, CAR_MARKER_ALPHA)
-    add_rotated_box(ax, center, yaw, length, width, car_color, car_color, 1.6, 6)
+    body_color = to_rgba(CAR_BODY_COLOR, CAR_BODY_ALPHA)
+    wheel_color = to_rgba(CAR_WHEEL_COLOR, CAR_WHEEL_ALPHA)
+    add_rotated_box(ax, center, yaw, length, width, body_color, body_color, 1.6, 6)
 
     nose = center + forward * (length * 0.36)
-    ax.plot([center[1], nose[1]], [center[0], nose[0]], color=car_color, lw=1.4, zorder=7)
-    ax.scatter([center[1]], [center[0]], s=26, color=[car_color], zorder=8)
+    ax.plot([center[1], nose[1]], [center[0], nose[0]], color=body_color, lw=1.4, zorder=7)
+    ax.scatter([center[1]], [center[0]], s=26, color=[body_color], zorder=8)
 
     wheel_offsets = [
         forward * (length * 0.30) + right * (width * 0.58),
@@ -185,8 +188,8 @@ def draw_car(
             wheel_yaw,
             length * 0.20,
             width * 0.13,
-            car_color,
-            car_color,
+            wheel_color,
+            wheel_color,
             0.8,
             8,
         )
