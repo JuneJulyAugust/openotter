@@ -106,6 +106,7 @@ def arrow_xz(
         weight="bold",
         ha="left",
         va="bottom",
+        zorder=12,
     )
 
 
@@ -188,6 +189,13 @@ def draw_car(
             0.8,
             8,
         )
+
+
+def shortened_segment_end(start, end, fraction: float):
+    """Return a point between start and end, useful for labels that point at a car."""
+    start = np.asarray(start, dtype=float)
+    end = np.asarray(end, dtype=float)
+    return start + (end - start) * fraction
 
 
 def save(fig, name: str) -> None:
@@ -338,18 +346,44 @@ def generate_start_direction() -> None:
             zorder=5,
         )
 
-    ax.scatter([0], [0], s=120, color="#f97316", edgecolor="white", linewidth=1.8, zorder=6)
-    ax.text(0.08, -0.08, "start: waypoint 0\ncenter crossing\nlocal (x=0, z=0)", fontsize=11)
-
+    ax.scatter(
+        [0],
+        [0],
+        s=130,
+        color="#f97316",
+        edgecolor="white",
+        linewidth=1.8,
+        zorder=8,
+    )
     ax.scatter(
         [z[len(z) // 2]],
         [x[len(x) // 2]],
-        s=70,
-        color="#7c3aed",
-        edgecolor="white",
-        zorder=6,
+        s=210,
+        facecolor="none",
+        edgecolor="#7c3aed",
+        linewidth=2.1,
+        zorder=7,
     )
-    ax.text(-0.95, 0.18, "halfway: center crossing again", fontsize=11, color="#5b21b6")
+    ax.annotate(
+        "start: waypoint 0\ncenter crossing\nlocal (x=0, z=0)",
+        xy=(0, 0),
+        xytext=(0.30, -0.27),
+        arrowprops=dict(arrowstyle="->", color="#111827", lw=1.2),
+        fontsize=11,
+        color="#111827",
+        bbox=dict(boxstyle="round,pad=0.30", fc="white", ec="#d1d5db", alpha=0.88),
+        zorder=12,
+    )
+    ax.annotate(
+        "halfway crossing",
+        xy=(0, 0),
+        xytext=(-1.18, 0.30),
+        arrowprops=dict(arrowstyle="->", color="#5b21b6", lw=1.2),
+        fontsize=11,
+        color="#5b21b6",
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#ddd6fe", alpha=0.88),
+        zorder=12,
+    )
 
     # First motion arrow.
     first_i, first_j = 0, 16
@@ -366,12 +400,14 @@ def generate_start_direction() -> None:
         zorder=7,
     )
     ax.text(
-        0.18,
-        0.26,
+        0.50,
+        0.33,
         "first motion:\nforward + right",
         color="#166534",
         fontsize=12,
         weight="bold",
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.82),
+        zorder=12,
     )
 
     ax.annotate(
@@ -428,15 +464,28 @@ def generate_path_reference_geometry() -> None:
         color="#92400e",
     )
 
+    projection_end = shortened_segment_end(ref, car, 0.66)
+    ax.plot([ref[1], projection_end[1]], [ref[0], projection_end[0]], "--", color="#0e7490", lw=1.8)
     draw_car(ax, car, car_yaw, length=0.54, width=0.30, body_color="#ecfeff", edge_color="#0e7490")
-    ax.text(car[1] + 0.26, car[0] - 0.22, r"car pose $p_M$", fontsize=12, color="#0e7490")
-    ax.plot([ref[1], car[1]], [ref[0], car[0]], "--", color="#0e7490", lw=1.8)
-    ax.text(
-        (ref[1] + car[1]) / 2 + 0.07,
-        (ref[0] + car[0]) / 2 - 0.10,
+    ax.annotate(
+        r"car pose $p_M$",
+        xy=(car[1], car[0]),
+        xytext=(0.78, -0.48),
+        arrowprops=dict(arrowstyle="->", color="#0e7490", lw=1.2),
+        fontsize=12,
+        color="#0e7490",
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#bae6fd", alpha=0.88),
+        zorder=12,
+    )
+    ax.annotate(
         r"$e_{ct}>0$",
+        xy=(projection_end[1], projection_end[0]),
+        xytext=(-0.46, -0.23),
+        arrowprops=dict(arrowstyle="->", color="#0e7490", lw=1.2),
         fontsize=13,
         color="#0e7490",
+        bbox=dict(boxstyle="round,pad=0.22", fc="white", ec="#bae6fd", alpha=0.88),
+        zorder=12,
     )
 
     tangent = s / np.linalg.norm(s)
@@ -485,9 +534,10 @@ def generate_lqr_error_state() -> None:
     )
 
     ax.plot([p0[1], p1[1]], [p0[0], p1[0]], color="#dc2626", lw=3.2, solid_capstyle="round")
-    ax.scatter([ref[1]], [ref[0]], s=90, color="#f97316", edgecolor="white", zorder=6)
+    ax.scatter([ref[1]], [ref[0]], s=90, color="#f97316", edgecolor="white", zorder=8)
+    projection_end = shortened_segment_end(ref, car, 0.62)
+    ax.plot([ref[1], projection_end[1]], [ref[0], projection_end[0]], "--", color="#0e7490", lw=1.8)
     draw_car(ax, car, yaw, length=0.54, width=0.30, body_color="#f8fafc", edge_color="#111827")
-    ax.plot([ref[1], car[1]], [ref[0], car[0]], "--", color="#0e7490", lw=1.8)
 
     arrow_xz(ax, ref, ref_forward, "#2563eb", r"path heading $\psi_{ref}$", scale=0.43, lw=1.8)
     arrow_xz(ax, car, car_forward, "#16a34a", r"car yaw $\psi$", scale=0.43, lw=1.8)
@@ -498,7 +548,7 @@ def generate_lqr_error_state() -> None:
         "#0e7490",
         r"$e_{ct}>0$ right of path",
         scale=0.34,
-        text_offset=(0.34, -0.20),
+        text_offset=(0.48, -0.26),
         lw=1.6,
     )
 
@@ -515,12 +565,15 @@ def generate_lqr_error_state() -> None:
         lw=2,
     )
     ax.add_patch(arc)
-    ax.text(
-        car[1] - 0.40,
-        car[0] + 0.38,
+    ax.annotate(
         r"$\theta_e=wrap(\psi-\psi_{ref})$",
+        xy=(ref[1], ref[0]),
+        xytext=(-0.86, 0.22),
+        arrowprops=dict(arrowstyle="->", color="#ef4444", lw=1.2),
         color="#ef4444",
         fontsize=12,
+        bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#fecaca", alpha=0.88),
+        zorder=12,
     )
 
     ax.text(
