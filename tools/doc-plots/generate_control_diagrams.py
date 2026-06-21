@@ -11,12 +11,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgba
 from matplotlib.patches import Arc, Polygon
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIGURE_DIR = REPO_ROOT / "docs" / "superpowers" / "specs" / "figures"
 DPI = 220
+CAR_MARKER_COLOR = "#0f172a"
+CAR_MARKER_ALPHA = 0.50
 
 
 def forward_vector(yaw: float) -> tuple[float, float]:
@@ -155,20 +158,18 @@ def draw_car(
     yaw: float,
     length: float = 0.62,
     width: float = 0.34,
-    body_color: str = "#f8fafc",
-    edge_color: str = "#111827",
-    wheel_color: str = "#111827",
     steering: float = 0.0,
 ) -> None:
     """Draw a top-view car in map coordinates."""
     center = np.asarray(center, dtype=float)
     forward = np.asarray(forward_vector(yaw))
     right = np.asarray(right_vector(yaw))
-    add_rotated_box(ax, center, yaw, length, width, body_color, edge_color, 1.6, 6)
+    car_color = to_rgba(CAR_MARKER_COLOR, CAR_MARKER_ALPHA)
+    add_rotated_box(ax, center, yaw, length, width, car_color, car_color, 1.6, 6)
 
     nose = center + forward * (length * 0.36)
-    ax.plot([center[1], nose[1]], [center[0], nose[0]], color=edge_color, lw=1.4, zorder=7)
-    ax.scatter([center[1]], [center[0]], s=26, color=edge_color, zorder=8)
+    ax.plot([center[1], nose[1]], [center[0], nose[0]], color=car_color, lw=1.4, zorder=7)
+    ax.scatter([center[1]], [center[0]], s=26, color=[car_color], zorder=8)
 
     wheel_offsets = [
         forward * (length * 0.30) + right * (width * 0.58),
@@ -184,8 +185,8 @@ def draw_car(
             wheel_yaw,
             length * 0.20,
             width * 0.13,
-            wheel_color,
-            wheel_color,
+            car_color,
+            car_color,
             0.8,
             8,
         )
@@ -466,7 +467,7 @@ def generate_path_reference_geometry() -> None:
 
     projection_end = shortened_segment_end(ref, car, 0.66)
     ax.plot([ref[1], projection_end[1]], [ref[0], projection_end[0]], "--", color="#0e7490", lw=1.8)
-    draw_car(ax, car, car_yaw, length=0.54, width=0.30, body_color="#ecfeff", edge_color="#0e7490")
+    draw_car(ax, car, car_yaw, length=0.54, width=0.30)
     ax.annotate(
         r"car pose $p_M$",
         xy=(car[1], car[0]),
@@ -537,7 +538,7 @@ def generate_lqr_error_state() -> None:
     ax.scatter([ref[1]], [ref[0]], s=90, color="#f97316", edgecolor="white", zorder=8)
     projection_end = shortened_segment_end(ref, car, 0.62)
     ax.plot([ref[1], projection_end[1]], [ref[0], projection_end[0]], "--", color="#0e7490", lw=1.8)
-    draw_car(ax, car, yaw, length=0.54, width=0.30, body_color="#f8fafc", edge_color="#111827")
+    draw_car(ax, car, yaw, length=0.54, width=0.30)
 
     arrow_xz(ax, ref, ref_forward, "#2563eb", r"path heading $\psi_{ref}$", scale=0.43, lw=1.8)
     arrow_xz(ax, car, car_forward, "#16a34a", r"car yaw $\psi$", scale=0.43, lw=1.8)
