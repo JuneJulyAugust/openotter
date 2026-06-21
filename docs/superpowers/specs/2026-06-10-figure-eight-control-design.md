@@ -26,63 +26,49 @@ The target behavior is:
 - The map overlay shows the active planned waypoints.
 - Firmware remains the deterministic actuator and safety layer.
 
-## 2. Field Failure Review
+## 2. Design Requirements And Constraints
 
-Observed behavior:
+`TangentTrack` is the formal baseline controller for `/figure8`. It is designed
+for an indoor basement environment with no front wheel angle sensor, imperfect
+low-speed yaw response, and firmware-owned safety supervision. The controller
+therefore keeps the path-following math in iOS, sends only normalized steering
+and throttle requests to firmware, and relies on firmware for PWM clamping,
+slew limiting, watchdog behavior, and safety braking.
 
-- front wheels turned left,
-- the car moved slowly for a while,
-- then it stopped.
+The controller must satisfy these requirements:
 
-Root causes in the first implementation:
+1. **Use the operator's current pose as the path anchor.** The command starts
+   the figure eight at the car's pose from the first planning tick, not at a
+   fixed ARKit world origin. This makes the command repeatable anywhere in the
+   basement.
+2. **Render and follow the same path.** The red app-map reference overlay must
+   come from the same waypoint samples used by the controller, and it should
+   remain visible while other driving commands are selected so the operator can
+   compare planned and actual motion.
+3. **Follow a closed horizontal infinity path.** The long axis is app-map
+   left/right along `+Z/-Z`; the shorter width is app-map forward/back along
+   `+X/-X`. The default envelope is $3.2\ \mathrm{m}$ by
+   $1.6\ \mathrm{m}$.
+4. **Honor steering sign conventions.** Robot-right path error must produce
+   positive steering because firmware maps positive normalized steering to
+   right PWM.
+5. **Advance along the path robustly.** The planner should not get stuck
+   chasing one missed waypoint. It searches a bounded future window and tracks
+   the closest valid path segment on the closed loop.
+6. **Control heading and lateral position together.** A point-chasing waypoint
+   rule is not enough for this path. The baseline uses path tangent heading,
+   signed cross-track error, PID-shaped steering feedback, and curvature
+   feedforward.
+7. **Keep speed practical and visible.** The default `/figure8` throttle is
+   $0.4$, with speed reduced for large path-heading error or heavy steering
+   load and with limited anti-stall support when measured speed is very low.
+8. **Avoid abrupt steering commands.** iOS may request the full normalized
+   steering range $[-1,1]$, but firmware must clamp and slew PWM so full-range
+   requests remain bounded at the actuator.
 
-1. **Steering sign was inverted.** Firmware and `PwmMapping` define negative
-   steering as left and positive steering as right, but the first
-   `TangentTrackPlanner` implementation produced negative steering for a target on
-   robot-right.
-2. **Figure-eight waypoints were not anchored to the current pose.** The
-   command built a small path around ARKit world `(0, 0)` instead of the car's
-   pose when the mission began.
-3. **The path was too small and finite.** A `0.8 m x 0.5 m` one-lap waypoint
-   list can be consumed quickly, after which the planner correctly emits
-   neutral. From the operator seat, that looks like the mission died.
-4. **The map overlay used stale state.** `SelfDrivingViewModel.waypoints` was
-   never populated, so the UI was not showing the actual active path.
-
-Second field review after the waypoint baseline:
-
-- The requested trajectory is a horizontal infinity-track figure eight, not a
-  rotated/diagonal center-crossing convenience curve.
-- The car's map trace collapsed into one lobe, which is consistent with a
-  waypoint follower chasing a missed waypoint instead of advancing along the
-  closed path.
-- The front wheel servo made end-stop chatter during abrupt command changes.
-  The revised policy is to allow full normalized steering authority in the
-  app, clamp PWM to the safe firmware range, and slew steering PWM changes in
-  firmware so full-range requests do not become instantaneous servo jumps.
-
-Third field review after raising mission speed:
-
-- `0.6` normalized throttle was too fast for the basement test.
-- The car still looked like it did not turn enough to follow the figure eight.
-- The controller's computed initial steering was only about `0.23`, which is
-  mathematically nonzero but may be too weak to overcome steering deadband,
-  carpet load, or linkage friction.
-- The earlier `0.25 m` waypoint acceptance radius was also too loose for the
-  roughly `5 cm` waypoint spacing, so the controller could skip the first
-  shaping waypoints at the center crossing.
-
-Fourth field review after the smaller 3.2 m by 1.6 m path:
-
-- The reference figure-eight shape appeared correctly on the map.
-- The actual car trajectory still ballooned outside the lobes, and heading was
-  visibly not aligned with the reference path direction.
-- A deterministic slow-yaw simulation reproduced this behavior: the older
-  point follower made progress, but reached about `0.40 m` max path error.
-
-The fix is not to jump to MPC. The practical upgrade is to keep the waypoint
-path, but control against the path tangent, signed lateral error, and simple
-curvature feedforward.
+These requirements intentionally keep `TangentTrack` understandable and
+testable. The next controller, `LQRTrack`, can use the same path reference to
+compare model-based speed and steering control against this baseline.
 
 ## 3. Coordinate And PWM Invariants
 
@@ -227,7 +213,7 @@ The controller deliberately keeps two heading errors:
 - `steeringYawError` includes cross-track correction and can be aggressive.
 - `pathHeadingError` is only the path tangent error and drives throttle.
 
-This prevents the field failure where the car is tangent-aligned but off the
+This handles the important case where the car is tangent-aligned but off the
 path: steering should work hard to recover, but throttle should not fade just
 because the recovery heading is aggressive.
 
@@ -480,5 +466,5 @@ speed-and-steering controller based on the same path reference but with a small
 state-space model and quadratic cost. Its design is documented in
 `docs/superpowers/specs/2026-06-15-lqr-track-design.md`, and its math/pseudocode
 is documented in `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`.
-`TangentTrack` stays the understandable, field-tested `/figure8` baseline for
+`TangentTrack` stays the default, understandable `/figure8` baseline for
 comparison.
