@@ -21,17 +21,17 @@ does not replace `TangentTrack`. The point is to test whether a model-based
 controller can keep the car closer to the red reference path while still
 commanding enough speed to avoid crawling.
 
-The field problem is coupled: steering and speed affect each other. If steering
-is late, the blue trajectory balloons outside the lobe. If throttle fades too
-much, the car turns but barely moves. `TangentTrack` handles those two problems
-with separate practical rules. `LQRTrack` handles them in one scoring problem:
-large tracking errors cost points, and large actuator commands also cost
-points. The controller chooses the steering and speed corrections with the best
-tradeoff.
+The tracking problem is coupled: steering and speed affect each other. If
+steering is late, the blue trajectory balloons outside the lobe. If throttle
+fades too much, the car turns but barely moves. `TangentTrack` handles those
+two problems with separate practical rules. `LQRTrack` handles them in one
+scoring problem: large tracking errors cost points, and large actuator commands
+also cost points. The controller chooses the steering and speed corrections
+with the best tradeoff.
 
 The design success criterion is modest and testable:
 
-- `/figure8` still runs the field-tested `TangentTrack` baseline.
+- `/figure8` still runs the default `TangentTrack` baseline.
 - `/figure8_lqr` runs `LQRTrack` on the same reference trajectory.
 - The map, simulation, and tests can compare both controllers on the same
   figure-eight path.
@@ -70,25 +70,40 @@ Both controllers must follow the same path. Otherwise controller comparisons
 are meaningless. `FigureEightTrajectory` owns the path shape, and
 `PathReference` owns projection onto that path.
 
+Every controller comparison uses the same coordinate and path contract:
+
 | Quantity | Convention |
 | --- | --- |
-| `PoseMapView` screen up | local $+X$ forward |
-| `PoseMapView` screen right | local $+Z$ right |
-| `length` | $3.2\ \mathrm{m}$ along $+Z/-Z$ |
-| `width` | $1.6\ \mathrm{m}$ along $+X/-X$ |
+| equations use component order | `(x, z)` |
+| `PoseMapView` screen up | local $+x$ forward |
+| `PoseMapView` screen right | local $+z$ right |
+| yaw symbol | $\psi$, the same value as `pose.yaw` |
+| $\psi=0$ | car nose points along $+x$ |
+| $\psi>0$ | car nose turns left toward $-z$ |
+| positive steering command | front wheel steers right |
+| `length` | $3.2\ \mathrm{m}$ along $+z/-z$ |
+| `width` | $1.6\ \mathrm{m}$ along $+x/-x$ |
 | start point | center crossing at the car pose when the mission starts |
 | first branch | forward and right from the start crossing |
+
+![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
+
+The yaw sign and steering sign are different on purpose. Positive yaw is a
+left body rotation, while positive steering is a right wheel command. This
+must stay explicit in both `TangentTrack` and `LQRTrack`.
 
 `PathReference.project(...)` is the shared interface between the path and the
 controllers. It should answer one question: "At this tick, where is the car
 relative to the path it is supposed to follow?"
 
+![Path-reference geometry diagram](figures/path-reference-geometry.png)
+
 ```text
 PathReference.project(pose, waypoints, currentIndex)
   -> progress index
   -> projected point on the path
-  -> tangent yaw at that point
-  -> signed cross-track error
+  -> tangent yaw at that point, psi_ref
+  -> signed cross-track error, e_ct
   -> curvature
 ```
 
@@ -128,7 +143,7 @@ The boundary is intentional:
 ## 5. Error State
 
 LQR works by controlling a state vector. For OpenOtter, the state vector should
-contain the five errors that explain the field behavior:
+contain five errors:
 
 $$
 \mathbf{x} =
@@ -149,14 +164,18 @@ $$
 | $\dot{\theta}_e$ | whether heading error is growing | damps steering oscillation |
 | $v_e$ | measured speed minus target speed | tells whether the car is crawling or too fast |
 
+![LQR error-state diagram](figures/lqr-error-state.png)
+
 OpenOtter's path geometry reports $e_{\mathrm{ct}}>0$ when the car is right of
 the path. `LQRTrack` uses $e=-e_{\mathrm{ct}}$ internally so the LQR steering
 sign lines up with the normalized OpenOtter steering command:
 
 - positive normalized steering means right,
 - a car right of the path should usually steer left,
-- a positive heading error at the center crossing should steer right to align
-  with the first forward/right branch.
+- a positive heading error $\theta_e=\mathrm{wrapToPi}(\psi-\psi_{\mathrm{ref}})$
+  means the car body is yawed left of the path tangent,
+- at the center crossing, the first branch points forward/right, so a car that
+  starts at $\psi=0$ has positive $\theta_e$ and should steer right.
 
 This sign convention is not a detail. It is a safety-critical contract and
 must stay covered by tests.
@@ -325,7 +344,7 @@ openotter-ios/Sources/Agent/ActionDispatcher.swift
 
 tools/trajectory-sim/
   Local Python package for controller prototyping, deterministic simulation,
-  and SVG comparison plots.
+  and comparison plots.
 ```
 
 Do not add a heavy math dependency. The state has five values and the input

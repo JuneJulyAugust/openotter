@@ -42,18 +42,51 @@ replace actuator limits. It sits between them.
 
 ## 3. Coordinate And Sign Contract
 
-Most controller bugs in this feature have been sign bugs, so the coordinate
-contract comes first.
+Most controller mistakes in this feature are sign mistakes, so the coordinate
+contract comes first. Every equation in this document writes ground-plane
+vectors in `(x, z)` component order. The app map draws the same plane with
+`z` horizontally and `x` vertically.
 
-| Quantity | OpenOtter convention |
+| Symbol or quantity | Meaning |
 | --- | --- |
-| map screen up | $+x$ forward |
-| map screen right | $+z$ right |
-| yaw $\psi=0$ | car points along $+x$ |
-| positive yaw | car turns left in the ground-plane convention |
+| $x$ | forward/up ground-plane coordinate |
+| $z$ | right/horizontal ground-plane coordinate |
+| $p=[x,z]^\top$ | car position or point in ground-plane coordinates |
+| $\psi$ | the math symbol for `pose.yaw`, in radians |
+| $\psi=0$ | car nose points along $+x$ |
+| $\psi>0$ | car nose rotates left toward $-z$ |
+| $\psi<0$ | car nose rotates right toward $+z$ |
 | positive steering command | front wheel steers right |
-| figure-eight length | $3.2\ \mathrm{m}$ along $+Z/-Z$ |
-| figure-eight width | $1.6\ \mathrm{m}$ along $+X/-X$ |
+| figure-eight length | $3.2\ \mathrm{m}$ along $+z/-z$ |
+| figure-eight width | $1.6\ \mathrm{m}$ along $+x/-x$ |
+
+![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
+
+Yaw sign and steering sign are not the same thing. Positive yaw means the car
+body has rotated left. Positive steering means the front wheel is commanded
+right. This is why the controller equations use explicit signs instead of
+saying only "positive means turn."
+
+For any yaw angle, the car's forward and right unit vectors in world
+coordinates are:
+
+$$
+\mathbf{f}_{\mathrm{world}} =
+\begin{bmatrix}
+\cos\psi \\
+-\sin\psi
+\end{bmatrix},
+\qquad
+\mathbf{r}_{\mathrm{world}} =
+\begin{bmatrix}
+\sin\psi \\
+\cos\psi
+\end{bmatrix}
+$$
+
+Here $\mathbf{f}_{\mathrm{world}}$ means "where the car's nose points" and
+$\mathbf{r}_{\mathrm{world}}$ means "where the car's right side points." They
+are unit vectors, not actuator commands.
 
 `PathReference` reports cross-track error as $e_{\mathrm{ct}}$. Positive
 $e_{\mathrm{ct}}$ means the car is right of the path. Internally, `LQRTrack`
@@ -77,11 +110,29 @@ Here `wrapToPi` means "choose the equivalent angle between $-\pi$ and $+\pi$."
 For example, $181^\circ$ becomes $-179^\circ$ because the shortest turn is
 slightly right, not almost one full turn left.
 
+With this definition, positive $\theta_e$ means the car body is yawed left of
+the path tangent. At the center crossing of the default figure eight, the
+first branch points forward/right, so a car starting at $\psi=0$ has positive
+$\theta_e$ and needs a right steering correction.
+
 ## 4. Step 1: Project The Car Onto The Path
 
 The red path is stored as waypoints. At a given tick, `PathReference` picks a
 segment from waypoint $P_0$ to waypoint $P_1$. The car's current ground-plane
 position is $p$.
+
+![Path-reference geometry diagram](figures/path-reference-geometry.png)
+
+The projection symbols are:
+
+| Symbol | Meaning |
+| --- | --- |
+| $P_0$ | active segment start waypoint |
+| $P_1$ | active segment end waypoint |
+| $p$ | current car position |
+| $\mathbf{s}$ | segment vector from $P_0$ to $P_1$ |
+| $\alpha$ | clamped progress along the segment |
+| $P_{\mathrm{ref}}$ | projected point on the path segment |
 
 First define the segment vector:
 
@@ -142,6 +193,14 @@ The negative sign on the $z$ difference comes from OpenOtter's yaw convention.
 The result is the heading the car should have if it is perfectly aligned with
 this piece of the path.
 
+Concrete checks:
+
+- if the segment points along $+x$, then $\psi_{\mathrm{ref}}=0$,
+- if the segment points along $+z$ on the app map, then
+  $\psi_{\mathrm{ref}}=-\pi/2$,
+- if the segment points along $-z$ on the app map, then
+  $\psi_{\mathrm{ref}}=+\pi/2$.
+
 The unit vector pointing to the path's right side is:
 
 $$
@@ -178,6 +237,8 @@ turning before lateral error grows.
 ## 6. Step 3: Build The Five-Error State
 
 The controller state is just a list of five numbers:
+
+![LQR error-state diagram](figures/lqr-error-state.png)
 
 $$
 \mathbf{x} =

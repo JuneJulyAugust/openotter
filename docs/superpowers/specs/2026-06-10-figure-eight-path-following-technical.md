@@ -39,12 +39,22 @@ command.
 
 ## 2. Coordinate System
 
-OpenOtter planner code uses a 2D ground-plane model:
+OpenOtter planner code uses a 2D ground-plane model. Height, roll, and pitch
+are ignored by this controller.
 
-| Axis | Meaning |
+The most important rule is: equations use `(x, z)` component order, while the
+iOS map draws `z` horizontally and `x` vertically. In other words, math
+`x` is the app-map up/down direction, not the app-map left/right direction.
+
+| Quantity | Meaning |
 | --- | --- |
-| $+x$ | robot forward when $\psi=0$ |
-| $+z$ | robot right when $\psi=0$ |
+| $x$ | forward/up ground-plane coordinate |
+| $z$ | right/horizontal ground-plane coordinate |
+| $p=[x,z]^\top$ | a point or car position in ground-plane coordinates |
+| $\psi$ | the math symbol for `pose.yaw`, in radians |
+| $\psi=0$ | car nose points along $+x$ |
+| $\psi>0$ | car nose rotates left toward $-z$ |
+| $\psi<0$ | car nose rotates right toward $+z$ |
 
 `PoseMapView` renders those axes as:
 
@@ -54,14 +64,20 @@ OpenOtter planner code uses a 2D ground-plane model:
 | right | $+z$ right |
 
 So a "horizontal" figure eight in the app map is long in local `+Z/-Z` and
-shorter in local `+X/-X`. This is easy to mix up because the math variable
-`x` is not the app-map horizontal axis.
+shorter in local `+X/-X`.
 
-That is enough for basement driving because the car is treated as moving on a
-flat floor. Height, roll, and pitch are ignored by this controller.
+![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
 
-For a given yaw angle, the car's local forward and right directions in world
-coordinates are:
+The symbols $\mathbf{f}_{\mathrm{world}}$ and
+$\mathbf{r}_{\mathrm{world}}$ are unit vectors. They tell us where the car's
+local axes point after yaw rotation:
+
+| Symbol | Plain-English meaning | Components |
+| --- | --- | --- |
+| $\mathbf{f}_{\mathrm{world}}$ | car's local forward/nose direction, written in world `(x,z)` coordinates | $(f_x,f_z)$ |
+| $\mathbf{r}_{\mathrm{world}}$ | car's local right-side direction, written in world `(x,z)` coordinates | $(r_x,r_z)$ |
+
+For a given yaw angle, these two unit vectors are:
 
 $$
 \mathbf{f}_{\mathrm{world}} =
@@ -77,8 +93,10 @@ $$
 \end{bmatrix}
 $$
 
-These formulas are just a rotation. At `yaw = 0`, `cos(0) = 1` and
-`sin(0) = 0`, so:
+These formulas are just a rotation. They are easier to trust by checking two
+special cases.
+
+At $\psi=0$, `cos(0) = 1` and `sin(0) = 0`, so:
 
 $$
 \mathbf{f}_{\mathrm{world}} =
@@ -96,7 +114,27 @@ $$
 
 That matches the planner convention.
 
-To convert a point from car-local coordinates into ARKit world coordinates:
+At $\psi=\pi/2$, the car nose points left on the app map, so:
+
+$$
+\mathbf{f}_{\mathrm{world}} =
+\begin{bmatrix}
+0 \\
+-1
+\end{bmatrix},
+\qquad
+\mathbf{r}_{\mathrm{world}} =
+\begin{bmatrix}
+1 \\
+0
+\end{bmatrix}
+$$
+
+That means the car's forward direction is world $-z$, and the car's right side
+is world $+x$.
+
+To convert a point from car-local coordinates into ARKit-derived world
+coordinates:
 
 $$
 x_{\mathrm{world}} =
@@ -275,10 +313,24 @@ That makes `/figure8` continue until the operator sends Stop/Park.
 
 Finite waypoint missions still use the original bearing-to-waypoint rule. The
 closed-loop figure-eight mission uses a path-reference controller instead,
-because the field trace showed that chasing a point can orbit outside a lobe
-when the car's yaw response is slow.
+because chasing a single future point can orbit outside a lobe when the car's
+yaw response is slow.
 
 For the active path segment:
+
+| Symbol | Definition |
+| --- | --- |
+| $P_0$ | active segment start waypoint, in `(x,z)` coordinates |
+| $P_1$ | active segment end waypoint, in `(x,z)` coordinates |
+| $p$ | current car position, in `(x,z)` coordinates |
+| $\mathbf{s}$ | segment vector $P_1-P_0$ |
+| $\alpha$ | progress along the segment, clamped between $0$ and $1$ |
+| $P_{\mathrm{ref}}$ | closest point on the active segment |
+| $\psi_{\mathrm{ref}}$ | yaw angle of the path tangent |
+| $\mathbf{r}_{\mathrm{path}}$ | unit vector pointing to the path's right side |
+| $e_{\mathrm{ct}}$ | cross-track error; positive means car is right of the path |
+
+![Path-reference geometry diagram](figures/path-reference-geometry.png)
 
 $$
 P_0 = \mathrm{waypoint}[i],
@@ -314,6 +366,12 @@ $$
 This is the key upgrade. `referenceYaw` is the direction of the path, not the
 bearing from the car to a future dot. If the path is turning through the lobe,
 the controller knows the heading it should be trying to achieve.
+
+The negative sign on the $z$ difference comes directly from the yaw convention.
+If the segment points straight forward, then $\Delta z=0$ and
+$\psi_{\mathrm{ref}}=0$. If the segment points straight right on the app map,
+then $\Delta x=0$, $\Delta z>0$, and
+$\psi_{\mathrm{ref}}=-\pi/2$, which means right-facing yaw.
 
 The signed side error is measured in the path's local right direction:
 
@@ -367,11 +425,10 @@ The controller intentionally keeps both heading errors:
 - `steeringYawError` includes the cross-track correction and drives steering.
 - `pathHeadingError` is just the tangent direction and drives throttle.
 
-The screenshot/video failure showed why this matters. The car could be pointed
-mostly along the red path while sitting 20 cm off the centerline. In that case
-the steering controller should ask for a strong recovery turn, but the throttle
-controller should not interpret that recovery turn as "the path is behind me;
-almost stop."
+This separation matters when the car is pointed mostly along the red path but
+is still off the centerline. In that case the steering controller should ask
+for a strong recovery turn, but the throttle controller should not interpret
+that recovery turn as "the path is behind me; almost stop."
 
 ## 7. PID Feedback And Feedforward
 
@@ -912,7 +969,7 @@ This controller is intentionally simple, but it has the right control shape:
 - It uses curvature feedforward so turning begins before pose error grows.
 - It delegates obstacle safety to the existing supervisor.
 - It has direct tests for steering sign, lateral-error correction, and a
-  slow-yaw simulation that reproduces the outside-lobe failure.
+  slow-yaw simulation for outside-lobe overshoot.
 
 The main limitations are:
 
@@ -924,8 +981,8 @@ The main limitations are:
 `LQRTrack` is now implemented as an explicit experimental controller behind
 `/figure8_lqr`. It controls steering and speed from the same path reference
 using a small state-space model and a quadratic cost. `TangentTrack` remains
-the field-tested `/figure8` baseline for comparison. The LQR controller design
-is in `docs/superpowers/specs/2026-06-15-lqr-track-design.md`, with math and
+the default `/figure8` baseline for comparison. The LQR controller design is
+in `docs/superpowers/specs/2026-06-15-lqr-track-design.md`, with math and
 pseudocode in `docs/superpowers/specs/2026-06-15-lqr-track-technical.md`.
 
 ## 12. `LQRTrack` Comparison
@@ -949,6 +1006,8 @@ where $e$ is lateral error, $\dot{e}$ is lateral error rate, $\theta_e$ is
 heading error, $\dot{\theta}_e$ is heading error rate, and $v_e$ is speed
 error.
 
+![LQR error-state diagram](figures/lqr-error-state.png)
+
 Instead of hand-tuning separate steering and throttle rules, LQR chooses the
 steering and acceleration corrections that minimize a weighted sum of tracking
 error and actuator effort. The detailed LQR design is documented separately so
@@ -959,8 +1018,16 @@ The local Python prototype can compare both controllers quickly:
 ```bash
 cd tools/trajectory-sim
 PYTHONPATH=src python3 -m unittest discover tests
-PYTHONPATH=src python3 -m openotter_sim.cli --controller both --output figure8-sim.svg
 ```
+
+The documentation diagrams are generated separately as high-resolution PNGs:
+
+```bash
+MPLCONFIGDIR=/private/tmp/openotter-mplconfig \
+  /private/tmp/openotter-doc-plots-venv/bin/python tools/doc-plots/generate_control_diagrams.py
+```
+
+See `tools/doc-plots/README.md` for the full venv setup.
 
 The next tuning questions should come from field data:
 

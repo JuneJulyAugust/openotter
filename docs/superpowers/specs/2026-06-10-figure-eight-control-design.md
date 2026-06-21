@@ -4,7 +4,7 @@
 **Date:** 2026-06-10
 **Branch/worktree:** `control-figure-eight-design` at `.worktrees/control-figure-eight-design`
 **Technical note:** `docs/superpowers/specs/2026-06-10-figure-eight-path-following-technical.md`
-**Trajectory plot:** `docs/superpowers/specs/2026-06-10-figure-eight-trajectory-plot.svg`
+**Trajectory plot:** `docs/superpowers/specs/figures/figure-eight-start-and-direction.png`
 
 ## 1. Goal
 
@@ -70,15 +70,35 @@ These requirements intentionally keep `TangentTrack` understandable and
 testable. The next controller, `LQRTrack`, can use the same path reference to
 compare model-based speed and steering control against this baseline.
 
-## 3. Coordinate And PWM Invariants
+## 3. Coordinate, Yaw, And PWM Invariants
 
-OpenOtter planner code uses the ARKit ground plane as:
+OpenOtter planner code uses a two-dimensional ground plane derived from ARKit.
+Every vector in this document is written in `(x, z)` component order, even
+though the app map draws `z` horizontally and `x` vertically.
 
 | Axis | Meaning |
 | --- | --- |
-| $+x$ | robot forward |
-| $+z$ | robot right |
-| $\psi = 0$ | facing $+x$ |
+| $+x$ | forward/up on the app map when yaw is zero |
+| $+z$ | right/horizontal on the app map when yaw is zero |
+| $\psi$ | `pose.yaw`, measured in radians from $+x$ |
+| $\psi=0$ | car nose points along $+x$ |
+| $\psi>0$ | car nose turns left toward $-z$ |
+| $\psi<0$ | car nose turns right toward $+z$ |
+
+![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
+
+Yaw and steering use different signs. Positive yaw means the car body is
+rotated left in the ground-plane frame. Positive steering command means the
+front wheel is commanded right. This sign difference is intentional and is why
+the controller equations are explicit about yaw sign and steering sign.
+
+The two unit vectors below are not forces. The letter `f` means **forward** and
+the letter `r` means **right**:
+
+| Symbol | Definition |
+| --- | --- |
+| $\mathbf{f}_{\mathrm{world}}$ | unit vector in world coordinates pointing out the car's local $+x$ nose direction |
+| $\mathbf{r}_{\mathrm{world}}$ | unit vector in world coordinates pointing out the car's local $+z$ right side |
 
 Yaw rotates the robot's local axes into world coordinates:
 
@@ -95,6 +115,12 @@ $$
 \cos\psi
 \end{bmatrix}
 $$
+
+At $\psi=0$, these become
+$\mathbf{f}_{\mathrm{world}}=(1,0)$ and
+$\mathbf{r}_{\mathrm{world}}=(0,1)$. At $\psi=\pi/2$, the car nose points
+left on the app map, so
+$\mathbf{f}_{\mathrm{world}}=(0,-1)$.
 
 Firmware PWM convention is:
 
@@ -114,7 +140,8 @@ Firmware PWM convention is:
 Therefore a horizontal figure-eight on the app map uses `+Z/-Z` as the long
 left/right axis and `+X/-X` as the shorter forward/back width. A target at
 robot-right must produce **positive** steering. These invariants are locked by
-`FigureEightTrajectoryTests` and `TangentTrackPlannerTests`.
+`RobotGeometryTests`, `FigureEightTrajectoryTests`, and
+`TangentTrackPlannerTests`.
 
 ## 4. Controller Strategy
 
@@ -132,8 +159,21 @@ $$
 e_{\psi} = \mathrm{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
 $$
 
-For the closed-loop figure-eight, the controller now follows the current path
-segment instead of chasing a future point:
+For the closed-loop figure-eight, the controller follows the current path
+segment instead of chasing a future point. The symbols are:
+
+| Symbol | Meaning |
+| --- | --- |
+| $p$ | current car position in `(x, z)` world coordinates |
+| $P_0$ | start waypoint of the active path segment |
+| $P_1$ | end waypoint of the active path segment |
+| $\mathbf{s}$ | segment vector $P_1-P_0$ |
+| $\alpha$ | scalar progress along the segment, clamped from $0$ to $1$ |
+| $P_{\mathrm{ref}}$ | closest point on the active segment |
+| $\psi_{\mathrm{ref}}$ | reference yaw of the path tangent |
+| $e_{\mathrm{ct}}$ | signed cross-track error; positive means car is right of the path |
+
+![Path-reference geometry diagram](figures/path-reference-geometry.png)
 
 Let $P_0$ and $P_1$ be the current path segment endpoints, $p$ be the car
 position, and $\mathbf{s}=P_1-P_0$. The segment projection is:
@@ -155,6 +195,12 @@ $$
 \mathrm{atan2}\left(-(P_{1,z}-P_{0,z}),\,P_{1,x}-P_{0,x}\right)
 $$
 
+The negative sign on the $z$ difference is required by the yaw convention. A
+segment moving straight forward has $\Delta z=0$ and therefore
+$\psi_{\mathrm{ref}}=0$. A segment moving to the app-map right has
+$\Delta x=0$, $\Delta z>0$, and therefore
+$\psi_{\mathrm{ref}}=-\pi/2$, meaning the desired body yaw points right.
+
 $$
 e_{\mathrm{ct}} =
 (p-P_{\mathrm{ref}})\cdot
@@ -164,7 +210,9 @@ e_{\mathrm{ct}} =
 \end{bmatrix}
 $$
 
-The desired yaw combines path tangent and lateral correction:
+The desired yaw combines path tangent and lateral correction. When
+$e_{\mathrm{ct}}>0$, the car is right of the path, so the desired yaw is biased
+left to bring it back:
 
 $$
 \psi_{\mathrm{desired}} =
@@ -344,7 +392,7 @@ At `segmentCount / 2`, the path crosses the same center point again, then
 enters the opposite lobe. The plot below is generated from the same 240
 waypoint samples that the controller follows:
 
-![Figure-eight trajectory plot](2026-06-10-figure-eight-trajectory-plot.svg)
+![Figure-eight start and direction plot](figures/figure-eight-start-and-direction.png)
 
 Current default command parameters:
 
