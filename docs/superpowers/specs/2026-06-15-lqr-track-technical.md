@@ -43,22 +43,27 @@ replace actuator limits. It sits between them.
 ## 3. Coordinate And Sign Contract
 
 Most controller mistakes in this feature are sign mistakes, so the coordinate
-contract comes first. Every equation in this document writes ground-plane
-vectors in `(x, z)` component order. The app map draws the same plane with
-`z` horizontally and `x` vertically.
+contract comes first. The vehicle-body convention follows
+[ROS REP-103](https://github.com/ros-infrastructure/rep/blob/master/rep-0103.rst):
+vehicle $+x$ points forward, vehicle $+y$ points left, vehicle $+z$ points
+up, and positive yaw rotates the vehicle counter-clockwise by the right-hand
+rule. OpenOtter's app map stores ground-plane points as $(x_M,z_M)$, where
+$z_M$ is screen-right, so each equation names the frame explicitly.
 
 | Symbol or quantity | Meaning |
 | --- | --- |
-| $x$ | forward/up ground-plane coordinate |
-| $z$ | right/horizontal ground-plane coordinate |
-| $p=[x,z]^\top$ | car position or point in ground-plane coordinates |
+| $M$ | app-map frame; a point is $p_M=[x_M,z_M]^\top$ |
+| $+x_M$ | forward/up ground-plane coordinate |
+| $+z_M$ | right/horizontal ground-plane coordinate |
+| $B$ | standard vehicle body frame; $+x_B$ forward, $+y_B$ left, $+z_B$ up |
+| $L$ | OpenOtter mission-local frame; $x_L=x_B$ and $z_L=-y_B$ |
 | $\psi$ | the math symbol for `pose.yaw`, in radians |
-| $\psi=0$ | car nose points along $+x$ |
-| $\psi>0$ | car nose rotates left toward $-z$ |
-| $\psi<0$ | car nose rotates right toward $+z$ |
+| $\psi=0$ | car nose points along $+x_M$ |
+| $\psi>0$ | car nose rotates left toward $-z_M$ |
+| $\psi<0$ | car nose rotates right toward $+z_M$ |
 | positive steering command | front wheel steers right |
-| figure-eight length | $3.2\ \mathrm{m}$ along $+z/-z$ |
-| figure-eight width | $1.6\ \mathrm{m}$ along $+x/-x$ |
+| figure-eight length | $3.2\ \mathrm{m}$ along $+z_M/-z_M$ |
+| figure-eight width | $1.6\ \mathrm{m}$ along $+x_M/-x_M$ |
 
 ![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
 
@@ -67,26 +72,39 @@ body has rotated left. Positive steering means the front wheel is commanded
 right. This is why the controller equations use explicit signs instead of
 saying only "positive means turn."
 
-For any yaw angle, the car's forward and right unit vectors in world
-coordinates are:
+For any yaw angle, the standard vehicle body axes expressed in the app-map
+frame are:
 
 $$
-\mathbf{f}_{\mathrm{world}} =
+{}^{M}\mathbf{e}_{x_B} =
 \begin{bmatrix}
 \cos\psi \\
 -\sin\psi
 \end{bmatrix},
 \qquad
-\mathbf{r}_{\mathrm{world}} =
+{}^{M}\mathbf{e}_{y_B} =
+\begin{bmatrix}
+-\sin\psi \\
+-\cos\psi
+\end{bmatrix}
+$$
+
+OpenOtter's mission-local `localZ` axis points right, so it is the opposite of
+standard body-left:
+
+$$
+{}^{M}\mathbf{e}_{z_L} =
+-{}^{M}\mathbf{e}_{y_B} =
 \begin{bmatrix}
 \sin\psi \\
 \cos\psi
 \end{bmatrix}
 $$
 
-Here $\mathbf{f}_{\mathrm{world}}$ means "where the car's nose points" and
-$\mathbf{r}_{\mathrm{world}}$ means "where the car's right side points." They
-are unit vectors, not actuator commands.
+Here ${}^{M}\mathbf{e}_{x_B}$ is where the car's nose points,
+${}^{M}\mathbf{e}_{y_B}$ is the standard body-left direction, and
+${}^{M}\mathbf{e}_{z_L}$ is the right-positive local axis used by the
+OpenOtter path generator. They are unit vectors, not actuator commands.
 
 `PathReference` reports cross-track error as $e_{\mathrm{ct}}$. Positive
 $e_{\mathrm{ct}}$ means the car is right of the path. Internally, `LQRTrack`
@@ -119,7 +137,7 @@ $\theta_e$ and needs a right steering correction.
 
 The red path is stored as waypoints. At a given tick, `PathReference` picks a
 segment from waypoint $P_0$ to waypoint $P_1$. The car's current ground-plane
-position is $p$.
+position is $p_M$.
 
 ![Path-reference geometry diagram](figures/path-reference-geometry.png)
 
@@ -129,10 +147,13 @@ The projection symbols are:
 | --- | --- |
 | $P_0$ | active segment start waypoint |
 | $P_1$ | active segment end waypoint |
-| $p$ | current car position |
+| $p_M$ | current car position in app-map coordinates |
 | $\mathbf{s}$ | segment vector from $P_0$ to $P_1$ |
 | $\alpha$ | clamped progress along the segment |
 | $P_{\mathrm{ref}}$ | projected point on the path segment |
+| $P$ | path frame at $P_{\mathrm{ref}}$ |
+| ${}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
+| ${}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
 
 First define the segment vector:
 
@@ -154,7 +175,7 @@ $$
 \alpha =
 \mathrm{clip}
 \left(
-\frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
+\frac{(p_M-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
 0,
 1
 \right)
@@ -201,10 +222,10 @@ Concrete checks:
 - if the segment points along $-z$ on the app map, then
   $\psi_{\mathrm{ref}}=+\pi/2$.
 
-The unit vector pointing to the path's right side is:
+The path-right unit axis is:
 
 $$
-\mathbf{r}_{\mathrm{path}} =
+{}^{M}\mathbf{e}_{z_P} =
 \begin{bmatrix}
 \sin\psi_{\mathrm{ref}} \\
 \cos\psi_{\mathrm{ref}}
@@ -215,7 +236,7 @@ The signed cross-track error is:
 
 $$
 e_{\mathrm{ct}} =
-(p-P_{\mathrm{ref}})\cdot\mathbf{r}_{\mathrm{path}}
+(p_M-P_{\mathrm{ref}})\cdot{}^{M}\mathbf{e}_{z_P}
 $$
 
 This equation compares the car's offset from the path with the path's right

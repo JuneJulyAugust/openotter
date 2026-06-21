@@ -11,7 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Arc
+from matplotlib.patches import Arc, Polygon
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,13 +20,19 @@ DPI = 220
 
 
 def forward_vector(yaw: float) -> tuple[float, float]:
-    """Return (x, z) forward unit vector, matching RobotGeometry.swift."""
+    """Return map components of the body +x_B forward axis."""
     return math.cos(yaw), -math.sin(yaw)
 
 
 def right_vector(yaw: float) -> tuple[float, float]:
-    """Return (x, z) right unit vector, matching RobotGeometry.swift."""
+    """Return map components of OpenOtter's local +z_L right axis."""
     return math.sin(yaw), math.cos(yaw)
+
+
+def left_vector(yaw: float) -> tuple[float, float]:
+    """Return map components of the standard body +y_B left axis."""
+    rx, rz = right_vector(yaw)
+    return -rx, -rz
 
 
 def plot_ground_axes(ax, title: str, xlim=(-2.0, 2.0), ylim=(-1.4, 1.4)) -> None:
@@ -34,7 +40,7 @@ def plot_ground_axes(ax, title: str, xlim=(-2.0, 2.0), ylim=(-1.4, 1.4)) -> None
     ax.axhline(0, color="#9ca3af", lw=1.1, zorder=0)
     ax.axvline(0, color="#9ca3af", lw=1.1, zorder=0)
     ax.annotate(
-        "+z right on app map",
+        r"$+z_M$ right on app map",
         xy=(xlim[1] * 0.92, 0),
         xytext=(xlim[1] * 0.56, 0.14),
         arrowprops=dict(arrowstyle="->", color="#374151", lw=1.5),
@@ -43,7 +49,7 @@ def plot_ground_axes(ax, title: str, xlim=(-2.0, 2.0), ylim=(-1.4, 1.4)) -> None
         ha="left",
     )
     ax.annotate(
-        "+x forward / up on app map",
+        r"$+x_M$ forward / up on app map",
         xy=(0, ylim[1] * 0.92),
         xytext=(0.14, ylim[1] * 0.70),
         arrowprops=dict(arrowstyle="->", color="#374151", lw=1.5),
@@ -54,32 +60,46 @@ def plot_ground_axes(ax, title: str, xlim=(-2.0, 2.0), ylim=(-1.4, 1.4)) -> None
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
     ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel("app-map horizontal coordinate z (m)")
-    ax.set_ylabel("app-map vertical coordinate x (m)")
+    ax.set_xlabel(r"app-map horizontal coordinate $z_M$ (m)")
+    ax.set_ylabel(r"app-map vertical coordinate $x_M$ (m)")
     ax.set_title(title, fontsize=17, weight="bold", pad=14)
     ax.grid(True, color="#e5e7eb", lw=0.8)
 
 
-def arrow_xz(ax, start, vector, color, label, scale=1.0, width=0.018, text_offset=(0.04, 0.04)):
+def arrow_xz(
+    ax,
+    start,
+    vector,
+    color,
+    label,
+    scale=1.0,
+    width=None,
+    text_offset=(0.04, 0.04),
+    lw=1.8,
+    mutation_scale=14,
+    linestyle="-",
+):
     """Draw a vector whose components are (x, z), plotted as (z, x)."""
     sx, sz = start
     vx, vz = vector
-    ax.arrow(
-        sz,
-        sx,
-        vz * scale,
-        vx * scale,
-        head_width=0.075,
-        head_length=0.10,
-        length_includes_head=True,
-        color=color,
-        lw=2.2,
-        width=width,
+    end_x = sx + vx * scale
+    end_z = sz + vz * scale
+    ax.annotate(
+        "",
+        xy=(end_z, end_x),
+        xytext=(sz, sx),
+        arrowprops=dict(
+            arrowstyle="-|>",
+            color=color,
+            lw=lw,
+            mutation_scale=mutation_scale,
+            linestyle=linestyle,
+        ),
         zorder=4,
     )
     ax.text(
-        sz + vz * scale + text_offset[0],
-        sx + vx * scale + text_offset[1],
+        end_z + text_offset[0],
+        end_x + text_offset[1],
         label,
         color=color,
         fontsize=12,
@@ -87,6 +107,87 @@ def arrow_xz(ax, start, vector, color, label, scale=1.0, width=0.018, text_offse
         ha="left",
         va="bottom",
     )
+
+
+def rotated_box_points(center, yaw: float, length: float, width: float) -> np.ndarray:
+    """Return car-local rectangle corners as map (x, z) points."""
+    center = np.asarray(center, dtype=float)
+    forward = np.asarray(forward_vector(yaw))
+    right = np.asarray(right_vector(yaw))
+    return np.array(
+        [
+            center + forward * (length / 2) + right * (width / 2),
+            center + forward * (length / 2) - right * (width / 2),
+            center - forward * (length / 2) - right * (width / 2),
+            center - forward * (length / 2) + right * (width / 2),
+        ]
+    )
+
+
+def add_rotated_box(
+    ax,
+    center,
+    yaw: float,
+    length: float,
+    width: float,
+    facecolor: str,
+    edgecolor: str,
+    lw: float,
+    zorder: int,
+) -> None:
+    points = rotated_box_points(center, yaw, length, width)
+    ax.add_patch(
+        Polygon(
+            [(point[1], point[0]) for point in points],
+            closed=True,
+            facecolor=facecolor,
+            edgecolor=edgecolor,
+            lw=lw,
+            zorder=zorder,
+        )
+    )
+
+
+def draw_car(
+    ax,
+    center,
+    yaw: float,
+    length: float = 0.62,
+    width: float = 0.34,
+    body_color: str = "#f8fafc",
+    edge_color: str = "#111827",
+    wheel_color: str = "#111827",
+    steering: float = 0.0,
+) -> None:
+    """Draw a top-view car in map coordinates."""
+    center = np.asarray(center, dtype=float)
+    forward = np.asarray(forward_vector(yaw))
+    right = np.asarray(right_vector(yaw))
+    add_rotated_box(ax, center, yaw, length, width, body_color, edge_color, 1.6, 6)
+
+    nose = center + forward * (length * 0.36)
+    ax.plot([center[1], nose[1]], [center[0], nose[0]], color=edge_color, lw=1.4, zorder=7)
+    ax.scatter([center[1]], [center[0]], s=26, color=edge_color, zorder=8)
+
+    wheel_offsets = [
+        forward * (length * 0.30) + right * (width * 0.58),
+        forward * (length * 0.30) - right * (width * 0.58),
+        -forward * (length * 0.30) + right * (width * 0.58),
+        -forward * (length * 0.30) - right * (width * 0.58),
+    ]
+    for index, offset in enumerate(wheel_offsets):
+        wheel_yaw = yaw + steering if index < 2 else yaw
+        add_rotated_box(
+            ax,
+            center + offset,
+            wheel_yaw,
+            length * 0.20,
+            width * 0.13,
+            wheel_color,
+            wheel_color,
+            0.8,
+            8,
+        )
 
 
 def save(fig, name: str) -> None:
@@ -97,73 +198,94 @@ def save(fig, name: str) -> None:
 
 def generate_coordinate_conventions() -> None:
     yaw = math.radians(35)
-    f = forward_vector(yaw)
-    r = right_vector(yaw)
+    body_x = forward_vector(yaw)
+    body_y = left_vector(yaw)
+    local_z = right_vector(yaw)
 
-    fig, ax = plt.subplots(figsize=(11.5, 7.2))
+    fig, ax = plt.subplots(figsize=(12.4, 7.6))
     plot_ground_axes(
         ax,
-        "OpenOtter ground-plane convention: yaw, forward, and right",
-        xlim=(-1.55, 1.75),
-        ylim=(-0.55, 1.45),
+        "Vehicle frame and OpenOtter app-map convention",
+        xlim=(-2.05, 2.25),
+        ylim=(-1.12, 1.65),
     )
 
-    ax.scatter([0], [0], s=80, color="#111827", zorder=5)
-    ax.text(0.05, -0.08, "car pose / anchor", fontsize=11, color="#111827")
+    car_center = np.array([0.18, 0.08])
+    draw_car(ax, car_center, yaw, length=0.72, width=0.42, steering=0.0)
+    ax.text(
+        car_center[1] + 0.30,
+        car_center[0] - 0.38,
+        "car pose / mission anchor",
+        fontsize=11,
+        color="#111827",
+    )
 
-    arrow_xz(ax, (0, 0), (1, 0), "#6b7280", r"$+\mathbf{x}$ when $\psi=0$", scale=0.65)
     arrow_xz(
         ax,
-        (0, 0),
-        (0, 1),
-        "#6b7280",
-        r"$+\mathbf{z}$ when $\psi=0$",
-        scale=0.65,
-        text_offset=(0.04, -0.08),
+        car_center,
+        body_x,
+        "#2563eb",
+        r"${}^{M}\mathbf{e}_{x_B}$ body forward",
+        scale=0.82,
+        text_offset=(-0.18, 0.07),
+        lw=2.0,
     )
     arrow_xz(
         ax,
-        (0, 0),
-        f,
-        "#0ea5e9",
-        r"$\mathbf{f}_{world}=(\cos\psi,\,-\sin\psi)$",
-        scale=1.05,
-        text_offset=(-0.78, 0.05),
+        car_center,
+        body_y,
+        "#7c3aed",
+        r"${}^{M}\mathbf{e}_{y_B}$ body left",
+        scale=0.54,
+        text_offset=(-0.68, 0.02),
+        lw=1.8,
     )
     arrow_xz(
         ax,
-        (0, 0),
-        r,
+        car_center,
+        local_z,
         "#16a34a",
-        r"$\mathbf{r}_{world}=(\sin\psi,\,\cos\psi)$",
-        scale=0.88,
-        text_offset=(0.02, 0.02),
+        r"${}^{M}\mathbf{e}_{z_L}=-{}^{M}\mathbf{e}_{y_B}$",
+        scale=0.50,
+        text_offset=(0.06, -0.13),
+        lw=1.5,
+        mutation_scale=12,
+        linestyle="--",
     )
 
-    # Positive yaw arc: from +x/up toward screen-left (-z).
-    arc = Arc((0, 0), 0.76, 0.76, angle=0, theta1=90, theta2=125, color="#ef4444", lw=2.2)
+    # Positive yaw arc: from +x/up toward screen-left (-z) in app-map drawing.
+    arc = Arc(
+        (car_center[1], car_center[0]),
+        0.82,
+        0.82,
+        angle=0,
+        theta1=90,
+        theta2=125,
+        color="#ef4444",
+        lw=1.8,
+    )
     ax.add_patch(arc)
     ax.annotate(
         "",
-        xy=(-0.24, 0.31),
-        xytext=(-0.16, 0.34),
-        arrowprops=dict(arrowstyle="->", color="#ef4444", lw=2.2),
+        xy=(car_center[1] - 0.26, car_center[0] + 0.34),
+        xytext=(car_center[1] - 0.16, car_center[0] + 0.38),
+        arrowprops=dict(arrowstyle="->", color="#ef4444", lw=1.8),
     )
     ax.text(
-        -1.42,
-        0.20,
-        r"positive yaw $\psi$ turns" + "\n" + r"the nose left toward $-z$",
+        -1.84,
+        0.64,
+        r"positive yaw $\psi$ turns" + "\n" + r"the nose left toward $-z_M$",
         color="#ef4444",
         fontsize=12,
     )
 
     ax.text(
-        -1.48,
-        -0.43,
-        "Yaw is pose.yaw. It is measured from +x forward.\n"
-        "psi = 0: nose points up on the app map.\n"
-        "psi > 0: nose rotates left on the app map.\n"
-        "Steering sign is separate: positive steering means wheel-right.",
+        -1.94,
+        -0.98,
+        r"$M$: app map stores points as $(x_M,z_M)$; $+z_M$ draws right." + "\n"
+        r"$B$: standard vehicle body frame; $+x_B$ forward, $+y_B$ left, $+z_B$ up." + "\n"
+        r"$L$: OpenOtter mission-local frame; $x_L=x_B$ and $z_L=-y_B$." + "\n"
+        r"$\psi$ is pose.yaw: car-body heading measured from $+x_M$.",
         fontsize=11,
         color="#111827",
         bbox=dict(boxstyle="round,pad=0.45", fc="#f9fafb", ec="#d1d5db"),
@@ -219,7 +341,14 @@ def generate_start_direction() -> None:
     ax.scatter([0], [0], s=120, color="#f97316", edgecolor="white", linewidth=1.8, zorder=6)
     ax.text(0.08, -0.08, "start: waypoint 0\ncenter crossing\nlocal (x=0, z=0)", fontsize=11)
 
-    ax.scatter([z[len(z) // 2]], [x[len(x) // 2]], s=70, color="#7c3aed", edgecolor="white", zorder=6)
+    ax.scatter(
+        [z[len(z) // 2]],
+        [x[len(x) // 2]],
+        s=70,
+        color="#7c3aed",
+        edgecolor="white",
+        zorder=6,
+    )
     ax.text(-0.95, 0.18, "halfway: center crossing again", fontsize=11, color="#5b21b6")
 
     # First motion arrow.
@@ -236,7 +365,14 @@ def generate_start_direction() -> None:
         length_includes_head=True,
         zorder=7,
     )
-    ax.text(0.18, 0.26, "first motion:\nforward + right", color="#166534", fontsize=12, weight="bold")
+    ax.text(
+        0.18,
+        0.26,
+        "first motion:\nforward + right",
+        color="#166534",
+        fontsize=12,
+        weight="bold",
+    )
 
     ax.annotate(
         "length = 3.2 m along +Z/-Z\n(app-map left/right)",
@@ -261,53 +397,67 @@ def generate_start_direction() -> None:
 
 
 def generate_path_reference_geometry() -> None:
-    p0 = np.array([-0.45, -1.05])  # (x, z)
-    p1 = np.array([0.82, 0.82])
+    p0 = np.array([-0.54, -1.28])  # (x, z)
+    p1 = np.array([0.84, 1.12])
     s = p1 - p0
-    ref = p0 + 0.58 * s
+    ref = p0 + 0.56 * s
     yaw_ref = math.atan2(-(p1[1] - p0[1]), p1[0] - p0[0])
     right = np.array(right_vector(yaw_ref))
-    car = ref + 0.46 * right
+    car = ref + 0.42 * right
+    car_yaw = yaw_ref + math.radians(18)
 
-    fig, ax = plt.subplots(figsize=(11.8, 7.2))
+    fig, ax = plt.subplots(figsize=(12.4, 7.6))
     plot_ground_axes(
         ax,
         "Path-reference geometry: projection, tangent heading, and cross-track sign",
-        xlim=(-1.45, 1.45),
-        ylim=(-1.05, 1.15),
+        xlim=(-1.75, 1.72),
+        ylim=(-1.15, 1.25),
     )
 
-    ax.plot([p0[1], p1[1]], [p0[0], p1[0]], color="#dc2626", lw=5, solid_capstyle="round")
-    ax.scatter([p0[1], p1[1]], [p0[0], p1[0]], s=90, color="#dc2626", edgecolor="white", zorder=5)
-    ax.text(p0[1] - 0.22, p0[0] - 0.12, r"$P_0$", fontsize=15, color="#991b1b")
-    ax.text(p1[1] + 0.06, p1[0] + 0.02, r"$P_1$", fontsize=15, color="#991b1b")
+    ax.plot([p0[1], p1[1]], [p0[0], p1[0]], color="#dc2626", lw=3.2, solid_capstyle="round")
+    ax.scatter([p0[1], p1[1]], [p0[0], p1[0]], s=72, color="#dc2626", edgecolor="white", zorder=5)
+    ax.text(p0[1] - 0.23, p0[0] - 0.13, r"$P_0$", fontsize=14, color="#991b1b")
+    ax.text(p1[1] + 0.07, p1[0] + 0.03, r"$P_1$", fontsize=14, color="#991b1b")
 
-    ax.scatter([ref[1]], [ref[0]], s=100, color="#f97316", edgecolor="white", zorder=6)
-    ax.text(ref[1] + 0.08, ref[0] - 0.18, r"$P_{ref}=P_0+\alpha(P_1-P_0)$", fontsize=12)
+    ax.scatter([ref[1]], [ref[0]], s=86, color="#f97316", edgecolor="white", zorder=7)
+    ax.text(
+        ref[1] - 0.70,
+        ref[0] + 0.13,
+        r"$P_{ref}=P_0+\alpha(P_1-P_0)$",
+        fontsize=12,
+        color="#92400e",
+    )
 
-    ax.scatter([car[1]], [car[0]], s=120, color="#0891b2", edgecolor="white", zorder=6)
-    ax.text(car[1] + 0.13, car[0] + 0.10, r"car position $p$", fontsize=12, color="#0e7490")
-    ax.plot([ref[1], car[1]], [ref[0], car[0]], "--", color="#0e7490", lw=2)
-    ax.text((ref[1] + car[1]) / 2 - 0.20, (ref[0] + car[0]) / 2 - 0.06, r"$e_{ct}>0$", fontsize=13, color="#0e7490")
+    draw_car(ax, car, car_yaw, length=0.54, width=0.30, body_color="#ecfeff", edge_color="#0e7490")
+    ax.text(car[1] + 0.26, car[0] - 0.22, r"car pose $p_M$", fontsize=12, color="#0e7490")
+    ax.plot([ref[1], car[1]], [ref[0], car[0]], "--", color="#0e7490", lw=1.8)
+    ax.text(
+        (ref[1] + car[1]) / 2 + 0.07,
+        (ref[0] + car[0]) / 2 - 0.10,
+        r"$e_{ct}>0$",
+        fontsize=13,
+        color="#0e7490",
+    )
 
     tangent = s / np.linalg.norm(s)
-    arrow_xz(ax, ref, tangent, "#2563eb", r"path tangent / $\psi_{ref}$", scale=0.42, width=0.012)
     arrow_xz(
         ax,
         ref,
-        right,
-        "#16a34a",
-        r"path right side",
-        scale=0.34,
-        width=0.012,
-        text_offset=(0.14, -0.20),
+        tangent,
+        "#2563eb",
+        r"path tangent ${}^{M}\mathbf{e}_{x_P}$",
+        scale=0.46,
+        text_offset=(0.02, 0.05),
+        lw=1.9,
     )
 
     ax.text(
-        -1.38,
-        0.88,
-        r"$e_{ct}=(p-P_{ref})\cdot r_{path}$" + "\n"
-        r"positive $e_{ct}$ means car is right of path",
+        -1.63,
+        0.93,
+        r"$P$: path frame at the projected point" + "\n"
+        r"${}^{M}\mathbf{e}_{x_P}$: path tangent" + "\n"
+        r"${}^{M}\mathbf{e}_{z_P}$: path-right axis" + "\n"
+        r"$e_{ct}=(p_M-P_{ref})\cdot{}^{M}\mathbf{e}_{z_P}$",
         fontsize=12,
         bbox=dict(boxstyle="round,pad=0.45", fc="#f9fafb", ec="#d1d5db"),
     )
@@ -326,21 +476,21 @@ def generate_lqr_error_state() -> None:
     car_forward = np.array(forward_vector(yaw))
     ref_forward = np.array(forward_vector(yaw_ref))
 
-    fig, ax = plt.subplots(figsize=(12.2, 7.2))
+    fig, ax = plt.subplots(figsize=(12.4, 7.6))
     plot_ground_axes(
         ax,
         "LQRTrack error state: lateral error, heading error, and speed error",
-        xlim=(-1.45, 1.55),
+        xlim=(-1.55, 1.65),
         ylim=(-1.05, 1.25),
     )
 
-    ax.plot([p0[1], p1[1]], [p0[0], p1[0]], color="#dc2626", lw=5, solid_capstyle="round")
+    ax.plot([p0[1], p1[1]], [p0[0], p1[0]], color="#dc2626", lw=3.2, solid_capstyle="round")
     ax.scatter([ref[1]], [ref[0]], s=90, color="#f97316", edgecolor="white", zorder=6)
-    ax.scatter([car[1]], [car[0]], s=130, color="#111827", edgecolor="white", zorder=6)
-    ax.plot([ref[1], car[1]], [ref[0], car[0]], "--", color="#0e7490", lw=2)
+    draw_car(ax, car, yaw, length=0.54, width=0.30, body_color="#f8fafc", edge_color="#111827")
+    ax.plot([ref[1], car[1]], [ref[0], car[0]], "--", color="#0e7490", lw=1.8)
 
-    arrow_xz(ax, ref, ref_forward, "#2563eb", r"path heading $\psi_{ref}$", scale=0.43, width=0.012)
-    arrow_xz(ax, car, car_forward, "#16a34a", r"car yaw $\psi$", scale=0.43, width=0.012)
+    arrow_xz(ax, ref, ref_forward, "#2563eb", r"path heading $\psi_{ref}$", scale=0.43, lw=1.8)
+    arrow_xz(ax, car, car_forward, "#16a34a", r"car yaw $\psi$", scale=0.43, lw=1.8)
     arrow_xz(
         ax,
         ref,
@@ -348,15 +498,30 @@ def generate_lqr_error_state() -> None:
         "#0e7490",
         r"$e_{ct}>0$ right of path",
         scale=0.34,
-        width=0.010,
-        text_offset=(0.14, -0.16),
+        text_offset=(0.34, -0.20),
+        lw=1.6,
     )
 
     ref_angle = math.degrees(math.atan2(ref_forward[0], ref_forward[1]))
     car_angle = math.degrees(math.atan2(car_forward[0], car_forward[1]))
-    arc = Arc((car[1], car[0]), 0.42, 0.42, angle=0, theta1=min(ref_angle, car_angle), theta2=max(ref_angle, car_angle), color="#ef4444", lw=2)
+    arc = Arc(
+        (car[1], car[0]),
+        0.42,
+        0.42,
+        angle=0,
+        theta1=min(ref_angle, car_angle),
+        theta2=max(ref_angle, car_angle),
+        color="#ef4444",
+        lw=2,
+    )
     ax.add_patch(arc)
-    ax.text(car[1] - 0.40, car[0] + 0.38, r"$\theta_e=wrap(\psi-\psi_{ref})$", color="#ef4444", fontsize=12)
+    ax.text(
+        car[1] - 0.40,
+        car[0] + 0.38,
+        r"$\theta_e=wrap(\psi-\psi_{ref})$",
+        color="#ef4444",
+        fontsize=12,
+    )
 
     ax.text(
         -1.35,

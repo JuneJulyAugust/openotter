@@ -39,7 +39,7 @@ The controller must satisfy these requirements:
 
 1. **Use the operator's current pose as the path anchor.** The command starts
    the figure eight at the car's pose from the first planning tick, not at a
-   fixed ARKit world origin. This makes the command repeatable anywhere in the
+   fixed ARKit/map origin. This makes the command repeatable anywhere in the
    basement.
 2. **Render and follow the same path.** The red app-map reference overlay must
    come from the same waypoint samples used by the controller, and it should
@@ -72,18 +72,25 @@ compare model-based speed and steering control against this baseline.
 
 ## 3. Coordinate, Yaw, And PWM Invariants
 
-OpenOtter planner code uses a two-dimensional ground plane derived from ARKit.
-Every vector in this document is written in `(x, z)` component order, even
-though the app map draws `z` horizontally and `x` vertically.
+OpenOtter planner code uses a two-dimensional app-map ground plane derived
+from ARKit. The controls convention follows the standard robotics/vehicle
+body frame used by [ROS REP-103](https://github.com/ros-infrastructure/rep/blob/master/rep-0103.rst):
+vehicle $+x$ points forward, vehicle $+y$ points left, vehicle $+z$ points
+up, and positive yaw rotates the vehicle counter-clockwise by the right-hand
+rule. OpenOtter's app map stores the lateral screen-right coordinate as `z`,
+so each symbol below names the frame it belongs to.
 
-| Axis | Meaning |
+| Symbol | Meaning |
 | --- | --- |
-| $+x$ | forward/up on the app map when yaw is zero |
-| $+z$ | right/horizontal on the app map when yaw is zero |
-| $\psi$ | `pose.yaw`, measured in radians from $+x$ |
-| $\psi=0$ | car nose points along $+x$ |
-| $\psi>0$ | car nose turns left toward $-z$ |
-| $\psi<0$ | car nose turns right toward $+z$ |
+| $M$ | app-map frame; points are stored as $(x_M,z_M)$ |
+| $+x_M$ | forward/up on the app map when yaw is zero |
+| $+z_M$ | right/horizontal on the app map when yaw is zero |
+| $B$ | standard vehicle body frame; $+x_B$ forward, $+y_B$ left, $+z_B$ up |
+| $L$ | OpenOtter mission-local frame; $x_L=x_B$ and $z_L=-y_B$ |
+| $\psi$ | `pose.yaw`, measured in radians from $+x_M$ |
+| $\psi=0$ | car nose points along $+x_M$ |
+| $\psi>0$ | car nose turns left toward $-z_M$ |
+| $\psi<0$ | car nose turns right toward $+z_M$ |
 
 ![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
 
@@ -92,24 +99,34 @@ rotated left in the ground-plane frame. Positive steering command means the
 front wheel is commanded right. This sign difference is intentional and is why
 the controller equations are explicit about yaw sign and steering sign.
 
-The two unit vectors below are not forces. The letter `f` means **forward** and
-the letter `r` means **right**:
-
 | Symbol | Definition |
 | --- | --- |
-| $\mathbf{f}_{\mathrm{world}}$ | unit vector in world coordinates pointing out the car's local $+x$ nose direction |
-| $\mathbf{r}_{\mathrm{world}}$ | unit vector in world coordinates pointing out the car's local $+z$ right side |
+| ${}^{M}\mathbf{e}_{x_B}$ | body forward unit axis, expressed in app-map $(x_M,z_M)$ components |
+| ${}^{M}\mathbf{e}_{y_B}$ | body left unit axis, expressed in app-map $(x_M,z_M)$ components |
+| ${}^{M}\mathbf{e}_{z_L}$ | OpenOtter mission-local right unit axis, expressed in app-map $(x_M,z_M)$ components |
 
-Yaw rotates the robot's local axes into world coordinates:
+Yaw rotates the standard vehicle body axes into app-map coordinates:
 
 $$
-\mathbf{f}_{\mathrm{world}} =
+{}^{M}\mathbf{e}_{x_B} =
 \begin{bmatrix}
 \cos\psi \\
 -\sin\psi
 \end{bmatrix},
 \qquad
-\mathbf{r}_{\mathrm{world}} =
+{}^{M}\mathbf{e}_{y_B} =
+\begin{bmatrix}
+-\sin\psi \\
+-\cos\psi
+\end{bmatrix}
+$$
+
+OpenOtter trajectory code uses `localZ` as the right-positive lateral axis.
+That axis is the opposite of standard body-left:
+
+$$
+{}^{M}\mathbf{e}_{z_L} =
+-{}^{M}\mathbf{e}_{y_B} =
 \begin{bmatrix}
 \sin\psi \\
 \cos\psi
@@ -117,10 +134,10 @@ $$
 $$
 
 At $\psi=0$, these become
-$\mathbf{f}_{\mathrm{world}}=(1,0)$ and
-$\mathbf{r}_{\mathrm{world}}=(0,1)$. At $\psi=\pi/2$, the car nose points
-left on the app map, so
-$\mathbf{f}_{\mathrm{world}}=(0,-1)$.
+${}^{M}\mathbf{e}_{x_B}=(1,0)$,
+${}^{M}\mathbf{e}_{y_B}=(0,-1)$, and
+${}^{M}\mathbf{e}_{z_L}=(0,1)$. At $\psi=\pi/2$, the car nose points left on
+the app map, so ${}^{M}\mathbf{e}_{x_B}=(0,-1)$.
 
 Firmware PWM convention is:
 
@@ -164,25 +181,28 @@ segment instead of chasing a future point. The symbols are:
 
 | Symbol | Meaning |
 | --- | --- |
-| $p$ | current car position in `(x, z)` world coordinates |
+| $p_M$ | current car position in app-map $(x_M,z_M)$ coordinates |
 | $P_0$ | start waypoint of the active path segment |
 | $P_1$ | end waypoint of the active path segment |
 | $\mathbf{s}$ | segment vector $P_1-P_0$ |
 | $\alpha$ | scalar progress along the segment, clamped from $0$ to $1$ |
 | $P_{\mathrm{ref}}$ | closest point on the active segment |
 | $\psi_{\mathrm{ref}}$ | reference yaw of the path tangent |
+| $P$ | path frame at $P_{\mathrm{ref}}$ |
+| ${}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
+| ${}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
 | $e_{\mathrm{ct}}$ | signed cross-track error; positive means car is right of the path |
 
 ![Path-reference geometry diagram](figures/path-reference-geometry.png)
 
-Let $P_0$ and $P_1$ be the current path segment endpoints, $p$ be the car
+Let $P_0$ and $P_1$ be the current path segment endpoints, $p_M$ be the car
 position, and $\mathbf{s}=P_1-P_0$. The segment projection is:
 
 $$
 \alpha =
 \mathrm{clip}
 \left(
-\frac{(p-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
+\frac{(p_M-P_0)\cdot\mathbf{s}}{\mathbf{s}\cdot\mathbf{s}},
 0,
 1
 \right),
@@ -201,13 +221,19 @@ $\psi_{\mathrm{ref}}=0$. A segment moving to the app-map right has
 $\Delta x=0$, $\Delta z>0$, and therefore
 $\psi_{\mathrm{ref}}=-\pi/2$, meaning the desired body yaw points right.
 
+The path-right unit axis is:
+
 $$
-e_{\mathrm{ct}} =
-(p-P_{\mathrm{ref}})\cdot
+{}^{M}\mathbf{e}_{z_P} =
 \begin{bmatrix}
 \sin\psi_{\mathrm{ref}} \\
 \cos\psi_{\mathrm{ref}}
 \end{bmatrix}
+$$
+
+$$
+e_{\mathrm{ct}} =
+(p_M-P_{\mathrm{ref}})\cdot{}^{M}\mathbf{e}_{z_P}
 $$
 
 The desired yaw combines path tangent and lateral correction. When
@@ -360,9 +386,9 @@ z_{\mathrm{local}}=0,
 i_{\mathrm{waypoint}}=0
 $$
 
-This local point is transformed into world coordinates using the car pose from
-the first control tick. In other words, `/figure8` treats the car's current
-pose as the crossing point of the track.
+This mission-local point is transformed into app-map coordinates using the car
+pose from the first control tick. In other words, `/figure8` treats the car's
+current pose as the crossing point of the track.
 
 Good physical setup:
 
@@ -455,7 +481,7 @@ Telegram /figure8_lqr
 ### iOS
 
 - `FigureEightTrajectory` generates waypoint paths.
-- `RobotGeometry` owns yaw/local/world transformations.
+- `RobotGeometry` owns yaw and mission-local-to-app-map transformations.
 - `TangentTrackPlanner` implements the `TangentTrack` controller: waypoint
   advancement, tangent-heading feedback, curvature feedforward, throttle
   shaping, and figure-eight looping.

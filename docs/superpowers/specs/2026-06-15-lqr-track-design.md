@@ -70,19 +70,25 @@ Both controllers must follow the same path. Otherwise controller comparisons
 are meaningless. `FigureEightTrajectory` owns the path shape, and
 `PathReference` owns projection onto that path.
 
-Every controller comparison uses the same coordinate and path contract:
+Every controller comparison uses the same coordinate and path contract. The
+vehicle-body frame follows [ROS REP-103](https://github.com/ros-infrastructure/rep/blob/master/rep-0103.rst);
+OpenOtter's app-map storage keeps its existing $z_M$-right coordinate.
 
 | Quantity | Convention |
 | --- | --- |
-| equations use component order | `(x, z)` |
-| `PoseMapView` screen up | local $+x$ forward |
-| `PoseMapView` screen right | local $+z$ right |
+| external vehicle-frame source | ROS REP-103: $+x_B$ forward, $+y_B$ left, $+z_B$ up |
+| $M$ | app-map frame; equations store points as $(x_M,z_M)$ |
+| `PoseMapView` screen up | app-map $+x_M$ forward |
+| `PoseMapView` screen right | app-map $+z_M$ right |
+| $B$ | standard vehicle body frame |
+| $L$ | OpenOtter mission-local frame; $x_L=x_B$, $z_L=-y_B$ |
+| $P$ | path frame at the projected point; $x_P$ tangent, $z_P$ path-right |
 | yaw symbol | $\psi$, the same value as `pose.yaw` |
-| $\psi=0$ | car nose points along $+x$ |
-| $\psi>0$ | car nose turns left toward $-z$ |
+| $\psi=0$ | car nose points along $+x_M$ |
+| $\psi>0$ | car nose turns left toward $-z_M$ |
 | positive steering command | front wheel steers right |
-| `length` | $3.2\ \mathrm{m}$ along $+z/-z$ |
-| `width` | $1.6\ \mathrm{m}$ along $+x/-x$ |
+| `length` | $3.2\ \mathrm{m}$ along $+z_M/-z_M$ |
+| `width` | $1.6\ \mathrm{m}$ along $+x_M/-x_M$ |
 | start point | center crossing at the car pose when the mission starts |
 | first branch | forward and right from the start crossing |
 
