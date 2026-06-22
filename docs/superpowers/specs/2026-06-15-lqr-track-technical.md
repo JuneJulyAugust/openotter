@@ -266,7 +266,7 @@ Curvature estimates how sharply the path is bending:
 $$
 \kappa \approx
 \frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-\ell_{\mathrm{arc}}}
+{\ell_{\mathrm{arc}}}
 $$
 
 Here $\ell_{\mathrm{arc}}$ is the path distance between the before and after

@@ -536,7 +536,7 @@ means heading change per meter of path distance:
 $$
 \kappa \approx
 \frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-\ell_{\mathrm{arc}}}
+{\ell_{\mathrm{arc}}}
 $$
 
 The path samples before and after the current reference point provide

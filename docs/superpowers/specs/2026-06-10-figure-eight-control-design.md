@@ -410,7 +410,7 @@ is approximately $1/\mathrm{m}$.
 $$
 \kappa \approx
 \frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-\ell_{\mathrm{arc}}}
+{\ell_{\mathrm{arc}}}
 $$
 
 The feedforward steering command is:
