@@ -48,6 +48,45 @@ MSG
   status=1
 fi
 
+echo "Checking Markdown for fragile inline frame-notation math..."
+
+inline_output=""
+while IFS= read -r file; do
+  file_output="$(
+    perl -ne '
+    $line++;
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+    if (/\$\{\}\^\{[A-Za-z]/) {
+      print "$ARGV:$line:$_";
+    }
+    ' "$file"
+  )"
+  if [[ -n "$file_output" ]]; then
+    inline_output+="$file_output"$'\n'
+  fi
+done < <(rg --files --glob '*.md')
+
+if [[ -n "$inline_output" ]]; then
+  printf '%s\n' "$inline_output"
+  cat <<'MSG'
+
+Fragile inline frame notation found.
+
+GitHub may fail to render inline math that starts with `${}^{...}`. Prefix
+frame-notation inline math with a leading math spacing command:
+
+  $\!{}^{M}\mathbf{e}_{x_B}$   instead of ${}^{M}\mathbf{e}_{x_B}$
+
+For full equations, prefer display math on its own `$$` lines.
+MSG
+  status=1
+fi
+
 echo "Checking Markdown display-math delimiter balance..."
 
 delimiter_output=""

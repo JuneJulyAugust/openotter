@@ -77,16 +77,16 @@ right axis $z_L$, not the standard vehicle body-left axis $y_B$.
 
 ![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
 
-The notation ${}^{M}\mathbf{e}_{x_B}$ means "the unit vector of the body
+The notation $\!{}^{M}\mathbf{e}_{x_B}$ means "the unit vector of the body
 $x_B$ axis, expressed in app-map frame $M$." This is standard frame notation:
 the left superscript tells us which frame the components are written in, and
 the subscript tells us which axis the vector represents.
 
 | Symbol | Plain-English meaning | Components |
 | --- | --- | --- |
-| ${}^{M}\mathbf{e}_{x_B}$ | car nose / body forward direction | $(x_M,z_M)$ |
-| ${}^{M}\mathbf{e}_{y_B}$ | standard body-left direction | $(x_M,z_M)$ |
-| ${}^{M}\mathbf{e}_{z_L}$ | OpenOtter local right direction used by `localZ` | $(x_M,z_M)$ |
+| $\!{}^{M}\mathbf{e}_{x_B}$ | car nose / body forward direction | $(x_M,z_M)$ |
+| $\!{}^{M}\mathbf{e}_{y_B}$ | standard body-left direction | $(x_M,z_M)$ |
+| $\!{}^{M}\mathbf{e}_{z_L}$ | OpenOtter local right direction used by `localZ` | $(x_M,z_M)$ |
 
 For a given yaw angle, the standard vehicle body axes are:
 
@@ -355,8 +355,8 @@ For the active path segment:
 | $P_{\mathrm{ref}}$ | closest point on the active segment |
 | $\psi_{\mathrm{ref}}$ | yaw angle of the path tangent |
 | $P$ | path frame at $P_{\mathrm{ref}}$ |
-| ${}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
-| ${}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
+| $\!{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
+| $\!{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
 | $e_{\mathrm{ct}}$ | cross-track error; positive means car is right of the path |
 
 ![Path-reference geometry diagram](figures/path-reference-geometry.png)
@@ -403,7 +403,7 @@ then $\Delta x=0$, $\Delta z>0$, and
 $\psi_{\mathrm{ref}}=-\pi/2$, which means right-facing yaw.
 
 The signed side error is measured along the path-right axis
-${}^{M}\mathbf{e}_{z_P}$:
+$\!{}^{M}\mathbf{e}_{z_P}$:
 
 $$
 {}^{M}\mathbf{e}_{z_P} =
