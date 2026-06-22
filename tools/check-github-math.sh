@@ -61,7 +61,7 @@ while IFS= read -r file; do
     }
     next if $in_fence;
     s/`[^`]*`//g;
-    if (/\$\{\}\^\{[A-Za-z]/) {
+    if (/\$\{\}\^\{[A-Za-z]/ || /\$\\![^\x24]*\$/) {
       print "$ARGV:$line:$_";
     }
     ' "$file"
@@ -77,12 +77,13 @@ if [[ -n "$inline_output" ]]; then
 
 Fragile inline frame notation found.
 
-GitHub may fail to render inline math that starts with `${}^{...}`. Prefix
-frame-notation inline math with a leading math spacing command:
+GitHub may fail to render inline math that starts with `${}^{...}`. It may
+also strip the backslash from `$\!...$`, leaving raw `$!...$` text.
 
-  $\!{}^{M}\mathbf{e}_{x_B}$   instead of ${}^{M}\mathbf{e}_{x_B}$
+Prefer display math for full equations. For compact table symbols only, use a
+leading supported math macro:
 
-For full equations, prefer display math on its own `$$` lines.
+  $\mathrm{}{}^{M}\mathbf{e}_{x_B}$   instead of ${}^{M}\mathbf{e}_{x_B}$
 MSG
   status=1
 fi

@@ -101,9 +101,9 @@ $$
 \end{bmatrix}
 $$
 
-Here $\!{}^{M}\mathbf{e}_{x_B}$ is where the car's nose points,
-$\!{}^{M}\mathbf{e}_{y_B}$ is the standard body-left direction, and
-$\!{}^{M}\mathbf{e}_{z_L}$ is the right-positive local axis used by the
+Here $\mathrm{}{}^{M}\mathbf{e}_{x_B}$ is where the car's nose points,
+$\mathrm{}{}^{M}\mathbf{e}_{y_B}$ is the standard body-left direction, and
+$\mathrm{}{}^{M}\mathbf{e}_{z_L}$ is the right-positive local axis used by the
 OpenOtter path generator. They are unit vectors, not actuator commands.
 
 `PathReference` reports cross-track error as $e_{\mathrm{ct}}$. Positive
@@ -152,8 +152,8 @@ The projection symbols are:
 | $\alpha$ | clamped progress along the segment |
 | $P_{\mathrm{ref}}$ | projected point on the path segment |
 | $P$ | path frame at $P_{\mathrm{ref}}$ |
-| $\!{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
-| $\!{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
+| $\mathrm{}{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
+| $\mathrm{}{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
 
 First define the segment vector:
 

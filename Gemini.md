@@ -464,10 +464,11 @@ writing or editing Markdown math:
   `\mathrm{atan2}`, `\mathrm{clip}`, `\mathrm{wrapToPi}`, `\mathrm{diag}`.
 * Do not use `\text{...}` inside math blocks. Use prose, tables, or symbols
   with nearby definitions instead.
-* Do not start inline math with `${}^{...}` frame notation. GitHub may leave
-  that span as raw text. Use a leading math spacing command for inline frame
-  notation, such as `$\!{}^{M}\mathbf{e}_{x_B}$`, or use display math for
-  full equations.
+* Do not start inline math with `${}^{...}` frame notation, and do not use
+  `$\!...$` as a workaround. GitHub may leave those spans as raw text. Use
+  display math for full equations. For compact table symbols only, use a
+  leading supported math macro, such as
+  `$\mathrm{}{}^{M}\mathbf{e}_{x_B}$`.
 * Keep display math delimited with balanced `$$` lines.
 * Before committing Markdown math changes, run:
 

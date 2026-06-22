@@ -101,9 +101,9 @@ the controller equations are explicit about yaw sign and steering sign.
 
 | Symbol | Definition |
 | --- | --- |
-| $\!{}^{M}\mathbf{e}_{x_B}$ | body forward unit axis, expressed in app-map $(x_M,z_M)$ components |
-| $\!{}^{M}\mathbf{e}_{y_B}$ | body left unit axis, expressed in app-map $(x_M,z_M)$ components |
-| $\!{}^{M}\mathbf{e}_{z_L}$ | OpenOtter mission-local right unit axis, expressed in app-map $(x_M,z_M)$ components |
+| $\mathrm{}{}^{M}\mathbf{e}_{x_B}$ | body forward unit axis, expressed in app-map $(x_M,z_M)$ components |
+| $\mathrm{}{}^{M}\mathbf{e}_{y_B}$ | body left unit axis, expressed in app-map $(x_M,z_M)$ components |
+| $\mathrm{}{}^{M}\mathbf{e}_{z_L}$ | OpenOtter mission-local right unit axis, expressed in app-map $(x_M,z_M)$ components |
 
 Yaw rotates the standard vehicle body axes into app-map coordinates:
 
@@ -133,11 +133,25 @@ $$
 \end{bmatrix}
 $$
 
-At $\psi=0$, these become
-$\!{}^{M}\mathbf{e}_{x_B}=(1,0)$,
-$\!{}^{M}\mathbf{e}_{y_B}=(0,-1)$, and
-$\!{}^{M}\mathbf{e}_{z_L}=(0,1)$. At $\psi=\pi/2$, the car nose points left on
-the app map, so $\!{}^{M}\mathbf{e}_{x_B}=(0,-1)$.
+At zero yaw, the axes point in these app-map directions:
+
+$$
+\psi=0:
+\qquad
+{}^{M}\mathbf{e}_{x_B}=(1,0),
+\qquad
+{}^{M}\mathbf{e}_{y_B}=(0,-1),
+\qquad
+{}^{M}\mathbf{e}_{z_L}=(0,1)
+$$
+
+At positive quarter-turn yaw, the car nose points left on the app map:
+
+$$
+\psi=\pi/2:
+\qquad
+{}^{M}\mathbf{e}_{x_B}=(0,-1)
+$$
 
 Firmware PWM convention is:
 
@@ -189,8 +203,8 @@ segment instead of chasing a future point. The symbols are:
 | $P_{\mathrm{ref}}$ | closest point on the active segment |
 | $\psi_{\mathrm{ref}}$ | reference yaw of the path tangent |
 | $P$ | path frame at $P_{\mathrm{ref}}$ |
-| $\!{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
-| $\!{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
+| $\mathrm{}{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
+| $\mathrm{}{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
 | $e_{\mathrm{ct}}$ | signed cross-track error; positive means car is right of the path |
 
 ![Path-reference geometry diagram](figures/path-reference-geometry.png)
