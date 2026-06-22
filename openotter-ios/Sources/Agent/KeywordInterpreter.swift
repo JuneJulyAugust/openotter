@@ -7,8 +7,8 @@ import Foundation
 /// speed. The default is 0.4 (40% throttle).
 ///
 /// Speed can be changed via:
-/// - Text:    `speed 0.6`, `/speed 0.3`
-/// - Buttons: `🐢 Slow` (0.3), `🐇 Fast` (0.6)
+/// - Text:    `speed 0.4`, `/speed 0.3`
+/// - Buttons: `🐢 Slow` (0.2), `🚗 Normal` (0.4), `🐇 Fast` (0.8)
 final class KeywordInterpreter: CommandInterpreter {
 
     /// Current throttle magnitude [0.1, 1.0]. Drives all subsequent move commands.
@@ -37,6 +37,8 @@ final class KeywordInterpreter: CommandInterpreter {
         let stop     = AgentAction.stop
         let status   = AgentAction.queryStatus
         let help     = AgentAction.help
+        let figure8  = AgentAction.figureEight(controller: .tangentTrack)
+        let figure8LQR = AgentAction.figureEight(controller: .lqrTrack)
 
         return [
             // Slash commands
@@ -48,6 +50,9 @@ final class KeywordInterpreter: CommandInterpreter {
             "/d": forward,        "/r": backward,
             "/l": left,           "/p": stop,
             "/s": status,         "/h": help,
+            "/figure8": figure8,  "/fig8": figure8,
+            "/8": figure8,        "/figure8_lqr": figure8LQR,
+            "/fig8_lqr": figure8LQR,
 
             // Bare words
             "forward": forward,   "backward": backward,
@@ -63,6 +68,11 @@ final class KeywordInterpreter: CommandInterpreter {
             "d": forward,         "r": backward,
             "l": left,            "p": stop,
             "s": status,          "h": help,
+            "figure8": figure8,    "fig8": figure8,
+            "8": figure8,          "figure8_lqr": figure8LQR,
+            "fig8_lqr": figure8LQR,
+            "figure8 lqr": figure8LQR,
+            "fig8 lqr": figure8LQR,
 
             // Speed preset buttons (emoji stripped by interpret())
             "slow": .setSpeed(throttle: 0.2),
@@ -97,7 +107,7 @@ final class KeywordInterpreter: CommandInterpreter {
 
     // MARK: - Speed Parsing
 
-    /// Matches `speed 0.6`, `/speed 0.3`, `speed0.5` (no space).
+    /// Matches `speed 0.4`, `/speed 0.3`, `speed0.5` (no space).
     /// Returns nil if the text doesn't match the speed pattern.
     private func parseSpeedCommand(_ command: String) -> AgentAction? {
         let prefix = command.hasPrefix("/speed") ? "/speed" : (command.hasPrefix("speed") ? "speed" : nil)

@@ -69,6 +69,64 @@ final class ActionDispatcherTests: XCTestCase {
         XCTAssertFalse(result.success)
     }
 
+    func testFigureEightDispatchesWaypointMission() {
+        let result = dispatcher.dispatch(.figureEight(controller: .tangentTrack))
+
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "Starting TangentTrack figure-8 mission")
+
+        if case .followFigureEight(let config, let maxThrottle, let controller) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
+            XCTAssertEqual(controller, .tangentTrack)
+            XCTAssertEqual(config.segmentCount, 240)
+            XCTAssertEqual(config.length, 3.2, accuracy: 0.001)
+            XCTAssertEqual(config.width, 1.6, accuracy: 0.001)
+            XCTAssertEqual(config.acceptanceRadius, 0.12, accuracy: 0.001)
+        } else {
+            XCTFail("Expected followFigureEight goal")
+        }
+    }
+
+    func testFigureEightUsesCurrentSpeedWithoutBoost() {
+        _ = dispatcher.dispatch(.setSpeed(throttle: 0.3))
+        _ = dispatcher.dispatch(.figureEight(controller: .tangentTrack))
+
+        if case .followFigureEight(_, let maxThrottle, let controller) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.3, accuracy: 0.001)
+            XCTAssertEqual(controller, .tangentTrack)
+        } else {
+            XCTFail("Expected followFigureEight goal")
+        }
+
+        _ = dispatcher.dispatch(.setSpeed(throttle: 0.8))
+        _ = dispatcher.dispatch(.figureEight(controller: .tangentTrack))
+
+        if case .followFigureEight(_, let maxThrottle, let controller) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.8, accuracy: 0.001)
+            XCTAssertEqual(controller, .tangentTrack)
+        } else {
+            XCTFail("Expected followFigureEight goal")
+        }
+    }
+
+    func testFigureEightLQRDispatchesLQRTrackMission() {
+        let result = dispatcher.dispatch(.figureEight(controller: .lqrTrack))
+
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.message, "Starting LQRTrack figure-8 mission")
+
+        if case .followFigureEight(let config, let maxThrottle, let controller) = goalReceiver.lastGoal {
+            XCTAssertEqual(maxThrottle, 0.4, accuracy: 0.001)
+            XCTAssertEqual(controller, .lqrTrack)
+            XCTAssertEqual(config.segmentCount, 240)
+            XCTAssertEqual(config.length, 3.2, accuracy: 0.001)
+            XCTAssertEqual(config.width, 1.6, accuracy: 0.001)
+            XCTAssertEqual(config.acceptanceRadius, 0.12, accuracy: 0.001)
+        } else {
+            XCTFail("Expected followFigureEight goal")
+        }
+    }
+
     // MARK: - Set Speed
 
     func testSetSpeedUpdatesInterpreterThrottle() {

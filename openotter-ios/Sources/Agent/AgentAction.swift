@@ -9,6 +9,7 @@ enum AgentAction: Equatable {
     case stop
     case queryStatus
     case setSpeed(throttle: Float)
+    case figureEight(controller: FigureEightControllerKind)
     case help
     case unknown(raw: String)
 }

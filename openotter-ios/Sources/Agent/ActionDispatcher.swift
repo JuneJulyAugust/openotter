@@ -56,6 +56,19 @@ final class ActionDispatcher: ActionDispatching {
             let status = statusProvider.currentStatus()
             return ActionResult(success: true, message: status)
 
+        case .figureEight(let controller):
+            goalReceiver?.setGoal(.followFigureEight(
+                config: .init(
+                    segmentCount: 240,
+                    length: 3.2,
+                    width: 1.6,
+                    acceptanceRadius: 0.12
+                ),
+                maxThrottle: interpreter.currentThrottle,
+                controller: controller
+            ))
+            return ActionResult(success: true, message: "Starting \(controller.displayName) figure-8 mission")
+
         case .setSpeed(let throttle):
             interpreter.setThrottle(throttle)
             let pct = Int(interpreter.currentThrottle * 100)
@@ -83,6 +96,8 @@ final class ActionDispatcher: ActionDispatching {
           🚗 drive / d / go — Drive forward
           🔙 reverse / r    — Drive backward
           🅿️ park / p / stop — Stop & park
+          📍 figure8 / fig8 — Follow a figure-8 path with TangentTrack
+          📈 figure8_lqr   — Follow a figure-8 path with LQRTrack
 
         Speed presets:
           🐢 slow            — 20%

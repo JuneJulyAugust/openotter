@@ -46,6 +46,17 @@ xcrun devicectl list devices
 ./build.sh --release deploy
 ```
 
+During deploy, `build.sh` detects the iPhone before compiling and asks Xcode to
+build for that device. This lets automatic signing create or refresh the local
+development profile when the previous profile expires or the bundle ID changes.
+If the Release build appears to pause at `codesign`, approve the macOS keychain
+prompt for the Apple Development certificate.
+If install reports a mismatched `application-identifier` entitlement, the script
+removes the previously signed app and retries the install. Set
+`REINSTALL_ON_SIGNING_MISMATCH=0` to stop instead of removing the old app.
+After the first install from a newly selected Apple team, iOS may require
+trusting that developer profile again in `Settings > General > VPN & Device Management`.
+
 Do not use STM32 BLE screenshots from the phone until the latest app is
 installed. The current STM32 Control debug box includes numbered BLE trace
 entries such as `#12 scan...`; screenshots without numbered entries are from an
@@ -97,6 +108,6 @@ project cannot accidentally deploy the previous app version.
 ## Notes
 
 - `project.yml` is the source of truth for signing and build settings.
-- `build.sh` runs `xcodegen generate`, builds, installs, and launches the app.
+- `build.sh` regenerates the Xcode project from `project.yml` before CLI builds, tests, and deploys.
 - The STM32 direct-control screen uses reconnect-safe BLE scanning against the STM32 BLE peripheral `OPENOTTER-MCP`.
 - If launch still fails after install, the script prints a trust/signing hint in the terminal.

@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+status=0
+
+markdown_files() {
+  if (($# > 0)); then
+    printf '%s\n' "$@"
+  else
+    rg --files --glob '*.md'
+  fi
+}
+
+echo "Checking Markdown for GitHub math macros that fail to render..."
+
+macro_output=""
+while IFS= read -r file; do
+  file_output="$(
+    perl -ne '
+    $line++;
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+    if (/\\operatorname|\\text\{/) {
+      print "$ARGV:$line:$_";
+    }
+    ' "$file"
+  )"
+  if [[ -n "$file_output" ]]; then
+    macro_output+="$file_output"$'\n'
+  fi
+done < <(markdown_files "$@")
+
+if [[ -n "$macro_output" ]]; then
+  printf '%s\n' "$macro_output"
+  cat <<'MSG'
+
+Unsupported math macro found.
+
+GitHub's math renderer rejects some LaTeX macros in Markdown. Prefer forms
+that have rendered in GitHub previews for this repo:
+
+  \mathrm{atan2}(x,y)     instead of \operatorname{atan2}(x,y)
+  \mathrm{clip}(x,0,1)    instead of \operatorname{clip}(x,0,1)
+  \mathrm{diag}(...)      instead of \operatorname{diag}(...)
+
+Avoid \text{...} inside display math; use prose, tables, or symbols with
+definitions nearby.
+MSG
+  status=1
+fi
+
+echo "Checking Markdown for fragile inline frame-notation math..."
+
+inline_output=""
+while IFS= read -r file; do
+  file_output="$(
+    perl -ne '
+    $line++;
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+    if (/\$\{\}\^\{[A-Za-z]/ || /\$\\![^\x24]*\$/) {
+      print "$ARGV:$line:$_";
+    }
+    ' "$file"
+  )"
+  if [[ -n "$file_output" ]]; then
+    inline_output+="$file_output"$'\n'
+  fi
+done < <(markdown_files "$@")
+
+if [[ -n "$inline_output" ]]; then
+  printf '%s\n' "$inline_output"
+  cat <<'MSG'
+
+Fragile inline frame notation found.
+
+GitHub may fail to render inline math that starts with `${}^{...}`. It may
+also strip the backslash from `$\!...$`, leaving raw `$!...$` text.
+
+Prefer display math for full equations. For compact table symbols only, use a
+leading supported math macro:
+
+  $\mathrm{}{}^{M}\mathbf{e}_{x_B}$   instead of ${}^{M}\mathbf{e}_{x_B}$
+MSG
+  status=1
+fi
+
+echo "Checking Markdown display-math delimiter balance..."
+
+delimiter_output=""
+while IFS= read -r file; do
+  count="$(
+    perl -ne '
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+    $count += () = /\$\$/g;
+    END { print $count + 0; }
+    ' "$file"
+  )"
+  if (( count % 2 != 0 )); then
+    delimiter_output+="$file: odd number of display-math delimiters ($count)"$'\n'
+  fi
+done < <(markdown_files "$@")
+
+if [[ -n "$delimiter_output" ]]; then
+  printf '%s\n' "$delimiter_output"
+  status=1
+fi
+
+echo "Checking Markdown display-math brace balance..."
+
+brace_output=""
+while IFS= read -r file; do
+  file_output="$(
+    perl -ne '
+    sub count_braces {
+      my ($text) = @_;
+      my @chars = split //, $text;
+      for (my $i = 0; $i < @chars; $i++) {
+        my $ch = $chars[$i];
+        my $prev = $i > 0 ? $chars[$i - 1] : "";
+        next if ($ch eq "{" || $ch eq "}") && $prev eq "\\";
+        if ($ch eq "{") {
+          $depth++;
+        } elsif ($ch eq "}") {
+          if ($depth == 0) {
+            print "$ARGV:$line: Unbalanced braces in display math: extra closing brace\n";
+            $bad = 1;
+          } else {
+            $depth--;
+          }
+        }
+      }
+    }
+
+    $line++;
+    if (/^\s*```/) {
+      $in_fence = !$in_fence;
+      next;
+    }
+    next if $in_fence;
+    s/`[^`]*`//g;
+
+    my @parts = split(/\$\$/, $_, -1);
+    for (my $i = 0; $i < @parts; $i++) {
+      count_braces($parts[$i]) if $in_math;
+      if ($i < $#parts) {
+        if ($in_math) {
+          if ($depth != 0) {
+            print "$ARGV:$math_start: Unbalanced braces in display math: depth $depth at closing delimiter\n";
+            $bad = 1;
+          }
+          $in_math = 0;
+          $depth = 0;
+        } else {
+          $in_math = 1;
+          $math_start = $line;
+          $depth = 0;
+        }
+      }
+    }
+
+    END {
+      if ($in_math) {
+        print "$ARGV:$math_start: Unclosed display math block\n";
+      }
+    }
+    ' "$file"
+  )"
+  if [[ -n "$file_output" ]]; then
+    brace_output+="$file_output"$'\n'
+  fi
+done < <(markdown_files "$@")
+
+if [[ -n "$brace_output" ]]; then
+  printf '%s\n' "$brace_output"
+  status=1
+fi
+
+exit "$status"

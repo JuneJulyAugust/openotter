@@ -1,6 +1,6 @@
-# Planner Framework — Design v0.1
+# Planner Framework — Design
 
-**Status:** Design (pre-implementation)
+**Status:** Implemented planner framework with TangentTrack baseline and LQRTrack experiment
 **Date:** 2026-03-29
 
 ---
@@ -20,7 +20,8 @@ The 10 Hz control loop in `SelfDrivingViewModel` has a planner stub returning `(
 - **Localization:** ARKit 6D pose (`PoseEntry`) only.
 - **Speed unit:** Normalized throttle `[-1, +1]`. No m/s conversion yet (wheel radius uncalibrated).
 - **Safety input:** Single center-pixel depth from LiDAR depth map.
-- **First planner:** Straight-line waypoint follower with proportional heading control.
+- **Baseline controller:** `TangentTrack` for finite waypoints and `/figure8`.
+- **Experimental controller:** `LQRTrack` for `/figure8_lqr`.
 
 ---
 
@@ -142,6 +143,10 @@ Adding a new planner = one new file implementing this protocol. Nothing else cha
 enum PlannerGoal {
     case idle
     case followWaypoints([Waypoint], maxThrottle: Float)
+    case followFigureEight(config: FigureEightTrajectory.Config,
+                           maxThrottle: Float,
+                           controller: FigureEightControllerKind = .tangentTrack)
+    case constantThrottle(Float)
 }
 
 struct Waypoint {
@@ -153,9 +158,13 @@ struct Waypoint {
 
 ---
 
-## 5. `WaypointPlanner`
+## 5. `TangentTrackPlanner`
 
-Proportional heading controller with waypoint sequencing.
+`TangentTrackPlanner` owns the `TangentTrack` baseline. For finite waypoints it
+uses proportional heading control with waypoint sequencing. For closed
+figure-eight goals it follows the path tangent, corrects signed cross-track
+error, adds curvature feedforward, and shapes throttle from path-heading error
+and steering load.
 
 ```
 plan(context):
@@ -171,7 +180,7 @@ plan(context):
   steering = clamp(K_STEERING * yawError, -1, +1)
   throttle = maxThrottle * (1 - |yawError| / π)
 
-  return ControlCommand(steering, throttle, .planner("WaypointPlanner"))
+  return ControlCommand(steering, throttle, .planner("TangentTrack"))
 ```
 
 | Parameter | Default | Meaning |
@@ -179,6 +188,26 @@ plan(context):
 | `K_STEERING` | `0.6 / (π/2)` | Full steering at 90° error |
 | Throttle fade | `1 - |yawError|/π` | Slow down in turns |
 | `acceptanceRadius` | `0.2 m` | Waypoint reached threshold |
+
+## 5.1 `LQRTrackPlanner`
+
+`LQRTrackPlanner` is selected only by `.followFigureEight(..., controller:
+.lqrTrack)`, currently exposed as `/figure8_lqr`. It shares
+`FigureEightTrajectory` and `PathReference` with `TangentTrack`, then solves a
+small LQR speed-and-steering problem:
+
+```text
+state = [
+  -crossTrackError,
+  lateralErrorRate,
+  pose.yaw - referenceYaw,
+  headingErrorRate,
+  measuredSpeedMps - targetSpeedMps
+]
+```
+
+The planner clamps steering to `[-1, 1]` and throttle to `[0, maxThrottle]`.
+If the LQR solve fails, it emits neutral with source `"LQRTrack"`.
 
 ---
 
@@ -200,12 +229,17 @@ Sources/Planner/
 ├── ControlCommand.swift              ← command + source
 ├── OperatingMode.swift               ← Park/Drive enum + receiving protocol
 ├── PlannerOrchestrator.swift         ← wires planner + supervisor + mode
+├── PathReference.swift                ← shared path projection/tangent/curvature
+├── Controllers/
+│   └── LQRMath.swift                  ← small matrix helpers and DARE solver
 ├── Safety/
 │   ├── DESIGN.md                     ← safety design
 │   ├── SafetySupervisor.swift        ← supervise() logic
 │   └── SafetySupervisorEvent.swift   ← event type
 └── Planners/
-    └── WaypointPlanner.swift         ← first planner
+    ├── ConstantSpeedPlanner.swift
+    ├── TangentTrackPlanner.swift      ← TangentTrack baseline
+    └── LQRTrackPlanner.swift          ← LQRTrack experiment
 ```
 
 ---

@@ -16,6 +16,9 @@ final class PlannerOrchestrator: ObservableObject {
     private(set) var activePlanner: any PlannerProtocol
     private let supervisor = SafetySupervisor()
     private weak var modeReceiver: (any OperatingModeReceiving)?
+    private var constantSpeedPlanner: ConstantSpeedPlanner
+    private var tangentTrackPlanner: TangentTrackPlanner
+    private var lqrTrackPlanner: LQRTrackPlanner
 
     // MARK: - Published State
 
@@ -38,12 +41,23 @@ final class PlannerOrchestrator: ObservableObject {
     /// Nil while SAFE.
     @Published private(set) var brakeRecord: SafetyBrakeRecord?
 
+    /// Current planner waypoints for map overlay and field debugging.
+    @Published private(set) var activeWaypoints: [Waypoint] = []
+
+    /// Last non-empty reference path published by a waypoint planner. This is
+    /// display-only; Park/Stop clear control intent but keep this overlay on
+    /// the map so the operator can compare the driven trace against the target.
+    @Published private(set) var referenceWaypoints: [Waypoint] = []
+
     // MARK: - Init
 
     init(planner: any PlannerProtocol,
          modeReceiver: (any OperatingModeReceiving)? = nil) {
         self.activePlanner = planner
         self.modeReceiver = modeReceiver
+        self.constantSpeedPlanner = planner as? ConstantSpeedPlanner ?? ConstantSpeedPlanner()
+        self.tangentTrackPlanner = planner as? TangentTrackPlanner ?? TangentTrackPlanner()
+        self.lqrTrackPlanner = planner as? LQRTrackPlanner ?? LQRTrackPlanner()
         modeReceiver?.setOperatingMode(.park)
     }
 
@@ -51,7 +65,9 @@ final class PlannerOrchestrator: ObservableObject {
 
     func swapPlanner(_ newPlanner: any PlannerProtocol) {
         activePlanner.reset()
+        cachePlannerReference(newPlanner)
         activePlanner = newPlanner
+        refreshPlannerDebugState()
     }
 
     // MARK: - Control Tick
@@ -74,6 +90,7 @@ final class PlannerOrchestrator: ObservableObject {
         lastSupervisorEvent = supervisor.lastEvent
         supervisorState = supervisor.state
         brakeRecord = supervisor.currentBrake
+        refreshPlannerDebugState()
 
         if case .brake = supervisor.state {
             isOverridden = true
@@ -94,11 +111,14 @@ final class PlannerOrchestrator: ObservableObject {
     /// brake latch; clear that latch before the planner's ramp limiter emits
     /// its first zero-throttle tick.
     func setGoal(_ goal: PlannerGoal) {
+        ensurePlanner(for: goal)
+
         if goal.requestsReverseEscape {
             clearForwardSafetyState()
         }
         transition(to: .drive)
         activePlanner.setGoal(goal)
+        refreshPlannerDebugState()
     }
 
     /// Transition to Park: clear planner intent, drop any supervisor latch,
@@ -113,6 +133,7 @@ final class PlannerOrchestrator: ObservableObject {
         isOverridden = false
         supervisorState = .safe
         brakeRecord = nil
+        activeWaypoints = []
         transition(to: .park)
     }
 
@@ -130,6 +151,53 @@ final class PlannerOrchestrator: ObservableObject {
             operatingMode = mode
         }
         modeReceiver?.setOperatingMode(mode)
+    }
+
+    private func ensurePlanner(for goal: PlannerGoal) {
+        switch goal {
+        case .followWaypoints:
+            if !(activePlanner is TangentTrackPlanner) {
+                activePlanner = tangentTrackPlanner
+            }
+        case .followFigureEight(_, _, let controller):
+            switch controller {
+            case .tangentTrack:
+                if !(activePlanner is TangentTrackPlanner) {
+                    activePlanner = tangentTrackPlanner
+                }
+            case .lqrTrack:
+                if !(activePlanner is LQRTrackPlanner) {
+                    activePlanner = lqrTrackPlanner
+                }
+            }
+        case .constantThrottle, .idle:
+            if !(activePlanner is ConstantSpeedPlanner) {
+                activePlanner = constantSpeedPlanner
+            }
+        }
+    }
+
+    private func refreshPlannerDebugState() {
+        if let waypointProvider = activePlanner as? PathDebugProviding {
+            activeWaypoints = waypointProvider.activeWaypoints
+            if !activeWaypoints.isEmpty {
+                referenceWaypoints = activeWaypoints
+            }
+        } else {
+            activeWaypoints = []
+        }
+    }
+
+    private func cachePlannerReference(_ planner: any PlannerProtocol) {
+        if let speedPlanner = planner as? ConstantSpeedPlanner {
+            constantSpeedPlanner = speedPlanner
+        }
+        if let wpPlanner = planner as? TangentTrackPlanner {
+            tangentTrackPlanner = wpPlanner
+        }
+        if let lqrPlanner = planner as? LQRTrackPlanner {
+            lqrTrackPlanner = lqrPlanner
+        }
     }
 }
 

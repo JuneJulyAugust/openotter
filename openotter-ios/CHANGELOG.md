@@ -14,11 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Final one-rear-SATEL E2E evidence**: Documented the successful 2026-06-09 end-to-end app/firmware validation after STM32 reset/reconnect hardening.
 
 ### Changed
+- **Figure-eight steering authority**: The waypoint controller can now command
+  the full normalized steering range for tighter basement lobes; firmware is
+  responsible for safe PWM clamping and slew limiting.
 - **ToF debug config payload**: FE61 writes now include the selected role byte so the firmware can stream one chosen VL53L8 depth map at a time while keeping both sensors online for safety.
 - **VL53L8 debug cell classification**: STM32 Control now mirrors the firmware's 3.8 m trusted safety band: only valid-status far ranges render as `CLR`, and non-OK statuses such as `2`, `4`, or `255` stay invalid even when their range field looks plausible.
 - **v1.2.0 validation scope**: The release candidate is scoped to one physically verified rear SATEL-VL53L8; front/two-sensor support remains code-ready and documented, but physical second-sensor validation is deferred.
 
 ### Fixed
+- **Deploy across Apple team changes**: `build.sh deploy` now detects the iOS `MismatchedApplicationIdentifierEntitlement` install failure, uninstalls the previously signed app, and retries the install so switching between local Apple development teams does not leave the device stuck on an older signature.
+- **CLI signing team drift**: `project.yml` now uses the locally available Apple development team (`73UU4A5H44`) so XcodeGen regeneration does not switch CLI device builds back to an account missing from this Mac.
+- **XcodeGen project drift during CLI builds**: `build.sh build`, `deploy`, and `test` now regenerate `openotter.xcodeproj` before invoking Xcode so newly added Swift files and source-of-truth signing settings from `project.yml` are not missed by a stale local project.
+- **Device deploy signing profile creation**: `build.sh deploy` now detects the target iPhone before building, passes the concrete device destination to `xcodebuild`, and allows Xcode to register that destination device while updating automatic signing profiles. This avoids generic-iOS Release builds failing with `Your team has no devices from which to generate a provisioning profile` after the local development profile changes or expires.
 - **CoreDevice deploy auto-detection**: `build.sh deploy` now detects `available (paired)` iPhones from `xcrun devicectl list devices`, but rejects `unavailable` rows instead of matching the `available` substring and attempting an install to a missing CoreDevice ECID.
 - **STM32 debug reconnect recovery**: STM32 Control now requires both FE41 command and FE44 mode characteristics before presenting the board as connected, reasserts Debug mode plus the current FE61 ToF config once per fresh connection, and keeps the reconnect button available even while CoreBluetooth reports connected.
 - **STM32 reset scan recovery**: STM32 Control now avoids blindly reconnecting to stale remembered peripherals after a board reset, resets the CoreBluetooth central for a clean scan, ignores stale callbacks from old central/peripheral objects, and keeps a rolling BLE scan trace plus host console logs so reset screenshots show fresh advertisement matching and connection progress instead of only the last unrelated advertisement.
@@ -125,9 +132,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.7.1] - 2026-03-30
 
 ### Added
-- **Motor Calibration**: Integrated physical wheel calibration logic ($88\text{mm}$ diameter) to convert raw motor RPM to vehicle speed in $\text{m/s}$.
+- **Motor Calibration**: Integrated physical wheel calibration logic ($88\ \mathrm{mm}$ diameter) to convert raw motor RPM to vehicle speed in $\mathrm{m/s}$.
 - **Robust Filtering**: Implemented a window-based `MovingAverageFilter` to smooth noisy motor RPM data with minimal latency.
-- **Speed Telemetry**: Added $\text{m/s}$ speed display to both `SelfDrivingView` and `STM32ControlView`.
+- **Speed Telemetry**: Added $\mathrm{m/s}$ speed display to both `SelfDrivingView` and `STM32ControlView`.
 
 ### Changed
 - Reorganized project resources by moving `motor_wheel_calibration.csv` to the `Resources/` directory.

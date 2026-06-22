@@ -67,9 +67,10 @@ always used in preference to whatever the host shell would otherwise pick.
    /opt/ST/STM32CubeCLT_1.21.0/STM32CubeProgrammer/bin/STM32_Programmer_CLI --version
    ```
 
-No further step is required to compile the firmware — `build.sh` finds all
-tools under this root. You do **not** need to edit `~/.zshrc` or export
-`PATH` permanently.
+After CubeCLT is installed, populate the untracked vendor dependencies once
+with `scripts/fetch-deps.sh` before compiling. `build.sh` still finds all
+CubeCLT tools under this root, so you do **not** need to edit `~/.zshrc` or
+export `PATH` permanently.
 
 > **Note:** ST's installers sometimes differ in path casing across versions
 > (`/opt/st/...` vs `/opt/ST/...`). The `build.sh` default is
@@ -209,14 +210,12 @@ Assuming a fresh clone of the repo and a fresh CubeCLT install at
 `/opt/ST/STM32CubeCLT_1.21.0/`:
 
 ```bash
-# 0. (Once) Ensure git-lfs so Drivers/ is populated
-brew install git-lfs
-git lfs install
+# 0. (Once) Populate vendor dependencies that are not tracked in git
 cd /path/to/openotter
-git lfs pull
-
-# 1. Enter the firmware project
 cd firmware/stm32-mcp
+bash scripts/fetch-deps.sh --vl53l8cx-path /path/to/extracted/STSW-IMG040
+
+# 1. Stay in the firmware project
 
 # 2. Point build.sh at the new install path
 export CUBECLT_ROOT=/opt/ST/STM32CubeCLT_1.21.0
@@ -226,6 +225,16 @@ export CUBECLT_ROOT=/opt/ST/STM32CubeCLT_1.21.0
 
 # 4. Plug in the board and flash
 ./build.sh flash
+```
+
+`fetch-deps.sh` pins STM32CubeL4 to
+`ca1ce808ce1e49916f9d3d795b8e4437fe65d715` so fresh worktrees do not
+silently change when ST reorganizes `master`. To intentionally test a newer
+Cube snapshot, override the ref for one run:
+
+```bash
+STM32CUBE_L4_REF=<branch-tag-or-commit> \
+  bash scripts/fetch-deps.sh --vl53l8cx-path /path/to/extracted/STSW-IMG040
 ```
 
 A successful Debug build ends with output similar to:
@@ -245,6 +254,7 @@ A successful Debug build ends with output similar to:
 | `STM32CubeCLT not found at /opt/st/...`              | Case-mismatched install path. `export CUBECLT_ROOT=/opt/ST/STM32CubeCLT_1.21.0`.                           |
 | `Required tool not found: .../ninja`                 | Incomplete CubeCLT install — re-run the `.pkg` installer with every component checked.                    |
 | `cmake: command not found` outside `build.sh`        | Only `build.sh` prepends CubeCLT to `PATH`. Export it permanently (see section 2.1) or use `build.sh`.     |
+| `Missing vendor dependency: ...`                     | Run `bash scripts/fetch-deps.sh --vl53l8cx-path /path/to/extracted/STSW-IMG040` from `firmware/stm32-mcp`. |
 | `No STLink device detected!`                         | See bringup doc `02-board-bringup.md`. Usually USB cable is a charge-only cable or probe firmware outdated.|
 | Link error: `undefined reference to __stack_chk_...` | Old CubeCLT. Upgrade to ≥1.17.                                                                            |
 | `FLASH overflow by ...`                              | Release build should be well under 1 MB. Rebuild clean and check `size` output.                          |
