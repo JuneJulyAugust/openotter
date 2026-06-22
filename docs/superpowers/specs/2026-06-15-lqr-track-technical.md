@@ -307,6 +307,53 @@ The dots mean "rate of change." For example, $\dot{e}$ is positive when
 lateral error is increasing and negative when the car is recovering toward the
 path.
 
+These rates are finite differences. At planner tick $k$:
+
+$$
+\Delta t_k=\mathrm{clip}(t_k-t_{k-1},0.02,0.25)
+$$
+
+$$
+\dot{e}_k=\frac{e_k-e_{k-1}}{\Delta t_k}
+$$
+
+$$
+\dot{\theta}_{e,k}=
+\frac{
+\mathrm{wrapToPi}
+\left(
+\theta_{e,k}-\theta_{e,k-1}
+\right)}
+{\Delta t_k}
+$$
+
+The implementation uses $0.1\ \mathrm{s}$ for the first tick because there is
+no previous timestamp yet. In Python-like pseudocode:
+
+```python
+def build_lqr_state(pose, reference, timestamp, speed_mps, state):
+    dt = 0.1 if state.previous_timestamp is None else timestamp - state.previous_timestamp
+    dt = clamp(dt, 0.02, 0.25)
+
+    e = -reference.cross_track_error
+    theta_e = wrap_to_pi(pose.yaw - reference.tangent_yaw)
+    v_e = speed_mps - target_speed_mps
+
+    reset = reference_jumped_far(reference.index, state.previous_reference_index)
+    previous_e_for_rate = e if reset else state.previous_e
+    previous_theta_for_rate = theta_e if reset else state.previous_theta_e
+
+    e_dot = (e - previous_e_for_rate) / dt
+    theta_dot = wrap_to_pi(theta_e - previous_theta_for_rate) / dt
+
+    state.previous_e = e
+    state.previous_theta_e = theta_e
+    state.previous_timestamp = timestamp
+    state.previous_reference_index = reference.index
+
+    return [e, e_dot, theta_e, theta_dot, v_e]
+```
+
 Derivative memory must be reset when the path index jumps far ahead during
 reacquisition. Otherwise the controller subtracts an old error from a new
 path segment and invents a fake large rate. That can produce an unnecessary

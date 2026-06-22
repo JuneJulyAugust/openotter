@@ -397,6 +397,94 @@ K_d \frac{d e_{\psi,\mathrm{steer}}}{dt}
 \right)
 $$
 
+The equation above is the compact control-theory form. The app computes it
+one planner tick at a time, so the integral and derivative are stored as
+ordinary state variables.
+
+Let $k$ mean the current planner tick and $k-1$ mean the previous tick. The
+time step is:
+
+$$
+\Delta t_k =
+\mathrm{clip}(t_k-t_{k-1},0,0.25)
+$$
+
+The integral is a running sum of heading error multiplied by elapsed time:
+
+$$
+I_k =
+\mathrm{clip}
+\left(
+I_{k-1}+e_{\psi,\mathrm{steer},k}\Delta t_k,
+-I_{\max},
+I_{\max}
+\right)
+$$
+
+The derivative is the slope of heading error between two ticks:
+
+$$
+D_k =
+\frac{
+\mathrm{wrapToPi}
+\left(
+e_{\psi,\mathrm{steer},k}-e_{\psi,\mathrm{steer},k-1}
+\right)}
+{\Delta t_k}
+$$
+
+This derivative formula is used only when $\Delta t_k>0$. On the first tick,
+or if a timestamp does not advance, the implementation uses $D_k=0$.
+
+The firmware-facing feedback term is then:
+
+$$
+u_{\mathrm{fb},k} =
+-\left(
+K_p e_{\psi,\mathrm{steer},k}
++K_i I_k
++K_d D_k
+\right)
+$$
+
+In Python-like pseudocode, the same logic is:
+
+```python
+def steering_feedback(error, timestamp, state):
+    if state.previous_timestamp is None:
+        state.previous_error = error
+        state.previous_timestamp = timestamp
+        return 0.0
+
+    dt = timestamp - state.previous_timestamp
+    if dt <= 0.0:
+        derivative = 0.0
+    else:
+        dt = min(dt, 0.25)
+        state.integral = clamp(
+            state.integral + error * dt,
+            -heading_integral_limit,
+            +heading_integral_limit,
+        )
+        derivative = wrap_to_pi(error - state.previous_error) / dt
+
+    state.previous_error = error
+    state.previous_timestamp = timestamp
+
+    pid_terms = (
+        steering_gain * error
+        + heading_integral_gain * state.integral
+        + heading_derivative_gain * derivative
+    )
+    return -pid_terms
+```
+
+The first tick returns zero feedback derivative because there is no previous
+error yet. The integral clamp prevents "windup": it stops the stored sum from
+growing without bound while steering is saturated. Today
+$K_i=0$, so the integral state is maintained but does not affect steering
+until a future tuning pass intentionally enables it.
+
 The minus sign is the steering sign conversion. Positive yaw error means the
 desired heading is to the car's left. Firmware uses positive steering for
 right, so a left steering request must be negative.

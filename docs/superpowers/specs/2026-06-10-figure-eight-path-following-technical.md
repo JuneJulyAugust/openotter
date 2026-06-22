@@ -516,6 +516,99 @@ The minus sign is not arbitrary. Positive yaw error means the desired heading
 is left of the current car heading. OpenOtter's normalized steering command is
 positive for right, so a left correction is a negative steering command.
 
+The continuous symbols $\int e_{\psi,\mathrm{steer}}\,dt$ and
+$d e_{\psi,\mathrm{steer}}/dt$ are implemented in discrete time because the
+planner only runs at individual ticks. At tick $k$, the controller stores:
+
+| Stored value | Meaning |
+| --- | --- |
+| $I_k$ | accumulated heading error through the current tick |
+| $D_k$ | current heading-error rate |
+| $e_{\psi,\mathrm{steer},k-1}$ | previous steering heading error |
+| $t_{k-1}$ | previous planner timestamp |
+
+The elapsed time is clamped:
+
+$$
+\Delta t_k =
+\mathrm{clip}(t_k-t_{k-1},0,0.25)
+$$
+
+The integral is a bounded running sum:
+
+$$
+I_k =
+\mathrm{clip}
+\left(
+I_{k-1}+e_{\psi,\mathrm{steer},k}\Delta t_k,
+-I_{\max},
+I_{\max}
+\right)
+$$
+
+The derivative is a finite difference:
+
+$$
+D_k =
+\frac{
+\mathrm{wrapToPi}
+\left(
+e_{\psi,\mathrm{steer},k}-e_{\psi,\mathrm{steer},k-1}
+\right)}
+{\Delta t_k}
+$$
+
+This derivative formula is used only when $\Delta t_k>0$. On the first tick,
+or if a timestamp does not advance, the implementation uses $D_k=0$.
+
+The tick-by-tick feedback command is:
+
+$$
+u_{\mathrm{fb},k} =
+-\left(
+K_p e_{\psi,\mathrm{steer},k}
++K_i I_k
++K_d D_k
+\right)
+$$
+
+In Python-like pseudocode:
+
+```python
+def steering_feedback(error, timestamp, state):
+    if state.previous_timestamp is None:
+        state.previous_error = error
+        state.previous_timestamp = timestamp
+        return 0.0
+
+    dt = timestamp - state.previous_timestamp
+    if dt <= 0.0:
+        derivative = 0.0
+    else:
+        dt = min(dt, 0.25)
+        state.integral = clamp(
+            state.integral + error * dt,
+            -heading_integral_limit,
+            +heading_integral_limit,
+        )
+        derivative = wrap_to_pi(error - state.previous_error) / dt
+
+    state.previous_error = error
+    state.previous_timestamp = timestamp
+
+    pid_terms = (
+        steering_gain * error
+        + heading_integral_gain * state.integral
+        + heading_derivative_gain * derivative
+    )
+    return -pid_terms
+```
+
+The first tick returns zero because there is no previous sample. A stale or
+negative time step also gives zero derivative. The $0.25\ \mathrm{s}$ clamp
+prevents a delayed planner tick from creating an unrealistic integral jump or
+a derivative spike.
+
 The signs are:
 
 | Condition | Command effect |
@@ -940,32 +1033,14 @@ closedLoopPathReference(pose):
 
 ### Steering PID And Feedforward
 
-```text
-steeringFromPIDAndFeedforward(steeringYawError, uFeedforward, timestamp):
-    dt = clamp(timestamp - previousTimestamp, 0, 0.25)
-
-    if dt > 0:
-        integral = clamp(integral + steeringYawError * dt,
-                         -headingIntegralLimit,
-                         +headingIntegralLimit)
-        derivative = wrapToPi(steeringYawError - previousYawError) / dt
-    else:
-        derivative = 0
-
-    previousYawError = steeringYawError
-    previousTimestamp = timestamp
-
-    pidTerms = steeringGain * steeringYawError
-             + headingIntegralGain * integral
-             + headingDerivativeGain * derivative
-
-    uFeedback = -pidTerms
-
-    uSteer = clamp(uFeedforward + uFeedback,
-                   -maxSteeringFraction,
-                   +maxSteeringFraction)
-
-    return uSteer
+```python
+def steering_from_pid_and_feedforward(error, u_feedforward, timestamp, state):
+    u_feedback = steering_feedback(error, timestamp, state)
+    return clamp(
+        u_feedforward + u_feedback,
+        -max_steering_fraction,
+        +max_steering_fraction,
+    )
 ```
 
 ### Waypoint Advancement

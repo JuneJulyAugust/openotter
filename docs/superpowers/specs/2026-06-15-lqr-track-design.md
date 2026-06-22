@@ -172,6 +172,43 @@ $$
 
 ![LQR error-state diagram](figures/lqr-error-state.png)
 
+The two dotted terms are not measured directly. They are finite differences
+computed from the current tick and the previous tick:
+
+$$
+\dot{e}_k=\frac{e_k-e_{k-1}}{\Delta t_k},
+\qquad
+\dot{\theta}_{e,k}=
+\frac{\mathrm{wrapToPi}(\theta_{e,k}-\theta_{e,k-1})}
+{\Delta t_k}
+$$
+
+Python-like pseudocode:
+
+```python
+def lqr_error_rates(error, heading_error, timestamp, reference_index, state):
+    dt = 0.1 if state.previous_timestamp is None else timestamp - state.previous_timestamp
+    dt = clamp(dt, 0.02, 0.25)
+
+    reset = reference_jumped_far(reference_index, state.previous_reference_index)
+    previous_error_for_rate = error if reset else state.previous_error
+    previous_heading_for_rate = heading_error if reset else state.previous_heading_error
+
+    error_rate = (error - previous_error_for_rate) / dt
+    heading_rate = wrap_to_pi(heading_error - previous_heading_for_rate) / dt
+
+    state.previous_error = error
+    state.previous_heading_error = heading_error
+    state.previous_timestamp = timestamp
+    state.previous_reference_index = reference_index
+
+    return error_rate, heading_rate
+```
+
+The reset matters because a large path-index jump means the reference changed
+discontinuously. In that case, subtracting an old error from a new-segment
+error would create a fake spike and make LQR overreact.
+
 OpenOtter's path geometry reports $e_{\mathrm{ct}}>0$ when the car is right of
 the path. `LQRTrack` uses $e=-e_{\mathrm{ct}}$ internally so the LQR steering
 sign lines up with the normalized OpenOtter steering command:
