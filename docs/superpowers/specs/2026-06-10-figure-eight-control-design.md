@@ -101,9 +101,19 @@ the controller equations are explicit about yaw sign and steering sign.
 
 | Symbol | Definition |
 | --- | --- |
-| $\mathrm{}{}^{M}\mathbf{e}_{x_B}$ | body forward unit axis, expressed in app-map $(x_M,z_M)$ components |
-| $\mathrm{}{}^{M}\mathbf{e}_{y_B}$ | body left unit axis, expressed in app-map $(x_M,z_M)$ components |
-| $\mathrm{}{}^{M}\mathbf{e}_{z_L}$ | OpenOtter mission-local right unit axis, expressed in app-map $(x_M,z_M)$ components |
+| $e_{x_B}^{M}$ | body-forward unit axis, expressed in app-map $(x_M,z_M)$ components |
+| $e_{y_B}^{M}$ | body-left unit axis, expressed in app-map $(x_M,z_M)$ components |
+| $e_{z_L}^{M}$ | OpenOtter mission-local right unit axis, expressed in app-map $(x_M,z_M)$ components |
+
+The compact table aliases mean the same vectors as the display notation below:
+
+$$
+e_{x_B}^{M}\equiv{}^{M}\mathbf{e}_{x_B},
+\qquad
+e_{y_B}^{M}\equiv{}^{M}\mathbf{e}_{y_B},
+\qquad
+e_{z_L}^{M}\equiv{}^{M}\mathbf{e}_{z_L}
+$$
 
 Yaw rotates the standard vehicle body axes into app-map coordinates:
 
@@ -176,7 +186,22 @@ robot-right must produce **positive** steering. These invariants are locked by
 
 ## 4. Controller Strategy
 
-The baseline finite-waypoint controller still points at the current waypoint:
+### 4.1 Why The Baseline Is Named `TangentTrack`
+
+The old finite-waypoint controller pointed at one waypoint at a time. That is
+useful for simple point-to-point driving, but a figure eight is a continuous
+curve. If the car aims at a future dot while its yaw response is slow, it can
+orbit outside a lobe instead of following the lobe.
+
+The baseline figure-eight controller is named `TangentTrack` because it tracks
+the path tangent. At every control tick it asks:
+
+1. Which segment of the red path is closest to the car?
+2. What direction is that segment pointing?
+3. Is the car left or right of that segment?
+4. How much steering and throttle should we command now?
+
+The finite-waypoint rule is still available for ordinary waypoint missions:
 
 $$
 \Delta x = x_{\mathrm{target}} - x,
@@ -190,8 +215,14 @@ $$
 e_{\psi} = \mathrm{wrapToPi}(\psi_{\mathrm{desired}}-\psi)
 $$
 
-For the closed-loop figure-eight, the controller follows the current path
-segment instead of chasing a future point. The symbols are:
+For the closed-loop figure-eight, `TangentTrack` uses a path reference instead
+of this point-bearing rule.
+
+### 4.2 Symbols And Naming Rule
+
+This section reserves each symbol for one meaning. The segment vector is
+$\mathbf{s}$, while the final steering command is $u_{\mathrm{steer}}$. The
+document does not use plain $s$ for steering.
 
 | Symbol | Meaning |
 | --- | --- |
@@ -203,14 +234,40 @@ segment instead of chasing a future point. The symbols are:
 | $P_{\mathrm{ref}}$ | closest point on the active segment |
 | $\psi_{\mathrm{ref}}$ | reference yaw of the path tangent |
 | $P$ | path frame at $P_{\mathrm{ref}}$ |
-| $\mathrm{}{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
-| $\mathrm{}{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
+| $e_{x_P}^{M}$ | path-tangent unit axis, expressed in app-map coordinates |
+| $e_{z_P}^{M}$ | path-right unit axis, expressed in app-map coordinates |
 | $e_{\mathrm{ct}}$ | signed cross-track error; positive means car is right of the path |
+| $\kappa$ | signed path curvature; positive means reference yaw turns left per meter |
+| $\ell_{\mathrm{arc}}$ | path distance used for the curvature estimate |
+| $u_{\mathrm{ff}}$ | normalized steering feedforward from known path curvature |
+| $u_{\mathrm{fb}}$ | normalized steering feedback from measured heading error |
+| $u_{\mathrm{steer}}$ | final normalized steering command sent to firmware |
+| $\tau$ | final normalized throttle command sent to firmware |
+
+The path-frame aliases follow the same rule:
+
+$$
+e_{x_P}^{M}\equiv{}^{M}\mathbf{e}_{x_P},
+\qquad
+e_{z_P}^{M}\equiv{}^{M}\mathbf{e}_{z_P}
+$$
 
 ![Path-reference geometry diagram](figures/path-reference-geometry.png)
 
-Let $P_0$ and $P_1$ be the current path segment endpoints, $p_M$ be the car
-position, and $\mathbf{s}=P_1-P_0$. The segment projection is:
+### 4.3 Path Projection Creates The Reference
+
+The first job is geometric. The controller projects the car position onto the
+currently active path segment. That projected point is the local reference
+point. It is better than chasing a future waypoint because it tells the
+controller where the car is relative to the continuous curve.
+
+The segment vector is:
+
+$$
+\mathbf{s}=P_1-P_0
+$$
+
+The projection progress is:
 
 $$
 \alpha =
@@ -223,6 +280,8 @@ $$
 \qquad
 P_{\mathrm{ref}} = P_0 + \alpha\mathbf{s}
 $$
+
+The tangent yaw comes from the segment direction:
 
 $$
 \psi_{\mathrm{ref}} =
@@ -250,16 +309,46 @@ e_{\mathrm{ct}} =
 (p_M-P_{\mathrm{ref}})\cdot{}^{M}\mathbf{e}_{z_P}
 $$
 
-The desired yaw combines path tangent and lateral correction. When
+### 4.4 Feedback And Feedforward In Plain Language
+
+`TangentTrack` uses two ideas together.
+
+**Feedback** means "look at what actually happened, measure the error, and
+correct it." OpenOtter does not measure front wheel angle, so the useful
+feedback signal is ARKit pose: position, yaw, and measured speed. If the car
+drifts outside the lobe, the next tick sees a bigger cross-track error and
+asks for a stronger recovery turn.
+
+**Feedforward** means "use something we already know about the desired motion."
+The reference path already tells us when the next part of the lobe bends. A
+feedforward steering term starts the turn before the car has drifted away from
+the path. Feedforward alone cannot fix carpet slip, steering backlash, or ARKit
+drift. Feedback alone reacts late. The practical controller uses both.
+
+### 4.5 Cross-Track Error Becomes A Desired Heading
+
+The controller first builds a desired yaw. It starts with the tangent yaw
+$\psi_{\mathrm{ref}}$, then biases that yaw toward the path centerline. When
 $e_{\mathrm{ct}}>0$, the car is right of the path, so the desired yaw is biased
-left to bring it back:
+left to bring it back.
 
 $$
-\psi_{\mathrm{desired}} =
-\psi_{\mathrm{ref}} +
+\Delta\psi_{\mathrm{ct}} =
 \mathrm{atan2}
 \left(k_{\mathrm{ct}}e_{\mathrm{ct}},\,d_{\mathrm{soft}}\right)
 $$
+
+$$
+\psi_{\mathrm{desired}} =
+\mathrm{wrapToPi}
+\left(
+\psi_{\mathrm{ref}}+\Delta\psi_{\mathrm{ct}}
+\right)
+$$
+
+The `atan2` shape is deliberate. For small lateral errors it behaves almost
+like a proportional correction. For large lateral errors it bends smoothly
+toward a bounded angle instead of demanding an impossible instant turn.
 
 $$
 e_{\psi,\mathrm{steer}} =
@@ -269,47 +358,101 @@ e_{\psi,\mathrm{path}} =
 \mathrm{wrapToPi}(\psi_{\mathrm{ref}}-\psi)
 $$
 
-Steering is PID-shaped heading feedback plus feedforward:
+The controller deliberately keeps two heading errors:
+
+- `steeringYawError` is $e_{\psi,\mathrm{steer}}$. It includes cross-track
+  correction and drives steering.
+- `pathHeadingError` is $e_{\psi,\mathrm{path}}$. It is only the tangent
+  heading error and drives throttle.
+
+This separation matters when the car is tangent-aligned but off the centerline.
+Steering should work hard to recover, but throttle should not fade just because
+the recovery heading is aggressive.
+
+### 4.6 PID-Shaped Steering Feedback
+
+PID is a common feedback pattern. It turns an error into a correction using
+three pieces:
+
+- **P, proportional:** react to the error right now. Larger heading error gives
+  larger steering correction.
+- **I, integral:** react to error accumulated over time. This can fix steady
+  bias, but it can also build too much command while steering is saturated.
+- **D, derivative:** react to how fast the error is changing. This adds
+  damping and can reduce overshoot.
+
+`TangentTrack` is "PID-shaped" because the structure is present, but the
+integral gain is currently zero. That is intentional. Without a front wheel
+angle sensor, integral should only be enabled later from logs if the car shows
+a persistent one-sided steering bias.
+
+The feedback steering command is:
+
+$$
+u_{\mathrm{fb}} =
+-\left(
+K_p e_{\psi,\mathrm{steer}} +
+K_i \int e_{\psi,\mathrm{steer}}\,dt +
+K_d \frac{d e_{\psi,\mathrm{steer}}}{dt}
+\right)
+$$
+
+The minus sign is the steering sign conversion. Positive yaw error means the
+desired heading is to the car's left. Firmware uses positive steering for
+right, so a left steering request must be negative.
+
+### 4.7 Curvature Feedforward
+
+Curvature says how sharply the reference path bends. In this document,
+$\kappa$ means "change in reference yaw per meter of path distance." Its unit
+is approximately $1/\mathrm{m}$.
 
 $$
 \kappa \approx
 \frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-{s_{\mathrm{arc}}},
-\qquad
-s_{\mathrm{ff}} = -k_{\kappa}\kappa
+\ell_{\mathrm{arc}}}
 $$
 
-$$
-u_{\mathrm{pid}} =
-K_p e_{\psi,\mathrm{steer}} +
-K_i \int e_{\psi,\mathrm{steer}}\,dt +
-K_d \frac{d e_{\psi,\mathrm{steer}}}{dt}
-$$
+The feedforward steering command is:
 
 $$
-s =
+u_{\mathrm{ff}} = -k_{\kappa}\kappa
+$$
+
+Here $k_{\kappa}$ has units of meters, so $u_{\mathrm{ff}}$ is dimensionless
+like the firmware steering command. If $\kappa>0$, the path yaw is turning
+left. A left steering command is negative in OpenOtter, so the feedforward sign
+is negative.
+
+### 4.8 Final Steering Command
+
+The final steering command is the sum of feedforward and feedback, clamped to
+the firmware's normalized steering range:
+
+$$
+u_{\mathrm{steer}} =
 \mathrm{clip}
 \left(
-s_{\mathrm{ff}} - u_{\mathrm{pid}},
--s_{\max},
-s_{\max}
+u_{\mathrm{ff}} + u_{\mathrm{fb}},
+-u_{\mathrm{steer,max}},
+u_{\mathrm{steer,max}}
 \right)
 $$
 
-The controller deliberately keeps two heading errors:
+This $u_{\mathrm{steer}}$ is the value stored in `ControlCommand.steering`.
+It is dimensionless and bounded. Firmware maps it to steering PWM:
 
-- `steeringYawError` includes cross-track correction and can be aggressive.
-- `pathHeadingError` is only the path tangent error and drives throttle.
-
-This handles the important case where the car is tangent-aligned but off the
-path: steering should work hard to recover, but throttle should not fade just
-because the recovery heading is aggressive.
+| $u_{\mathrm{steer}}$ | Firmware meaning |
+| --- | --- |
+| $-1.0$ | full left |
+| $0.0$ | centered |
+| $+1.0$ | full right |
 
 Current defaults:
 
 | Parameter | Value |
 | --- | --- |
-| $s_{\max}$ | $1.0$ |
+| $u_{\mathrm{steer,max}}$ | $1.0$ |
 | steering throttle scale at limit | $0.70$ |
 | steering full-load fraction | $0.45$ |
 | $k_{\mathrm{ct}}$ | $2.2$ |
@@ -319,14 +462,23 @@ Current defaults:
 | $K_i$ | $0.0$ |
 | $K_d$ | $0.02$ |
 
-The integral term is deliberately present but disabled by default. Without a
-front wheel angle sensor and with steering saturation possible, integral should
-only be enabled later from logs if there is a steady steering bias.
+That means a $90^\circ$ steering yaw error gives roughly $0.9$ normalized
+feedback before feedforward and clamping:
 
-Throttle still starts from the current Telegram speed. It fades from the plain
+$$
+\left|e_{\psi,\mathrm{steer}}\right| = \frac{\pi}{2}
+\quad\Rightarrow\quad
+\left|K_p e_{\psi,\mathrm{steer}}\right| \approx 0.9
+$$
+
+### 4.9 Speed Control
+
+Throttle starts from the current Telegram speed. It then fades from the plain
 path tangent error, slows when the car is both off the centerline and
-steering-loaded, and blends in anti-stall throttle when speed feedback says the
-car is stuck or nearly stuck:
+steering-loaded, and blends in anti-stall throttle when speed feedback says
+the car is stuck or nearly stuck.
+
+The base throttle is:
 
 $$
 \tau_{\mathrm{base}} =
@@ -334,11 +486,14 @@ $$
 \max\left(0.35,\ 1-\frac{|e_{\psi,\mathrm{path}}|}{\pi}\right)
 $$
 
+The steering load uses the final steering command:
+
 $$
-\ell_s = \frac{|s|}{0.45},
+\ell_{\mathrm{steer}} =
+\frac{\left|u_{\mathrm{steer}}\right|}{0.45},
 \qquad
 \tau_{\mathrm{scale}} =
-1-(1-0.70)\ell_s\ell_{\mathrm{lat}}
+1-(1-0.70)\ell_{\mathrm{steer}}\ell_{\mathrm{lat}}
 $$
 
 $$
@@ -348,6 +503,53 @@ $$
 When $v_{\mathrm{measured}} < 0.12\ \mathrm{m/s}$ and
 $|e_{\psi,\mathrm{path}}| < \pi/2$, the controller blends toward
 $0.75\tau_{\max}$ as anti-stall breakaway throttle.
+
+### 4.10 Where `LQRTrack` Fits
+
+`LQRTrack` is the experimental controller for `/figure8_lqr`. It shares the
+same path reference, curvature estimate, app-map signs, and actuator limits.
+The difference is how it computes feedback.
+
+`TangentTrack` uses hand-shaped rules: cross-track correction, PID-shaped
+heading feedback, and curvature feedforward. `LQRTrack` builds a small error
+state and computes a gain matrix that balances tracking error against actuator
+effort. The LQR state is:
+
+$$
+\mathbf{x}_{\mathrm{LQR}} =
+\begin{bmatrix}
+e &
+\dot{e} &
+\theta_e &
+\dot{\theta}_e &
+v_e
+\end{bmatrix}^{\top}
+$$
+
+In plain language:
+
+- $e$ and $\dot{e}$ describe lateral error and how fast it changes.
+- $\theta_e$ and $\dot{\theta}_e$ describe heading error and how fast it
+  changes.
+- $v_e$ describes speed error.
+- $Q$ says which errors are expensive.
+- $R$ says which actuator movements are expensive.
+
+LQR is still feedback control. It is not a magic path follower and it does not
+replace feedforward. The current implementation still adds curvature
+feedforward before clamping the final steering command:
+
+$$
+u_{\mathrm{steer}} =
+\mathrm{clip}
+\left(
+u_{\mathrm{ff}} + u_{\mathrm{steer,fb}},
+-1,
+1
+\right)
+$$
+
+The separate LQR technical note explains how the gain matrix is computed.
 
 For closed-loop figure-eight missions, the planner also scans a short window
 of future waypoints and advances to the closest one. This prevents the car from

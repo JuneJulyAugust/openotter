@@ -77,16 +77,30 @@ right axis $z_L$, not the standard vehicle body-left axis $y_B$.
 
 ![Coordinate convention diagram](figures/figure-eight-coordinate-conventions.png)
 
-The notation $\mathrm{}{}^{M}\mathbf{e}_{x_B}$ means "the unit vector of the body
-$x_B$ axis, expressed in app-map frame $M$." This is standard frame notation:
-the left superscript tells us which frame the components are written in, and
-the subscript tells us which axis the vector represents.
+The display notation below means "the unit vector of the body $x_B$ axis,
+expressed in app-map frame $M$":
+
+$$
+{}^{M}\mathbf{e}_{x_B}
+$$
+
+This is standard frame notation: the left superscript tells us which frame the
+components are written in, and the subscript tells us which axis the vector
+represents. Tables use compact aliases for the same vectors:
+
+$$
+e_{x_B}^{M}\equiv{}^{M}\mathbf{e}_{x_B},
+\qquad
+e_{y_B}^{M}\equiv{}^{M}\mathbf{e}_{y_B},
+\qquad
+e_{z_L}^{M}\equiv{}^{M}\mathbf{e}_{z_L}
+$$
 
 | Symbol | Plain-English meaning | Components |
 | --- | --- | --- |
-| $\mathrm{}{}^{M}\mathbf{e}_{x_B}$ | car nose / body forward direction | $(x_M,z_M)$ |
-| $\mathrm{}{}^{M}\mathbf{e}_{y_B}$ | standard body-left direction | $(x_M,z_M)$ |
-| $\mathrm{}{}^{M}\mathbf{e}_{z_L}$ | OpenOtter local right direction used by `localZ` | $(x_M,z_M)$ |
+| $e_{x_B}^{M}$ | car nose / body-forward direction | $(x_M,z_M)$ |
+| $e_{y_B}^{M}$ | standard body-left direction | $(x_M,z_M)$ |
+| $e_{z_L}^{M}$ | OpenOtter local right direction used by `localZ` | $(x_M,z_M)$ |
 
 For a given yaw angle, the standard vehicle body axes are:
 
@@ -355,9 +369,17 @@ For the active path segment:
 | $P_{\mathrm{ref}}$ | closest point on the active segment |
 | $\psi_{\mathrm{ref}}$ | yaw angle of the path tangent |
 | $P$ | path frame at $P_{\mathrm{ref}}$ |
-| $\mathrm{}{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
-| $\mathrm{}{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
+| $e_{x_P}^{M}$ | path-tangent unit axis, expressed in app-map coordinates |
+| $e_{z_P}^{M}$ | path-right unit axis, expressed in app-map coordinates |
 | $e_{\mathrm{ct}}$ | cross-track error; positive means car is right of the path |
+
+The path-frame table aliases mean:
+
+$$
+e_{x_P}^{M}\equiv{}^{M}\mathbf{e}_{x_P},
+\qquad
+e_{z_P}^{M}\equiv{}^{M}\mathbf{e}_{z_P}
+$$
 
 ![Path-reference geometry diagram](figures/path-reference-geometry.png)
 
@@ -402,8 +424,7 @@ $\psi_{\mathrm{ref}}=0$. If the segment points straight right on the app map,
 then $\Delta x=0$, $\Delta z>0$, and
 $\psi_{\mathrm{ref}}=-\pi/2$, which means right-facing yaw.
 
-The signed side error is measured along the path-right axis
-$\mathrm{}{}^{M}\mathbf{e}_{z_P}$:
+The signed side error is measured along the path-right axis $e_{z_P}^{M}$:
 
 $$
 {}^{M}\mathbf{e}_{z_P} =
@@ -460,35 +481,100 @@ is still off the centerline. In that case the steering controller should ask
 for a strong recovery turn, but the throttle controller should not interpret
 that recovery turn as "the path is behind me; almost stop."
 
-## 7. PID Feedback And Feedforward
+## 7. PID-Shaped Steering Feedback And Curvature Feedforward
 
-The steering output uses a PID-shaped heading controller plus a curvature
-feedforward term:
+This section uses distinct names for the segment vector and the steering
+command. The path segment vector remains $\mathbf{s}=P_1-P_0$. The final
+normalized steering command is $u_{\mathrm{steer}}$.
+
+The steering controller combines feedback and feedforward:
+
+- Feedback reacts to measured pose error from ARKit.
+- Feedforward reacts to known path curvature before pose error grows.
+
+### 7.1 What PID Means
+
+PID is a simple feedback recipe. It turns an error into a correction.
+
+- The proportional term, $P$, reacts to the current error.
+- The integral term, $I$, reacts to error accumulated over time.
+- The derivative term, $D$, reacts to how quickly the error is changing.
+
+For `TangentTrack`, the error is heading error:
+$e_{\psi,\mathrm{steer}}$. The feedback steering command is:
 
 $$
-u_{\mathrm{pid}} =
+u_{\mathrm{fb}} =
+-\left(
 K_p e_{\psi,\mathrm{steer}} +
 K_i \int e_{\psi,\mathrm{steer}}\,dt +
 K_d \frac{d e_{\psi,\mathrm{steer}}}{dt}
-$$
-
-$$
-s =
-\mathrm{clip}
-\left(
-s_{\mathrm{ff}} - u_{\mathrm{pid}},
--s_{\max},
-s_{\max}
 \right)
 $$
 
-The sign is deliberate:
+The minus sign is not arbitrary. Positive yaw error means the desired heading
+is left of the current car heading. OpenOtter's normalized steering command is
+positive for right, so a left correction is a negative steering command.
+
+The signs are:
 
 | Condition | Command effect |
 | --- | --- |
 | $e_{\psi,\mathrm{steer}} > 0$ | path heading is left of car, command negative steering |
 | $e_{\psi,\mathrm{steer}} < 0$ | path heading is right of car, command positive steering |
-| $\kappa > 0$ | path turns left, command negative feedforward |
+
+The integral term is intentionally configured to zero for the first fieldable
+version. Integral is useful for steady steering bias, but it can also wind up
+against the steering cap and fight the next lobe. The state and clamp are in
+place so a small integral gain can be enabled later from logs.
+
+### 7.2 What Curvature Feedforward Means
+
+Curvature measures how sharply the reference path is bending. Here $\kappa$
+means heading change per meter of path distance:
+
+$$
+\kappa \approx
+\frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
+\ell_{\mathrm{arc}}}
+$$
+
+The path samples before and after the current reference point provide
+$\psi_{\mathrm{before}}$ and $\psi_{\mathrm{after}}$. The distance between
+those samples along the path is $\ell_{\mathrm{arc}}$.
+
+The feedforward steering command is:
+
+$$
+u_{\mathrm{ff}} = -k_{\kappa}\kappa
+$$
+
+If $\kappa>0$, the path turns left. A left steering command is negative, so the
+feedforward term is negative. This tells the car to start turning before pose
+error grows. It is not a full vehicle model; it is a practical "we know the
+path bends here" steering bias.
+
+### 7.3 Final Steering Command
+
+The final normalized steering command is:
+
+$$
+u_{\mathrm{steer}} =
+\mathrm{clip}
+\left(
+u_{\mathrm{ff}} + u_{\mathrm{fb}},
+-u_{\mathrm{steer,max}},
+u_{\mathrm{steer,max}}
+\right)
+$$
+
+This is the value sent as `ControlCommand.steering`. Firmware maps it to PWM:
+
+| $u_{\mathrm{steer}}$ | Meaning |
+| --- | --- |
+| $-1.0$ | full left |
+| $0.0$ | centered |
+| $+1.0$ | full right |
 
 Current constants:
 
@@ -496,7 +582,7 @@ Current constants:
 | --- | --- |
 | steering fraction at $90^\circ$ | $0.9$ |
 | $K_p$ | $0.9/(\pi/2)$ |
-| $s_{\max}$ | $1.0$ |
+| $u_{\mathrm{steer,max}}$ | $1.0$ |
 | steering throttle full-load fraction | $0.45$ |
 | $k_{\mathrm{ct}}$ | $2.2$ |
 | $d_{\mathrm{soft}}$ | $0.18\ \mathrm{m}$ |
@@ -509,12 +595,16 @@ Current constants:
 That means:
 
 $$
-|e_{\psi,\mathrm{steer}}| = \frac{\pi}{2}
+\left|e_{\psi,\mathrm{steer}}\right| = \frac{\pi}{2}
 \quad\Rightarrow\quad
-|K_p e_{\psi,\mathrm{steer}}| \approx 0.9
+\left|K_p e_{\psi,\mathrm{steer}}\right| \approx 0.9
 $$
 
-Larger errors plus feedforward are capped to $s\in[-1,1]$.
+Larger errors plus feedforward are capped to:
+
+$$
+-1 \le u_{\mathrm{steer}} \le 1
+$$
 
 This is a practical choice:
 
@@ -525,27 +615,6 @@ This is a practical choice:
 - firmware steering slew limiting turns rapid full-range sweeps into a short
   ramp, which should reduce reset/brownout risk and audible end-stop chatter
   unless the mechanical linkage itself is binding.
-
-The integral term is intentionally configured to zero for the first fieldable
-version. Integral is useful for steady steering bias, but it can also wind up
-against the steering cap and fight the next lobe. The state and clamp are in
-place so a small integral gain can be enabled later from logs.
-
-Curvature feedforward is the control engineer's suggestion in simple form. The
-controller estimates path curvature from heading change over a short arc:
-
-$$
-\kappa \approx
-\frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-s_{\mathrm{arc}}}
-$$
-
-$$
-s_{\mathrm{ff}} = -k_{\kappa}\kappa
-$$
-
-This tells the car to start turning before pose error grows. It is not a
-vehicle model; it is a practical "we know the path bends here" steering bias.
 
 The controller is not trying to model tire slip, steering linkage geometry, or
 Ackermann dynamics. It is using pose feedback to correct the car's observed
@@ -581,13 +650,14 @@ $$
 \tau_{\max}\max(f_{\min}, f_{\psi})
 $$
 
-Then steering and lateral load scale the command:
+Then steering and lateral load scale the command. The steering load uses the
+final normalized steering command, not the path segment vector:
 
 $$
-\ell_s =
+\ell_{\mathrm{steer}} =
 \mathrm{clip}
 \left(
-\frac{|s|}{s_{\mathrm{full}}},
+\frac{\left|u_{\mathrm{steer}}\right|}{u_{\mathrm{steer,full}}},
 0,
 1
 \right),
@@ -603,7 +673,7 @@ $$
 
 $$
 \tau_{\mathrm{scale}} =
-1-(1-\tau_{\mathrm{scale,min}})\ell_s\ell_{\mathrm{lat}}
+1-(1-\tau_{\mathrm{scale,min}})\ell_{\mathrm{steer}}\ell_{\mathrm{lat}}
 $$
 
 $$
@@ -637,6 +707,7 @@ Current constants:
 | $f_{\min}$ | $0.35$ |
 | $e_{\psi,\mathrm{powered,max}}$ | $5\pi/6$ or $150^\circ$ |
 | $\tau_{\mathrm{scale,min}}$ | $0.70$ |
+| $u_{\mathrm{steer,full}}$ | $0.45$ |
 | $d_{\mathrm{lat}}$ | $0.20\ \mathrm{m}$ |
 | $f_{\mathrm{breakaway}}$ | $0.75$ |
 | $v_{\mathrm{stall}}$ | $0.12\ \mathrm{m/s}$ |
@@ -679,7 +750,7 @@ authority over forward and reverse braking.
 The planner emits a desired command:
 
 $$
-\mathrm{ControlCommand}(s,\tau,\mathrm{source})
+\mathrm{ControlCommand}(u_{\mathrm{steer}},\tau,\mathrm{source})
 $$
 
 Then `PlannerOrchestrator` passes it through `SafetySupervisor`. The supervisor
@@ -860,17 +931,17 @@ closedLoopPathReference(pose):
     throttleYawError = wrapToPi(referenceYaw - pose.yaw)
 
     curvature = signedCurvature(currentWaypointIndex)
-    feedforward = clamp(-curvatureFeedforwardGain * curvature,
-                        -maxSteeringFraction,
-                        +maxSteeringFraction)
+    uFeedforward = clamp(-curvatureFeedforwardGain * curvature,
+                         -maxSteeringFraction,
+                         +maxSteeringFraction)
 
-    return steeringYawError, throttleYawError, crossTrackError, feedforward
+    return steeringYawError, throttleYawError, crossTrackError, uFeedforward
 ```
 
 ### Steering PID And Feedforward
 
 ```text
-steeringFromPIDAndFeedforward(steeringYawError, feedforward, timestamp):
+steeringFromPIDAndFeedforward(steeringYawError, uFeedforward, timestamp):
     dt = clamp(timestamp - previousTimestamp, 0, 0.25)
 
     if dt > 0:
@@ -884,13 +955,17 @@ steeringFromPIDAndFeedforward(steeringYawError, feedforward, timestamp):
     previousYawError = steeringYawError
     previousTimestamp = timestamp
 
-    pid = steeringGain * steeringYawError
-        + headingIntegralGain * integral
-        + headingDerivativeGain * derivative
+    pidTerms = steeringGain * steeringYawError
+             + headingIntegralGain * integral
+             + headingDerivativeGain * derivative
 
-    return clamp(feedforward - pid,
-                 -maxSteeringFraction,
-                 +maxSteeringFraction)
+    uFeedback = -pidTerms
+
+    uSteer = clamp(uFeedforward + uFeedback,
+                   -maxSteeringFraction,
+                   +maxSteeringFraction)
+
+    return uSteer
 ```
 
 ### Waypoint Advancement

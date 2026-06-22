@@ -200,13 +200,15 @@ The input vector has two corrections:
 $$
 \mathbf{u} =
 \begin{bmatrix}
-u_s &
+u_{\delta} &
 u_a
 \end{bmatrix}^{\top}
 $$
 
-where $u_s$ is steering feedback and $u_a$ is acceleration feedback. OpenOtter
-later maps those abstract corrections to normalized steering and throttle.
+where $u_{\delta}$ is the LQR model's steering-angle-like input and $u_a$ is
+the LQR model's acceleration input. These are internal model quantities. They
+are not sent directly to firmware. OpenOtter later maps them to the normalized
+actuator commands $u_{\mathrm{steer}}$ and $\tau$.
 
 The design follows the PythonRobotics LQR speed/steer structure:
 
@@ -252,43 +254,101 @@ The design meaning is simple:
 - Larger $Q$ makes the controller fight that error harder.
 - Larger $R$ makes the controller use that actuator more gently.
 
+The vector $\mathbf{u}_k$ in the score is the internal LQR model input. The
+firmware-facing steering command is named $u_{\mathrm{steer}}$ later in the
+mapping section.
+
 ## 7. Feedforward And Actuator Mapping
 
-LQR feedback should not do all steering work. The path already tells us when a
-lobe is about to curve. That known bend becomes feedforward steering:
+LQR computes feedback, but feedback should not do all steering work. The path
+already tells us when a lobe is about to curve. That known bend becomes
+feedforward steering. The final actuator command is therefore still the same
+practical structure used by `TangentTrack`:
+
+1. use the path curvature for a steering bias,
+2. use LQR feedback to correct measured tracking error,
+3. add the two steering terms,
+4. clamp the result before firmware sees it.
+
+### 7.1 Symbols
+
+The actuator symbols are:
+
+| Symbol | Meaning |
+| --- | --- |
+| $\mathbf{f}$ | raw LQR feedback vector $K\mathbf{x}$ |
+| $f_0$ | steering channel of $\mathbf{f}$ |
+| $f_1$ | speed channel of $\mathbf{f}$ |
+| $u_{\mathrm{ff}}$ | curvature feedforward steering command |
+| $u_{\mathrm{steer,fb}}$ | steering feedback command from the LQR gain |
+| $u_{\mathrm{steer}}$ | final normalized steering command |
+| $u_a$ | acceleration-like throttle trim from LQR feedback |
+| $\tau$ | final normalized throttle command |
+
+### 7.2 Curvature Feedforward
+
+Feedforward comes from the reference path, not from the measured tracking
+error. If the path curvature $\kappa$ says the next segment bends left, the
+controller can request left steering before the blue trace has drifted outside
+the red path.
 
 $$
-s_{\mathrm{ff}}=-k_{\kappa}\kappa
+u_{\mathrm{ff}}=-k_{\kappa}\kappa
 $$
 
-The LQR feedback then corrects real tracking error:
+The negative sign matches OpenOtter's actuator convention: positive
+$\kappa$ means the reference yaw turns left, while positive steering command
+means the front wheel steers right.
+
+### 7.3 LQR Feedback
+
+LQR feedback corrects real tracking error. The gain matrix $K$ turns the
+five-value error state into two feedback channels:
 
 $$
 \mathbf{f}=K\mathbf{x}
 $$
 
+The first channel, $f_0$, is the steering-like feedback channel. The second
+channel, $f_1$, is the speed-like feedback channel. They are still internal
+controller values, not firmware commands.
+
+### 7.4 Final Steering Command
+
+The steering feedback channel is scaled into the same normalized steering
+units used by firmware:
+
 $$
-s =
+u_{\mathrm{steer,fb}}=k_{\mathrm{steer}} f_0
+$$
+
+The final steering command adds curvature feedforward and feedback:
+
+$$
+u_{\mathrm{steer}} =
 \mathrm{clip}
 \left(
-s_{\mathrm{ff}} + k_s f_0,
+u_{\mathrm{ff}} + u_{\mathrm{steer,fb}},
 -1,
 1
 \right)
 $$
 
-Speed control uses the second LQR output as a throttle trim around a base
-throttle:
+### 7.5 Final Throttle Command
+
+Speed control uses the second LQR feedback channel as a throttle trim around a
+base throttle. The sign conversion below keeps the command intuitive: if the
+car is below target speed, the resulting trim should increase throttle.
 
 $$
-\mathbf{u}=-\mathbf{f}
+u_a=-f_1
 $$
 
 $$
 \tau =
 \mathrm{clip}
 \left(
-\tau_{\mathrm{base}} + k_{\tau}u_1,
+\tau_{\mathrm{base}} + k_{\tau}u_a,
 0,
 \tau_{\max}
 \right)
@@ -318,7 +378,7 @@ $$
 | Symptom | First tuning move | Reason |
 | --- | --- | --- |
 | blue trace balloons outside the lobe | raise lateral $Q$ or heading $Q$ | tracking error is too cheap |
-| steering chatters or servo ticks | raise steering $R$ or reduce $k_s$ | steering effort is too cheap |
+| steering chatters or servo ticks | raise steering $R$ or reduce $k_{\mathrm{steer}}$ | steering effort is too cheap |
 | car crawls while tracking is stable | raise target speed or lower throttle $R$ | speed error is too cheap |
 | throttle surges | raise throttle $R$ or reduce $k_{\tau}$ | acceleration effort is too cheap |
 | controller reacts badly after reacquiring path | reset derivative memory on large index jumps | old rates no longer describe the new reference |

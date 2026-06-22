@@ -101,10 +101,20 @@ $$
 \end{bmatrix}
 $$
 
-Here $\mathrm{}{}^{M}\mathbf{e}_{x_B}$ is where the car's nose points,
-$\mathrm{}{}^{M}\mathbf{e}_{y_B}$ is the standard body-left direction, and
-$\mathrm{}{}^{M}\mathbf{e}_{z_L}$ is the right-positive local axis used by the
-OpenOtter path generator. They are unit vectors, not actuator commands.
+For inline text, this note uses compact aliases:
+
+$$
+e_{x_B}^{M}\equiv{}^{M}\mathbf{e}_{x_B},
+\qquad
+e_{y_B}^{M}\equiv{}^{M}\mathbf{e}_{y_B},
+\qquad
+e_{z_L}^{M}\equiv{}^{M}\mathbf{e}_{z_L}
+$$
+
+Here $e_{x_B}^{M}$ is where the car's nose points, $e_{y_B}^{M}$ is the
+standard body-left direction, and $e_{z_L}^{M}$ is the right-positive local
+axis used by the OpenOtter path generator. They are unit vectors, not actuator
+commands.
 
 `PathReference` reports cross-track error as $e_{\mathrm{ct}}$. Positive
 $e_{\mathrm{ct}}$ means the car is right of the path. Internally, `LQRTrack`
@@ -152,8 +162,16 @@ The projection symbols are:
 | $\alpha$ | clamped progress along the segment |
 | $P_{\mathrm{ref}}$ | projected point on the path segment |
 | $P$ | path frame at $P_{\mathrm{ref}}$ |
-| $\mathrm{}{}^{M}\mathbf{e}_{x_P}$ | path-tangent unit axis, expressed in app-map coordinates |
-| $\mathrm{}{}^{M}\mathbf{e}_{z_P}$ | path-right unit axis, expressed in app-map coordinates |
+| $e_{x_P}^{M}$ | path-tangent unit axis, expressed in app-map coordinates |
+| $e_{z_P}^{M}$ | path-right unit axis, expressed in app-map coordinates |
+
+The path-frame aliases mean:
+
+$$
+e_{x_P}^{M}\equiv{}^{M}\mathbf{e}_{x_P},
+\qquad
+e_{z_P}^{M}\equiv{}^{M}\mathbf{e}_{z_P}
+$$
 
 First define the segment vector:
 
@@ -248,12 +266,13 @@ Curvature estimates how sharply the path is bending:
 $$
 \kappa \approx
 \frac{\mathrm{wrapToPi}(\psi_{\mathrm{after}}-\psi_{\mathrm{before}})}
-{s_{\mathrm{arc}}}
+\ell_{\mathrm{arc}}}
 $$
 
-Curvature is large in tight turns and near zero on straight parts. `LQRTrack`
-uses curvature for feedforward steering: if the path is about to bend, start
-turning before lateral error grows.
+Here $\ell_{\mathrm{arc}}$ is the path distance between the before and after
+samples. Curvature is large in tight turns and near zero on straight parts.
+`LQRTrack` uses curvature for feedforward steering: if the path is about to
+bend, start turning before lateral error grows.
 
 ## 6. Step 3: Build The Five-Error State
 
@@ -314,12 +333,15 @@ The input vector is:
 $$
 \mathbf{u} =
 \begin{bmatrix}
-u_s &
+u_{\delta} &
 u_a
 \end{bmatrix}^{\top}
 $$
 
-where $u_s$ is steering feedback and $u_a$ is acceleration feedback.
+where $u_{\delta}$ is the LQR model's steering-angle-like input and $u_a$ is
+the LQR model's acceleration input. They are internal model quantities. The
+planner later maps them to the firmware-facing actuator commands
+$u_{\mathrm{steer}}$ and $\tau$.
 
 The OpenOtter model follows the PythonRobotics LQR speed/steer structure:
 
@@ -352,7 +374,7 @@ $$
 $$
 
 $$
-\tan u_s \approx u_s
+\tan u_{\delta} \approx u_{\delta}
 $$
 
 Those are small-angle approximations. They say that for modest angles, the
@@ -377,7 +399,7 @@ $$
 Reading the fourth row with $B$:
 
 $$
-\dot{\theta}_{e,\mathrm{next}}\approx\frac{v}{L}u_s
+\dot{\theta}_{e,\mathrm{next}}\approx\frac{v}{L}u_{\delta}
 $$
 
 That says steering changes heading rate more strongly when the car is moving
@@ -418,7 +440,7 @@ The command effort term is:
 $$
 \mathbf{u}^{\top}R\mathbf{u}
 =
-r_s u_s^2+r_a u_a^2
+r_{\delta}u_{\delta}^2+r_a u_a^2
 $$
 
 Squaring has two useful effects:
@@ -431,7 +453,7 @@ The weights decide personality:
 - large $q_e$ means "do not drift sideways from the path,"
 - large $q_{\theta}$ means "align heading with the path tangent,"
 - large $q_v$ means "keep speed close to target,"
-- large $r_s$ means "avoid aggressive steering,"
+- large $r_{\delta}$ means "avoid aggressive steering,"
 - large $r_a$ means "avoid aggressive speed changes."
 
 This is the main tuning language for LQR.
@@ -442,12 +464,15 @@ After the model and score are defined, LQR computes a gain matrix $K$. At
 runtime, the controller uses:
 
 $$
-\mathbf{u}=-K\mathbf{x}
+\mathbf{u}_{\mathrm{model}}=-K\mathbf{x}
 $$
 
 This means "multiply the current errors by $K$, then command the opposite
 correction." If the errors are zero, the feedback correction is zero. If the
 errors grow, the correction grows in a way chosen by the model and the score.
+This $\mathbf{u}_{\mathrm{model}}$ is still an internal model command. Section
+10 maps it, together with curvature feedforward, into the firmware-facing
+$u_{\mathrm{steer}}$ and $\tau$ commands.
 
 The Swift implementation solves the discrete algebraic Riccati equation. You
 do not need to tune this equation directly, but it is useful to know what it
@@ -485,7 +510,9 @@ worse than skipping one tick.
 ## 10. Step 7: Convert Feedback To Steering And Throttle
 
 The LQR feedback is not sent directly to firmware. It is combined with
-feedforward and actuator mapping.
+feedforward and actuator mapping. This keeps the actuator interface the same
+as `TangentTrack`: the planner still emits one normalized steering command and
+one normalized throttle command.
 
 First compute feedback:
 
@@ -493,32 +520,33 @@ $$
 \mathbf{f}=K\mathbf{x}
 $$
 
-The conventional LQR command is:
+Here $f_0$ is the steering feedback channel and $f_1$ is the speed feedback
+channel. The conventional LQR command is:
 
 $$
-\mathbf{u}=-\mathbf{f}
+\mathbf{u}_{\mathrm{model}}=-\mathbf{f}
 $$
 
-For steering, OpenOtter uses the converted sign that matches the normalized
-steering command:
+For steering, the current OpenOtter implementation uses a sign-converted
+feedback term that matches the normalized steering command:
 
 $$
-s_{\mathrm{fb}}=k_s f_0
+u_{\mathrm{steer,fb}}=k_{\mathrm{steer}}f_0
 $$
 
 Curvature feedforward is:
 
 $$
-s_{\mathrm{ff}}=-k_{\kappa}\kappa
+u_{\mathrm{ff}}=-k_{\kappa}\kappa
 $$
 
 The final steering command is:
 
 $$
-s =
+u_{\mathrm{steer}} =
 \mathrm{clip}
 \left(
-s_{\mathrm{ff}}+s_{\mathrm{fb}},
+u_{\mathrm{ff}}+u_{\mathrm{steer,fb}},
 -1,
 1
 \right)
@@ -527,10 +555,14 @@ $$
 For throttle, the second LQR command is treated as an acceleration-like trim:
 
 $$
+u_a=-f_1
+$$
+
+$$
 \tau =
 \mathrm{clip}
 \left(
-\tau_{\mathrm{base}}+k_{\tau}u_1,
+\tau_{\mathrm{base}}+k_{\tau}u_a,
 0,
 \tau_{\max}
 \right)
@@ -635,14 +667,14 @@ plan(context):
         return neutral with source "LQRTrack"
 
     feedback = K * state
-    u = -feedback
 
-    steeringFF = -curvatureFeedforwardGain * reference.curvature
-    steeringFB = steeringScale * feedback[0]
-    steering = clamp(steeringFF + steeringFB, -1, 1)
+    uFeedforward = -curvatureFeedforwardGain * reference.curvature
+    uSteerFeedback = steeringScale * feedback[0]
+    uSteer = clamp(uFeedforward + uSteerFeedback, -1, 1)
 
     baseThrottle = baseThrottleForTargetSpeed(targetSpeed, maxThrottle)
-    throttle = clamp(baseThrottle + throttleAccelScale * u[1], 0, maxThrottle)
+    accelTrim = -feedback[1]
+    throttle = clamp(baseThrottle + throttleAccelScale * accelTrim, 0, maxThrottle)
 
     previousE = e
     previousThetaE = thetaE
@@ -667,7 +699,7 @@ they are a safe starting point for simulation and low-risk field tests.
 | $L$ | $0.35\ \mathrm{m}$ | effective wheelbase/tuning length |
 | $v_{\mathrm{target}}$ | $0.20\ \mathrm{m/s}$ | faster than crawling, still controlled |
 | $\tau_{\max}$ | Telegram speed, default $0.4$ | keeps operator speed intent explicit |
-| $k_s$ | $1.0$ | direct steering feedback scale |
+| $k_{\mathrm{steer}}$ | $1.0$ | direct steering feedback scale |
 | $k_{\tau}$ | $0.15$ | small throttle trim until acceleration is calibrated |
 | $k_{\kappa}$ | $0.10\ \mathrm{m}$ | same starting feedforward scale as TangentTrack |
 
@@ -704,7 +736,7 @@ to know which one helped.
 | --- | --- | --- |
 | blue path is consistently outside lobes | lateral error is too cheap | increase $q_e$ |
 | car points across the path instead of along it | heading error is too cheap | increase $q_{\theta}$ |
-| steering is too busy or ticks | steering effort is too cheap | increase $r_s$ or reduce $k_s$ |
+| steering is too busy or ticks | steering effort is too cheap | increase $r_{\delta}$ or reduce $k_{\mathrm{steer}}$ |
 | car follows path but crawls | speed error is too cheap | increase $v_{\mathrm{target}}$ or $q_v$ |
 | throttle surges | throttle effort is too cheap | increase $r_a$ or reduce $k_{\tau}$ |
 | first seconds after path reacquisition are violent | stale derivatives are leaking in | reset previous $e$ and $\theta_e$ on large index jumps |
